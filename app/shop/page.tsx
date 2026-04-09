@@ -41,6 +41,12 @@ function latestUpdate(system: string | null, manual: string | null): string | nu
   return new Date(system) > new Date(manual) ? system : manual;
 }
 
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "–";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 export default function ShopPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -128,16 +134,16 @@ export default function ShopPage() {
                   <td style={{ ...cellStyle, fontWeight: "bold" }}>{o.work_order_id}</td>
                   <td style={cellStyle}>{o.customer || "–"}</td>
                   <td style={cellStyle}>{prioLabel(o)}</td>
-                  <td style={cellStyle}>{o.due_date || "–"}</td>
+                  <td style={cellStyle}>{formatDate(o.due_date)}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
                   <td style={{ ...cellStyle, fontWeight: o.hold_reason ? "bold" : "normal" }}>
                     {o.hold_reason ? "⛔ Ja" : "Nee"}
                   </td>
                   <td style={cellStyle}>{o.hold_reason || "–"}</td>
-                  <td style={cellStyle}>{o.rfq_state || "–"}</td>
+                  <td style={cellStyle}>{o.rfq_state && o.rfq_state !== "undefined" ? o.rfq_state : "No RFQ"}</td>
                   <td style={cellStyle}>{o.required_next_action || "–"}</td>
-                  <td style={cellStyle}>{lastUpdate ? new Date(lastUpdate).toLocaleDateString("nl-NL") : "–"}</td>
+                  <td style={cellStyle}>{formatDate(lastUpdate)}</td>
                 </tr>
               );
             })}

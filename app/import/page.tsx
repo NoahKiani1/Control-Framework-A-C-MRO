@@ -8,11 +8,16 @@ function mapWorkOrderType(compType: string, description: string): string | null 
   const type = (compType || "").toLowerCase().trim();
   const desc = (description || "").toLowerCase().trim();
 
-  if (type === "battery") return "battery";
+  if (type === "battery") return "Battery";
 
   if (type === "wheel") {
-    if (desc.startsWith("overhaul")) return "overhaul";
-    return "repair";
+    if (desc.startsWith("overhaul")) return "Wheel Overhaul";
+    return "Wheel Repair";
+  }
+
+  if (type === "brake") {
+    if (desc.startsWith("overhaul")) return "Brake Overhaul";
+    return "Brake Repair";
   }
 
   return null;
@@ -56,6 +61,7 @@ export default function ImportPage() {
   const [step, setStep] = useState<"upload" | "review" | "done">("upload");
   const [newOrders, setNewOrders] = useState<ParsedRow[]>([]);
   const [existingOrders, setExistingOrders] = useState<ParsedRow[]>([]);
+  const [oldIds, setOldIds] = useState<string[]>([]);
   const [makeNewActive, setMakeNewActive] = useState(false);
   const [fileName, setFileName] = useState("");
   const [tooOld, setTooOld] = useState(0);
@@ -64,6 +70,7 @@ export default function ImportPage() {
     processed: number;
     inserted: number;
     updated: number;
+    deleted: number;
     tooOld: number;
     skipped: number;
   } | null>(null);
@@ -82,6 +89,7 @@ export default function ImportPage() {
 
     let skipCount = 0;
     let oldCount = 0;
+    const tempOldIds: string[] = [];
     const parsed: ParsedRow[] = [];
 
     for (const row of rows) {
@@ -92,6 +100,7 @@ export default function ImportPage() {
       }
 
       if (isOlderThanOneYear(row["CreatedOn"])) {
+        tempOldIds.push(workOrderId);
         oldCount++;
         continue;
       }
@@ -100,21 +109,22 @@ export default function ImportPage() {
       const rfqState = String(row["RFQ State"] || "").trim();
       const compType = String(row["Comp. Type"] || "").trim();
       const description = String(row["Description"] || "").trim();
+      const closeDate = parseExcelDate(row["Close Date"]);
 
       parsed.push({
         work_order_id: workOrderId,
         customer: customer || null,
         rfq_state: rfqState || null,
         last_system_update: parseExcelDate(row["LastUpdatedOn"]),
-        is_open: true,
+        is_open: !closeDate,
         work_order_type: mapWorkOrderType(compType, description),
       });
     }
 
     setSkipped(skipCount);
     setTooOld(oldCount);
+    setOldIds(tempOldIds);
 
-    // Check welke orders al bestaan
     setStatus("Bestaande orders controleren...");
     const ids = parsed.map((r) => r.work_order_id);
     const { data: existingData } = await supabase
@@ -136,7 +146,6 @@ export default function ImportPage() {
   async function doImport() {
     setStatus("Import loopt...");
 
-    // Bestaande orders: update alleen systeemvelden, NIET is_active
     const batchSize = 500;
     let updated = 0;
 
@@ -156,7 +165,6 @@ export default function ImportPage() {
       updated += batch.length;
     }
 
-    // Nieuwe orders: voeg is_active toe op basis van keuze
     let inserted = 0;
 
     for (let i = 0; i < newOrders.length; i += batchSize) {
@@ -176,6 +184,14 @@ export default function ImportPage() {
       inserted += batch.length;
     }
 
+    // Verwijder orders ouder dan 1 jaar uit de database
+    let deleted = 0;
+    for (let i = 0; i < oldIds.length; i += batchSize) {
+      const batch = oldIds.slice(i, i + batchSize);
+      await supabase.from("work_orders").delete().in("work_order_id", batch);
+      deleted += batch.length;
+    }
+
     await supabase.from("import_runs").insert({
       filename: fileName,
       rows_processed: newOrders.length + existingOrders.length + tooOld + skipped,
@@ -188,6 +204,7 @@ export default function ImportPage() {
       processed: newOrders.length + existingOrders.length + tooOld + skipped,
       inserted,
       updated,
+      deleted,
       tooOld,
       skipped,
     });
@@ -212,7 +229,7 @@ export default function ImportPage() {
 
       {step === "upload" && (
         <>
-          <p>Upload een AcMP Excel-export (.xlsx). Werkorders ouder dan 1 jaar worden overgeslagen.</p>
+          <p>Upload een AcMP Excel-export (.xlsx). Werkorders ouder dan 1 jaar worden verwijderd. Gesloten orders worden automatisch gemarkeerd.</p>
           <label style={{
             display: "inline-block",
             margin: "1rem 0",
@@ -243,7 +260,7 @@ export default function ImportPage() {
             <br />
             <strong>{newOrders.length} nieuwe orders gevonden</strong>
             <br />
-            {tooOld > 0 && <>{tooOld} overgeslagen (ouder dan 1 jaar)<br /></>}
+            {tooOld > 0 && <>{tooOld} orders ouder dan 1 jaar (worden verwijderd)<br /></>}
             {skipped > 0 && <>{skipped} overgeslagen (geen Work Order ID)<br /></>}
           </div>
 
@@ -279,7 +296,7 @@ export default function ImportPage() {
               <tr><td style={{ padding: "4px 12px" }}>Rijen in bestand</td><td>{results.processed}</td></tr>
               <tr><td style={{ padding: "4px 12px" }}>Nieuw ingevoegd</td><td>{results.inserted}</td></tr>
               <tr><td style={{ padding: "4px 12px" }}>Bijgewerkt</td><td>{results.updated}</td></tr>
-              <tr><td style={{ padding: "4px 12px" }}>Ouder dan 1 jaar</td><td>{results.tooOld}</td></tr>
+              <tr><td style={{ padding: "4px 12px" }}>Verwijderd (ouder dan 1 jaar)</td><td>{results.deleted}</td></tr>
               <tr><td style={{ padding: "4px 12px" }}>Overgeslagen (geen ID)</td><td>{results.skipped}</td></tr>
             </tbody>
           </table>

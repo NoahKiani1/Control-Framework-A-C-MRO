@@ -12,7 +12,6 @@ type WorkOrder = {
   current_process_step: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
-  deviation_issue_detected: string | null;
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;
@@ -54,6 +53,12 @@ function latestUpdate(system: string | null, manual: string | null): string | nu
   return new Date(system) > new Date(manual) ? system : manual;
 }
 
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "–";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 export default function DashboardPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [capacity, setCapacity] = useState<Capacity | null>(null);
@@ -81,6 +86,9 @@ export default function DashboardPage() {
   }, []);
 
   if (loading) return <p style={{ padding: "2rem" }}>Laden...</p>;
+
+  const readyToClose = orders.filter((o) => o.current_process_step === "EASA-Form 1");
+  const activeOrders = orders.filter((o) => o.current_process_step !== "EASA-Form 1");
 
   const cellStyle: React.CSSProperties = {
     padding: "6px 10px",
@@ -111,6 +119,38 @@ export default function DashboardPage() {
         <a href="/">← Home</a>
       </div>
 
+      {readyToClose.length > 0 && (
+        <div style={{
+          marginTop: "1rem",
+          padding: "16px",
+          backgroundColor: "#f0fdf4",
+          border: "1px solid #86efac",
+          borderRadius: "8px",
+        }}>
+          <h3 style={{ margin: "0 0 8px", color: "#166534" }}>
+            ✅ Klaar om te sluiten in AcMP ({readyToClose.length})
+          </h3>
+          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr>
+                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#dcfce7" }}>WO</th>
+                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#dcfce7" }}>Klant</th>
+                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#dcfce7" }}>Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {readyToClose.map((o) => (
+                <tr key={o.work_order_id} style={{ backgroundColor: "#f0fdf4" }}>
+                  <td style={{ ...cellStyle, fontWeight: "bold" }}>{o.work_order_id}</td>
+                  <td style={cellStyle}>{o.customer || "–"}</td>
+                  <td style={cellStyle}>{o.work_order_type || "–"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {capacity && capacity.capacity_pressure === "Yes" && (
         <div style={{
           marginTop: "1rem",
@@ -128,7 +168,7 @@ export default function DashboardPage() {
       )}
 
       <p style={{ marginTop: "1rem", color: "#666" }}>
-        {orders.length} actieve work orders
+        {activeOrders.length} actieve work orders
       </p>
 
       <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
@@ -144,7 +184,6 @@ export default function DashboardPage() {
               <th style={headerStyle}>Blocked</th>
               <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>RFQ</th>
-              <th style={headerStyle}>Afwijking</th>
               <th style={headerStyle}>Actie nodig</th>
               <th style={headerStyle}>Actie-eigenaar</th>
               <th style={headerStyle}>Actie status</th>
@@ -152,24 +191,23 @@ export default function DashboardPage() {
             </tr>
           </thead>
           <tbody>
-            {orders.map((o) => {
+            {activeOrders.map((o) => {
               const lastUpdate = latestUpdate(o.last_system_update, o.last_manual_update);
               return (
                 <tr key={o.work_order_id} style={{ backgroundColor: rowColor(o) }}>
                   <td style={cellStyle}>{o.work_order_id}</td>
                   <td style={cellStyle}>{o.customer || "–"}</td>
-                  <td style={cellStyle}>{o.due_date || "–"}</td>
+                  <td style={cellStyle}>{formatDate(o.due_date)}</td>
                   <td style={cellStyle}>{o.priority || "No"}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
                   <td style={cellStyle}>{o.hold_reason ? "Ja" : "Nee"}</td>
                   <td style={cellStyle}>{o.hold_reason || "–"}</td>
-                  <td style={cellStyle}>{o.rfq_state || "–"}</td>
-                  <td style={cellStyle}>{o.deviation_issue_detected || "–"}</td>
+                  <td style={cellStyle}>{o.rfq_state && o.rfq_state !== "undefined" ? o.rfq_state : "No RFQ"}</td>
                   <td style={cellStyle}>{o.required_next_action || "–"}</td>
                   <td style={cellStyle}>{o.action_owner || "–"}</td>
-                  <td style={cellStyle}>{o.action_status || "–"}</td>
-                  <td style={cellStyle}>{lastUpdate ? new Date(lastUpdate).toLocaleDateString("nl-NL") : "–"}</td>
+                  <td style={cellStyle}>{o.action_status || "Open"}</td>
+                  <td style={cellStyle}>{formatDate(lastUpdate)}</td>
                 </tr>
               );
             })}
