@@ -57,7 +57,8 @@ export default function PlanningPage() {
         .select("work_order_id, customer, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, last_manual_update, last_system_update")
         .eq("is_open", true)
         .eq("is_active", true);
-      setOrders(sortOrders((data as WorkOrder[]) || []));
+      const filtered = ((data as WorkOrder[]) || []).filter((o) => o.current_process_step !== "EASA-Form 1");
+      setOrders(sortOrders(filtered));
       setLoading(false);
     }
     load();
