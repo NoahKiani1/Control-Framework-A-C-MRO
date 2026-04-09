@@ -10,6 +10,7 @@ export default function Home() {
           <li><a href="/shop">Shop Wall Screen</a></li>
           <li><a href="/actions">Actions / Blockers</a></li>
           <li><a href="/backlog">Backlog</a></li>
+          <li><a href="/capacity">Capaciteitsmanagement</a></li>
           <li><a href="/office-update">Office Update Form</a></li>
           <li><a href="/shop-update">Shop Update Form</a></li>
           <li><a href="/import">AcMP Import</a></li>
