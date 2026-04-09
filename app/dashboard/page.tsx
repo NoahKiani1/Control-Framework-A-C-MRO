@@ -29,10 +29,16 @@ type Capacity = {
   capacity_impact_note: string | null;
 };
 
+function isBlocked(o: WorkOrder): boolean {
+  if (o.hold_reason) return true;
+  if (o.rfq_state === "RFQ Send" || o.rfq_state === "RFQ Rejected") return true;
+  return false;
+}
+
 function sortOrders(orders: WorkOrder[]): WorkOrder[] {
   return [...orders].sort((a, b) => {
     const rank = (o: WorkOrder) => {
-      if (o.hold_reason) return 5;
+      if (isBlocked(o)) return 5;
       if (o.priority === "AOG") return 1;
       if (o.priority === "Yes") return 2;
       if (o.due_date) return 3;
@@ -57,6 +63,17 @@ function formatDate(dateStr: string | null): string {
   if (!dateStr) return "–";
   const d = new Date(dateStr);
   return d.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function blockReason(o: WorkOrder): string {
+  if (o.hold_reason) return o.hold_reason;
+  if (o.rfq_state === "RFQ Send") return "RFQ verstuurd — wacht op klant";
+  if (o.rfq_state === "RFQ Rejected") return "RFQ afgewezen";
+  return "–";
+}
+
+function hasAction(o: WorkOrder): boolean {
+  return !!(o.hold_reason || o.required_next_action);
 }
 
 export default function DashboardPage() {
@@ -108,7 +125,7 @@ export default function DashboardPage() {
   function rowColor(order: WorkOrder): string {
     if (order.priority === "AOG") return "#fff0f0";
     if (order.priority === "Yes") return "#fff8e0";
-    if (order.hold_reason) return "#f0f0f0";
+    if (isBlocked(order)) return "#f0f0f0";
     return "white";
   }
 
@@ -130,7 +147,7 @@ export default function DashboardPage() {
           <h3 style={{ margin: "0 0 8px", color: "#166534" }}>
             ✅ Klaar om te sluiten in AcMP ({readyToClose.length})
           </h3>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <table style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#dcfce7" }}>WO</th>
@@ -201,12 +218,12 @@ export default function DashboardPage() {
                   <td style={cellStyle}>{o.priority || "No"}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                  <td style={cellStyle}>{o.hold_reason ? "Ja" : "Nee"}</td>
-                  <td style={cellStyle}>{o.hold_reason || "–"}</td>
+                  <td style={cellStyle}>{isBlocked(o) ? "Ja" : "Nee"}</td>
+                  <td style={cellStyle}>{blockReason(o)}</td>
                   <td style={cellStyle}>{o.rfq_state && o.rfq_state !== "undefined" ? o.rfq_state : "No RFQ"}</td>
                   <td style={cellStyle}>{o.required_next_action || "–"}</td>
                   <td style={cellStyle}>{o.action_owner || "–"}</td>
-                  <td style={cellStyle}>{o.action_status || "Open"}</td>
+                  <td style={cellStyle}>{hasAction(o) ? (o.action_status || "Open") : "–"}</td>
                   <td style={cellStyle}>{formatDate(lastUpdate)}</td>
                 </tr>
               );

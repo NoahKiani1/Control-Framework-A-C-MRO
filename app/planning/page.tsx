@@ -16,10 +16,16 @@ type WorkOrder = {
   last_system_update: string | null;
 };
 
+function isBlocked(o: WorkOrder): boolean {
+  if (o.hold_reason) return true;
+  if (o.rfq_state === "RFQ Send" || o.rfq_state === "RFQ Rejected") return true;
+  return false;
+}
+
 function sortOrders(orders: WorkOrder[]): WorkOrder[] {
   return [...orders].sort((a, b) => {
     const rank = (o: WorkOrder) => {
-      if (o.hold_reason) return 5;
+      if (isBlocked(o)) return 5;
       if (o.priority === "AOG") return 1;
       if (o.priority === "Yes") return 2;
       if (o.due_date) return 3;
@@ -44,6 +50,13 @@ function formatDate(dateStr: string | null): string {
   if (!dateStr) return "–";
   const d = new Date(dateStr);
   return d.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function blockReason(o: WorkOrder): string {
+  if (o.hold_reason) return o.hold_reason;
+  if (o.rfq_state === "RFQ Send") return "RFQ verstuurd";
+  if (o.rfq_state === "RFQ Rejected") return "RFQ afgewezen";
+  return "–";
 }
 
 export default function PlanningPage() {
@@ -84,7 +97,7 @@ export default function PlanningPage() {
   function rowColor(order: WorkOrder): string {
     if (order.priority === "AOG") return "#fff0f0";
     if (order.priority === "Yes") return "#fff8e0";
-    if (order.hold_reason) return "#f0f0f0";
+    if (isBlocked(order)) return "#f0f0f0";
     return "white";
   }
 
@@ -110,6 +123,7 @@ export default function PlanningPage() {
               <th style={headerStyle}>Toegewezen</th>
               <th style={headerStyle}>Processtap</th>
               <th style={headerStyle}>Blocked</th>
+              <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Laatste update</th>
             </tr>
@@ -125,7 +139,8 @@ export default function PlanningPage() {
                   <td style={cellStyle}>{o.priority || "No"}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                  <td style={cellStyle}>{o.hold_reason ? "Ja" : "Nee"}</td>
+                  <td style={cellStyle}>{isBlocked(o) ? "Ja" : "Nee"}</td>
+                  <td style={cellStyle}>{blockReason(o)}</td>
                   <td style={cellStyle}>{o.rfq_state && o.rfq_state !== "undefined" ? o.rfq_state : "No RFQ"}</td>
                   <td style={cellStyle}>{formatDate(lastUpdate)}</td>
                 </tr>
