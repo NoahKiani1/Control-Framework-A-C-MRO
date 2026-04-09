@@ -15,6 +15,7 @@ type Absence = {
   engineer_id: number;
   absence_date: string;
   reason: string | null;
+  absence_group_id: string | null;
 };
 
 type WorkOrder = {
@@ -27,6 +28,17 @@ type WorkOrder = {
   rfq_state: string | null;
 };
 
+type GroupedAbsence = {
+  key: string;
+  engineer_id: number;
+  reason: string | null;
+  start_date: string;
+  end_date: string;
+  days: number;
+  ids: number[];
+  group_id: string | null;
+};
+
 export default function CapacityPage() {
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
@@ -36,6 +48,7 @@ export default function CapacityPage() {
   const [newEngineerName, setNewEngineerName] = useState("");
   const [absenceEngineerId, setAbsenceEngineerId] = useState("");
   const [absenceDate, setAbsenceDate] = useState("");
+  const [absenceEndDate, setAbsenceEndDate] = useState("");
   const [absenceReason, setAbsenceReason] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
 
@@ -53,7 +66,8 @@ export default function CapacityPage() {
     const { data: abs } = await supabase
       .from("engineer_absences")
       .select("*")
-      .gte("absence_date", new Date().toISOString().split("T")[0]);
+      .gte("absence_date", new Date().toISOString().split("T")[0])
+      .order("absence_date", { ascending: true });
 
     const { data: wo } = await supabase
       .from("work_orders")
@@ -101,23 +115,60 @@ export default function CapacityPage() {
 
   async function addAbsence() {
     if (!absenceEngineerId || !absenceDate) return;
-    const { error } = await supabase.from("engineer_absences").insert({
+
+    const start = new Date(absenceDate);
+    const end = absenceEndDate ? new Date(absenceEndDate) : new Date(absenceDate);
+
+    const dates: string[] = [];
+    const current = new Date(start);
+
+    while (current <= end) {
+      const day = current.getDay();
+      if (day >= 1 && day <= 5) {
+        dates.push(current.toISOString().split("T")[0]);
+      }
+      current.setDate(current.getDate() + 1);
+    }
+
+    if (dates.length === 0) return;
+
+    const groupId = crypto.randomUUID();
+
+    const rows = dates.map((d) => ({
       engineer_id: parseInt(absenceEngineerId),
-      absence_date: absenceDate,
+      absence_date: d,
       reason: absenceReason || null,
+      absence_group_id: groupId,
+    }));
+
+    const { error } = await supabase.from("engineer_absences").upsert(rows, {
+      onConflict: "engineer_id,absence_date",
     });
+
     if (error) {
       setSaveStatus(`Fout: ${error.message}`);
     } else {
-      setSaveStatus("✅ Absence toegevoegd");
+      setSaveStatus(`✅ ${dates.length} dag(en) toegevoegd`);
       setAbsenceDate("");
+      setAbsenceEndDate("");
       setAbsenceReason("");
       loadData();
     }
   }
 
-  async function removeAbsence(id: number) {
-    await supabase.from("engineer_absences").delete().eq("id", id);
+  async function removeAbsence(groupId: string | null, ids: number[]) {
+    if (groupId) {
+      await supabase
+        .from("engineer_absences")
+        .delete()
+        .eq("absence_group_id", groupId);
+    } else {
+      await supabase
+        .from("engineer_absences")
+        .delete()
+        .in("id", ids);
+    }
+
     loadData();
   }
 
@@ -146,6 +197,33 @@ export default function CapacityPage() {
     return "#86efac";
   }
 
+  const groupedAbsences: GroupedAbsence[] = Object.values(
+    absences.reduce((acc, a) => {
+      const key = a.absence_group_id || `single-${a.id}`;
+
+      if (!acc[key]) {
+        acc[key] = {
+          key,
+          engineer_id: a.engineer_id,
+          reason: a.reason,
+          start_date: a.absence_date,
+          end_date: a.absence_date,
+          days: 0,
+          ids: [],
+          group_id: a.absence_group_id,
+        };
+      }
+
+      if (a.absence_date < acc[key].start_date) acc[key].start_date = a.absence_date;
+      if (a.absence_date > acc[key].end_date) acc[key].end_date = a.absence_date;
+
+      acc[key].days += 1;
+      acc[key].ids.push(a.id);
+
+      return acc;
+    }, {} as Record<string, GroupedAbsence>)
+  ).sort((a, b) => a.start_date.localeCompare(b.start_date));
+
   const labelStyle: React.CSSProperties = { display: "block", marginTop: "10px", fontWeight: "bold", fontSize: "13px" };
   const inputStyle: React.CSSProperties = { width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "14px", marginTop: "4px" };
   const buttonStyle: React.CSSProperties = { padding: "8px 16px", backgroundColor: "#0070f3", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold", fontSize: "13px", marginTop: "8px" };
@@ -163,14 +241,17 @@ export default function CapacityPage() {
         <h2>Weekoverzicht</h2>
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
           {weeks.map((w, i) => (
-            <div key={i} style={{
-              flex: "1",
-              minWidth: "220px",
-              padding: "16px",
-              backgroundColor: statusBg(w.status),
-              border: `2px solid ${statusBorder(w.status)}`,
-              borderRadius: "8px",
-            }}>
+            <div
+              key={i}
+              style={{
+                flex: "1",
+                minWidth: "220px",
+                padding: "16px",
+                backgroundColor: statusBg(w.status),
+                border: `2px solid ${statusBorder(w.status)}`,
+                borderRadius: "8px",
+              }}
+            >
               <h3 style={{ margin: "0 0 8px", color: statusColor(w.status) }}>
                 {w.weekLabel}
               </h3>
@@ -180,12 +261,14 @@ export default function CapacityPage() {
               <p style={{ margin: "4px 0", fontSize: "14px" }}>
                 Beschikbaar: <strong>{w.availableHours}u</strong>
               </p>
-              <p style={{
-                margin: "8px 0 0",
-                fontSize: "20px",
-                fontWeight: "bold",
-                color: statusColor(w.status),
-              }}>
+              <p
+                style={{
+                  margin: "8px 0 0",
+                  fontSize: "20px",
+                  fontWeight: "bold",
+                  color: statusColor(w.status),
+                }}
+              >
                 {w.percentage}%
               </p>
             </div>
@@ -195,14 +278,18 @@ export default function CapacityPage() {
 
       {/* Overdue warning */}
       {overdueOrders.length > 0 && (
-        <section style={{
-          marginTop: "1.5rem",
-          padding: "12px 16px",
-          backgroundColor: "#fef2f2",
-          border: "1px solid #fca5a5",
-          borderRadius: "6px",
-        }}>
-          <strong style={{ color: "#dc2626" }}>⚠ {overdueOrders.length} work order(s) met overschreden due date!</strong>
+        <section
+          style={{
+            marginTop: "1.5rem",
+            padding: "12px 16px",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fca5a5",
+            borderRadius: "6px",
+          }}
+        >
+          <strong style={{ color: "#dc2626" }}>
+            ⚠ {overdueOrders.length} work order(s) met overschreden due date!
+          </strong>
           <ul style={{ margin: "8px 0 0", paddingLeft: "20px" }}>
             {overdueOrders.map((o) => (
               <li key={o.work_order_id} style={{ fontSize: "13px" }}>
@@ -281,27 +368,31 @@ export default function CapacityPage() {
       <section style={{ marginTop: "2rem", borderTop: "2px solid #eee", paddingTop: "1.5rem" }}>
         <h2>Afwezigheden</h2>
 
-        {absences.length > 0 ? (
+        {groupedAbsences.length > 0 ? (
           <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "12px" }}>
             <thead>
               <tr>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Engineer</th>
-                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Datum</th>
+                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Van</th>
+                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Tot en met</th>
+                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Aantal dagen</th>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Reden</th>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}></th>
               </tr>
             </thead>
             <tbody>
-              {absences.map((a) => {
+              {groupedAbsences.map((a) => {
                 const eng = engineers.find((e) => e.id === a.engineer_id);
                 return (
-                  <tr key={a.id}>
+                  <tr key={a.key}>
                     <td style={cellStyle}>{eng?.name || "Onbekend"}</td>
-                    <td style={cellStyle}>{formatDate(a.absence_date)}</td>
+                    <td style={cellStyle}>{formatDate(a.start_date)}</td>
+                    <td style={cellStyle}>{formatDate(a.end_date)}</td>
+                    <td style={cellStyle}>{a.days}</td>
                     <td style={cellStyle}>{a.reason || "–"}</td>
                     <td style={cellStyle}>
                       <button
-                        onClick={() => removeAbsence(a.id)}
+                        onClick={() => removeAbsence(a.group_id, a.ids)}
                         style={{ ...buttonStyle, backgroundColor: "#dc2626", fontSize: "11px", padding: "4px 10px", marginTop: 0 }}
                       >
                         Verwijderen
@@ -331,12 +422,21 @@ export default function CapacityPage() {
             </select>
           </div>
           <div>
-            <label style={labelStyle}>Datum</label>
+            <label style={labelStyle}>Van</label>
             <input
               type="date"
               style={inputStyle}
               value={absenceDate}
               onChange={(e) => setAbsenceDate(e.target.value)}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Tot en met</label>
+            <input
+              type="date"
+              style={inputStyle}
+              value={absenceEndDate}
+              onChange={(e) => setAbsenceEndDate(e.target.value)}
             />
           </div>
           <div>

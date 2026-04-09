@@ -296,9 +296,13 @@ export function calculateWeekCapacity(
   // Afronden en status berekenen
   for (const week of weeks) {
     week.requiredHours = Math.round(week.requiredHours * 10) / 10;
-    if (week.availableHours > 0) {
+
+    if (week.availableHours === 0) {
+      week.percentage = week.requiredHours > 0 ? 100 : 0;
+    } else {
       week.percentage = Math.round((week.requiredHours / week.availableHours) * 100);
     }
+
     if (week.percentage >= 100) week.status = "red";
     else if (week.percentage >= 80) week.status = "orange";
     else week.status = "green";
