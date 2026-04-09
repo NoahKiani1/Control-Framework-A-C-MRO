@@ -122,6 +122,7 @@ export default function OfficeUpdatePage() {
         action_closed: true,
         hold_reason: "",
         required_next_action: "",
+        action_owner: "",
       });
     } else {
       setForm({
@@ -364,7 +365,7 @@ export default function OfficeUpdatePage() {
               onChange={(e) => setActionStatus(e.target.value)}
             >
               <option value="Open">Open</option>
-              <option value="Done">Done — maakt hold reason en actie automatisch leeg</option>
+              <option value="Done">Done — maakt hold reason, actie en owner automatisch leeg</option>
             </select>
 
             {form.hold_reason && (
