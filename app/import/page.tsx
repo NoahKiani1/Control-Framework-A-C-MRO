@@ -62,15 +62,19 @@ export default function ImportPage() {
   const [newOrders, setNewOrders] = useState<ParsedRow[]>([]);
   const [existingOrders, setExistingOrders] = useState<ParsedRow[]>([]);
   const [oldIds, setOldIds] = useState<string[]>([]);
+  const [closedIds, setClosedIds] = useState<string[]>([]);
   const [makeNewActive, setMakeNewActive] = useState(false);
   const [fileName, setFileName] = useState("");
   const [tooOld, setTooOld] = useState(0);
   const [skipped, setSkipped] = useState(0);
+  const [closedSkipped, setClosedSkipped] = useState(0);
   const [results, setResults] = useState<{
     processed: number;
     inserted: number;
     updated: number;
     deleted: number;
+    closedRemoved: number;
+    closedSkipped: number;
     tooOld: number;
     skipped: number;
   } | null>(null);
@@ -89,7 +93,9 @@ export default function ImportPage() {
 
     let skipCount = 0;
     let oldCount = 0;
+    let closedCount = 0;
     const tempOldIds: string[] = [];
+    const tempClosedIds: string[] = [];
     const parsed: ParsedRow[] = [];
 
     for (const row of rows) {
@@ -105,18 +111,25 @@ export default function ImportPage() {
         continue;
       }
 
+      const closeDate = parseExcelDate(row["Close Date"]);
+
+      if (closeDate) {
+        tempClosedIds.push(workOrderId);
+        closedCount++;
+        continue;
+      }
+
       const customer = String(row["Customer"] || "").trim();
       const rfqState = String(row["RFQ State"] || "").trim();
       const compType = String(row["Comp. Type"] || "").trim();
       const description = String(row["Description"] || "").trim();
-      const closeDate = parseExcelDate(row["Close Date"]);
 
       parsed.push({
         work_order_id: workOrderId,
         customer: customer || null,
         rfq_state: rfqState || null,
         last_system_update: parseExcelDate(row["LastUpdatedOn"]),
-        is_open: !closeDate,
+        is_open: true,
         work_order_type: mapWorkOrderType(compType, description),
       });
     }
@@ -124,6 +137,8 @@ export default function ImportPage() {
     setSkipped(skipCount);
     setTooOld(oldCount);
     setOldIds(tempOldIds);
+    setClosedIds(tempClosedIds);
+    setClosedSkipped(closedCount);
 
     setStatus("Bestaande orders controleren...");
     const ids = parsed.map((r) => r.work_order_id);
@@ -149,6 +164,7 @@ export default function ImportPage() {
     const batchSize = 500;
     let updated = 0;
 
+    // 1. Update bestaande orders (alleen systeemvelden)
     for (let i = 0; i < existingOrders.length; i += batchSize) {
       const batch = existingOrders.slice(i, i + batchSize);
       const { error } = await supabase
@@ -165,8 +181,8 @@ export default function ImportPage() {
       updated += batch.length;
     }
 
+    // 2. Insert nieuwe orders
     let inserted = 0;
-
     for (let i = 0; i < newOrders.length; i += batchSize) {
       const batch = newOrders.slice(i, i + batchSize).map((r) => ({
         ...r,
@@ -184,7 +200,7 @@ export default function ImportPage() {
       inserted += batch.length;
     }
 
-    // Verwijder orders ouder dan 1 jaar uit de database
+    // 3. Verwijder orders ouder dan 1 jaar
     let deleted = 0;
     for (let i = 0; i < oldIds.length; i += batchSize) {
       const batch = oldIds.slice(i, i + batchSize);
@@ -192,19 +208,35 @@ export default function ImportPage() {
       deleted += batch.length;
     }
 
+    // 4. Verwijder gesloten work orders uit database (op basis van Excel Close Date)
+    let closedRemoved = 0;
+    for (let i = 0; i < closedIds.length; i += batchSize) {
+      const batch = closedIds.slice(i, i + batchSize);
+      const { count } = await supabase
+        .from("work_orders")
+        .delete({ count: "exact" })
+        .in("work_order_id", batch);
+      closedRemoved += count || 0;
+    }
+
+    // 5. Verwijder oude import logs en maak nieuwe aan
+    await supabase.from("import_runs").delete().neq("id", 0);
+
     await supabase.from("import_runs").insert({
       filename: fileName,
-      rows_processed: newOrders.length + existingOrders.length + tooOld + skipped,
+      rows_processed: newOrders.length + existingOrders.length + tooOld + skipped + closedSkipped,
       rows_inserted: inserted,
       rows_updated: updated,
       status: "done",
     });
 
     setResults({
-      processed: newOrders.length + existingOrders.length + tooOld + skipped,
+      processed: newOrders.length + existingOrders.length + tooOld + skipped + closedSkipped,
       inserted,
       updated,
       deleted,
+      closedRemoved,
+      closedSkipped,
       tooOld,
       skipped,
     });
@@ -229,7 +261,7 @@ export default function ImportPage() {
 
       {step === "upload" && (
         <>
-          <p>Upload een AcMP Excel-export (.xlsx). Werkorders ouder dan 1 jaar worden verwijderd. Gesloten orders worden automatisch gemarkeerd.</p>
+          <p>Upload een AcMP Excel-export (.xlsx). Gesloten en oude orders worden automatisch overgeslagen en verwijderd.</p>
           <label style={{
             display: "inline-block",
             margin: "1rem 0",
@@ -258,8 +290,9 @@ export default function ImportPage() {
             <br />
             {existingOrders.length} bestaande orders (systeemvelden worden bijgewerkt, handmatige velden blijven intact)
             <br />
-            <strong>{newOrders.length} nieuwe orders gevonden</strong>
+            <strong>{newOrders.length} nieuwe open orders gevonden</strong>
             <br />
+            {closedSkipped > 0 && <>{closedSkipped} gesloten orders (worden overgeslagen + verwijderd uit database)<br /></>}
             {tooOld > 0 && <>{tooOld} orders ouder dan 1 jaar (worden verwijderd)<br /></>}
             {skipped > 0 && <>{skipped} overgeslagen (geen Work Order ID)<br /></>}
           </div>
@@ -296,6 +329,8 @@ export default function ImportPage() {
               <tr><td style={{ padding: "4px 12px" }}>Rijen in bestand</td><td>{results.processed}</td></tr>
               <tr><td style={{ padding: "4px 12px" }}>Nieuw ingevoegd</td><td>{results.inserted}</td></tr>
               <tr><td style={{ padding: "4px 12px" }}>Bijgewerkt</td><td>{results.updated}</td></tr>
+              <tr><td style={{ padding: "4px 12px" }}>Gesloten orders overgeslagen</td><td>{results.closedSkipped}</td></tr>
+              <tr><td style={{ padding: "4px 12px" }}>Gesloten orders verwijderd uit database</td><td>{results.closedRemoved}</td></tr>
               <tr><td style={{ padding: "4px 12px" }}>Verwijderd (ouder dan 1 jaar)</td><td>{results.deleted}</td></tr>
               <tr><td style={{ padding: "4px 12px" }}>Overgeslagen (geen ID)</td><td>{results.skipped}</td></tr>
             </tbody>

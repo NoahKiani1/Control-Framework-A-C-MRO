@@ -1,3 +1,5 @@
+import { PROCESS_STEPS } from "@/lib/process-steps";
+
 // === STANDAARD MANUREN PER TYPE (dummy, later aanpasbaar) ===
 
 export const TOTAL_HOURS: Record<string, number> = {
@@ -70,13 +72,7 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
 
 // === PROCESS STAP VOLGORDE ===
 
-export const STEP_ORDER: Record<string, string[]> = {
-  "Wheel Repair": ["Intake", "Disassembly", "Cleaning", "Inspection", "Eddy Current", "Repair", "Assembly", "EASA-Form 1"],
-  "Wheel Overhaul": ["Intake", "Disassembly", "Cleaning", "Paint Blasting", "Inspection", "Penetrant NDT Inspection", "Eddy Current", "Repair", "Painting", "Assembly", "EASA-Form 1"],
-  "Brake Repair": ["Intake", "Disassembly", "Cleaning", "Inspection", "Eddy Current", "Repair", "Assembly", "EASA-Form 1"],
-  "Brake Overhaul": ["Intake", "Disassembly", "Cleaning", "Paint Blasting", "Inspection", "Penetrant NDT Inspection", "Eddy Current", "Repair", "Painting", "Assembly", "EASA-Form 1"],
-  "Battery": ["Disassembly", "Cleaning", "Inspection", "Repair", "Assembly", "EASA-Form 1"],
-};
+export const STEP_ORDER: Record<string, string[]> = PROCESS_STEPS;
 
 // === BEREKENINGEN ===
 

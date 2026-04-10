@@ -57,6 +57,10 @@ export default function CapacityPage() {
   const [overdueOrders, setOverdueOrders] = useState<OrderCapacity[]>([]);
 
   async function loadData() {
+    // Cleanup verlopen absences
+    const today = new Date().toISOString().split("T")[0];
+    await supabase.from("engineer_absences").delete().lt("absence_date", today);
+
     const { data: eng } = await supabase
       .from("engineers")
       .select("*")

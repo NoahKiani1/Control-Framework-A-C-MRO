@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getProcessStepsForType } from "@/lib/process-steps";
 import { supabase } from "@/lib/supabase";
 
 type WorkOrder = {
@@ -11,14 +12,6 @@ type WorkOrder = {
   hold_reason: string | null;
   priority: string | null;
   assigned_person_team: string | null;
-};
-
-const PROCESS_STEPS: Record<string, string[]> = {
-  "Wheel Repair": ["Intake", "Disassembly", "Cleaning", "Inspection", "Eddy Current", "Repair", "Assembly", "EASA-Form 1"],
-  "Wheel Overhaul": ["Intake", "Disassembly", "Cleaning", "Paint Blasting", "Inspection", "Penetrant NDT Inspection", "Eddy Current", "Repair", "Painting", "Assembly", "EASA-Form 1"],
-  "Brake Repair": ["Intake", "Disassembly", "Cleaning", "Inspection", "Eddy Current", "Repair", "Assembly", "EASA-Form 1"],
-  "Brake Overhaul": ["Intake", "Disassembly", "Cleaning", "Paint Blasting", "Inspection", "Penetrant NDT Inspection", "Eddy Current", "Repair", "Painting", "Assembly", "EASA-Form 1"],
-  "Battery": ["Disassembly", "Cleaning", "Inspection", "Repair", "Assembly", "EASA-Form 1"],
 };
 
 export default function ShopUpdatePage() {
@@ -82,9 +75,7 @@ export default function ShopUpdatePage() {
   if (loading) return <p style={{ padding: "2rem" }}>Laden...</p>;
 
   const selectedOrder = orders.find((o) => o.work_order_id === selectedId);
-  const steps = selectedOrder?.work_order_type
-    ? PROCESS_STEPS[selectedOrder.work_order_type] || []
-    : [];
+  const steps = getProcessStepsForType(selectedOrder?.work_order_type || null);
 
   const labelStyle: React.CSSProperties = {
     display: "block",

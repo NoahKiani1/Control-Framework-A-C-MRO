@@ -1,6 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  blockReason,
+  formatDate,
+  isBlocked,
+  latestUpdate,
+  sortOrders,
+} from "@/lib/work-order-rules";
 import { supabase } from "@/lib/supabase";
 
 type WorkOrder = {
@@ -16,49 +23,6 @@ type WorkOrder = {
   last_system_update: string | null;
 };
 
-function isBlocked(o: WorkOrder): boolean {
-  if (o.hold_reason) return true;
-  if (o.rfq_state === "RFQ Send" || o.rfq_state === "RFQ Rejected") return true;
-  return false;
-}
-
-function sortOrders(orders: WorkOrder[]): WorkOrder[] {
-  return [...orders].sort((a, b) => {
-    const rank = (o: WorkOrder) => {
-      if (isBlocked(o)) return 5;
-      if (o.priority === "AOG") return 1;
-      if (o.priority === "Yes") return 2;
-      if (o.due_date) return 3;
-      return 4;
-    };
-    const ra = rank(a);
-    const rb = rank(b);
-    if (ra !== rb) return ra - rb;
-    if (ra === 3 && a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
-    return 0;
-  });
-}
-
-function latestUpdate(system: string | null, manual: string | null): string | null {
-  if (!system && !manual) return null;
-  if (!system) return manual;
-  if (!manual) return system;
-  return new Date(system) > new Date(manual) ? system : manual;
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "–";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
-
-function blockReason(o: WorkOrder): string {
-  if (o.hold_reason) return o.hold_reason;
-  if (o.rfq_state === "RFQ Send") return "RFQ verstuurd";
-  if (o.rfq_state === "RFQ Rejected") return "RFQ afgewezen";
-  return "–";
-}
-
 export default function PlanningPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,17 +31,27 @@ export default function PlanningPage() {
     async function load() {
       const { data } = await supabase
         .from("work_orders")
-        .select("work_order_id, customer, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, last_manual_update, last_system_update")
+        .select(
+          "work_order_id, customer, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, last_manual_update, last_system_update",
+        )
         .eq("is_open", true)
         .eq("is_active", true);
-      const filtered = ((data as WorkOrder[]) || []).filter((o) => o.current_process_step !== "EASA-Form 1");
+
+      const filtered = ((data as WorkOrder[]) || []).filter(
+        (o) => o.current_process_step !== "EASA-Form 1",
+      );
+
       setOrders(sortOrders(filtered));
       setLoading(false);
     }
+
     load();
   }, []);
 
   if (loading) return <p style={{ padding: "2rem" }}>Laden...</p>;
+
+  const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
+  const blockedOrders = orders.filter((o) => isBlocked(o));
 
   const cellStyle: React.CSSProperties = {
     padding: "6px 10px",
@@ -101,17 +75,8 @@ export default function PlanningPage() {
     return "white";
   }
 
-  return (
-    <main style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ margin: 0 }}>Shared Planning</h1>
-        <a href="/">← Home</a>
-      </div>
-
-      <p style={{ marginTop: "1rem", color: "#666" }}>
-        {orders.length} actieve work orders
-      </p>
-
+  function renderOrdersTable(list: WorkOrder[]) {
+    return (
       <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
@@ -129,10 +94,17 @@ export default function PlanningPage() {
             </tr>
           </thead>
           <tbody>
-            {orders.map((o) => {
-              const lastUpdate = latestUpdate(o.last_system_update, o.last_manual_update);
+            {list.map((o) => {
+              const lastUpdate = latestUpdate(
+                o.last_system_update,
+                o.last_manual_update,
+              );
+
               return (
-                <tr key={o.work_order_id} style={{ backgroundColor: rowColor(o) }}>
+                <tr
+                  key={o.work_order_id}
+                  style={{ backgroundColor: rowColor(o) }}
+                >
                   <td style={cellStyle}>{o.work_order_id}</td>
                   <td style={cellStyle}>{o.customer || "–"}</td>
                   <td style={cellStyle}>{formatDate(o.due_date)}</td>
@@ -141,7 +113,11 @@ export default function PlanningPage() {
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
                   <td style={cellStyle}>{isBlocked(o) ? "Ja" : "Nee"}</td>
                   <td style={cellStyle}>{blockReason(o)}</td>
-                  <td style={cellStyle}>{o.rfq_state && o.rfq_state !== "undefined" ? o.rfq_state : "No RFQ"}</td>
+                  <td style={cellStyle}>
+                    {o.rfq_state && o.rfq_state !== "undefined"
+                      ? o.rfq_state
+                      : "No RFQ"}
+                  </td>
                   <td style={cellStyle}>{formatDate(lastUpdate)}</td>
                 </tr>
               );
@@ -149,6 +125,39 @@ export default function PlanningPage() {
           </tbody>
         </table>
       </div>
+    );
+  }
+
+  return (
+    <main style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <h1 style={{ margin: 0 }}>Shared Planning</h1>
+        <a href="/">← Home</a>
+      </div>
+
+      <p style={{ marginTop: "1rem", color: "#666" }}>
+        {orders.length} actieve work orders
+      </p>
+
+      <section style={{ marginTop: "1rem" }}>
+        <h2 style={{ marginBottom: "0.25rem" }}>
+          Niet geblokkeerde work orders ({nonBlockedOrders.length})
+        </h2>
+        {renderOrdersTable(nonBlockedOrders)}
+      </section>
+
+      <section style={{ marginTop: "2rem" }}>
+        <h2 style={{ marginBottom: "0.25rem" }}>
+          Geblokkeerde work orders ({blockedOrders.length})
+        </h2>
+        {renderOrdersTable(blockedOrders)}
+      </section>
     </main>
   );
 }
