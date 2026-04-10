@@ -26,33 +26,42 @@ export default function ShopUpdatePage() {
     async function load() {
       const { data } = await supabase
         .from("work_orders")
-        .select("work_order_id, customer, work_order_type, current_process_step, hold_reason, priority, assigned_person_team")
+        .select(
+          "work_order_id, customer, work_order_type, current_process_step, hold_reason, priority, assigned_person_team",
+        )
         .eq("is_open", true)
         .eq("is_active", true)
         .order("work_order_id", { ascending: false });
+
       setOrders((data as WorkOrder[]) || []);
       setLoading(false);
     }
+
     load();
   }, []);
 
   function selectOrder(id: string) {
     const order = orders.find((o) => o.work_order_id === id);
     if (!order) return;
+
     setSelectedId(id);
-    setProcessStep(order.current_process_step || "");
+    setProcessStep(order.current_process_step === "Intake" ? "" : order.current_process_step || "");
     setHoldReason(order.hold_reason || "");
     setSaveStatus("");
   }
 
   async function saveUpdate() {
     if (!selectedId) return;
+
+    const selectedOrder = orders.find((o) => o.work_order_id === selectedId);
+    const nextProcessStep = processStep || selectedOrder?.current_process_step || null;
+
     setSaveStatus("Opslaan...");
 
     const { error } = await supabase
       .from("work_orders")
       .update({
-        current_process_step: processStep || null,
+        current_process_step: nextProcessStep,
         hold_reason: holdReason || null,
         last_manual_update: new Date().toISOString(),
       })
@@ -65,9 +74,13 @@ export default function ShopUpdatePage() {
       setOrders((prev) =>
         prev.map((o) =>
           o.work_order_id === selectedId
-            ? { ...o, current_process_step: processStep || null, hold_reason: holdReason || null }
-            : o
-        )
+            ? {
+                ...o,
+                current_process_step: nextProcessStep,
+                hold_reason: holdReason || null,
+              }
+            : o,
+        ),
       );
     }
   }
@@ -75,7 +88,8 @@ export default function ShopUpdatePage() {
   if (loading) return <p style={{ padding: "2rem" }}>Laden...</p>;
 
   const selectedOrder = orders.find((o) => o.work_order_id === selectedId);
-  const steps = getProcessStepsForType(selectedOrder?.work_order_type || null);
+  const allSteps = getProcessStepsForType(selectedOrder?.work_order_type || null);
+  const selectableSteps = allSteps.filter((s) => s !== "Intake");
 
   const labelStyle: React.CSSProperties = {
     display: "block",
@@ -94,6 +108,12 @@ export default function ShopUpdatePage() {
   };
 
   const inputStyle: React.CSSProperties = { ...selectStyle };
+
+  const helperStyle: React.CSSProperties = {
+    marginTop: "4px",
+    fontSize: "12px",
+    color: "#666",
+  };
 
   const buttonStyle: React.CSSProperties = {
     padding: "12px 24px",
@@ -141,32 +161,47 @@ export default function ShopUpdatePage() {
 
       {selectedId && selectedOrder && (
         <>
-          <div style={{
-            marginTop: "12px",
-            padding: "10px 14px",
-            backgroundColor: "#f5f5f5",
-            borderRadius: "6px",
-            fontSize: "14px",
-          }}>
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "10px 14px",
+              backgroundColor: "#f5f5f5",
+              borderRadius: "6px",
+              fontSize: "14px",
+            }}
+          >
             <strong>{selectedOrder.work_order_id}</strong> — {selectedOrder.customer || "–"}
             <br />
             Type: {selectedOrder.work_order_type || "Onbekend"}
             {selectedOrder.assigned_person_team && <> | Toegewezen: {selectedOrder.assigned_person_team}</>}
-            {selectedOrder.current_process_step && <> | Huidige stap: <strong>{selectedOrder.current_process_step}</strong></>}
+            {selectedOrder.current_process_step && (
+              <>
+                {" "}
+                | Huidige stap: <strong>{selectedOrder.current_process_step}</strong>
+              </>
+            )}
           </div>
 
           <label style={labelStyle}>Processtap</label>
-          {steps.length > 0 ? (
-            <select
-              style={selectStyle}
-              value={processStep}
-              onChange={(e) => setProcessStep(e.target.value)}
-            >
-              <option value="">-- Kies stap --</option>
-              {steps.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+          {selectableSteps.length > 0 ? (
+            <>
+              <select
+                style={selectStyle}
+                value={processStep}
+                onChange={(e) => setProcessStep(e.target.value)}
+              >
+                <option value="">-- Kies volgende stap --</option>
+                {selectableSteps.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+
+              <div style={helperStyle}>
+                <strong>Intake</strong> wordt automatisch gezet zodra een nieuwe work order actief wordt.
+              </div>
+            </>
           ) : (
             <p style={{ color: "#e67e22", fontSize: "14px", marginTop: "4px" }}>
               ⚠ Geen processtappen beschikbaar — work order type is niet ingesteld.
@@ -183,7 +218,16 @@ export default function ShopUpdatePage() {
           />
 
           {holdReason && (
-            <p style={{ marginTop: "8px", padding: "8px 12px", backgroundColor: "#fff0f0", border: "1px solid #e88", borderRadius: "4px", fontSize: "13px" }}>
+            <p
+              style={{
+                marginTop: "8px",
+                padding: "8px 12px",
+                backgroundColor: "#fff0f0",
+                border: "1px solid #e88",
+                borderRadius: "4px",
+                fontSize: "13px",
+              }}
+            >
               ⚠ Deze work order wordt <strong>geblokkeerd</strong>
             </p>
           )}
@@ -192,7 +236,11 @@ export default function ShopUpdatePage() {
             💾 Update opslaan
           </button>
 
-          {saveStatus && <p style={{ marginTop: "8px", textAlign: "center" }}><strong>{saveStatus}</strong></p>}
+          {saveStatus && (
+            <p style={{ marginTop: "8px", textAlign: "center" }}>
+              <strong>{saveStatus}</strong>
+            </p>
+          )}
         </>
       )}
     </main>

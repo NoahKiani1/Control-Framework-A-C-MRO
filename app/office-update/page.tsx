@@ -17,6 +17,7 @@ type WorkOrder = {
   action_closed: boolean | null;
   is_active: boolean;
   work_order_type: string | null;
+  current_process_step: string | null;
 };
 
 type FormState = {
@@ -34,7 +35,7 @@ type FormState = {
 const EMPTY_FORM: FormState = {
   due_date: "",
   priority: "No",
-  assigned_person_team: "Shop",
+  assigned_person_team: "",
   hold_reason: "",
   required_next_action: "",
   action_owner: "",
@@ -57,7 +58,7 @@ export default function OfficeUpdatePage() {
       const { data: wo } = await supabase
         .from("work_orders")
         .select(
-          "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, required_next_action, action_owner, action_status, action_closed, is_active, work_order_type",
+          "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, required_next_action, action_owner, action_status, action_closed, is_active, work_order_type, current_process_step",
         )
         .eq("is_open", true)
         .order("work_order_id", { ascending: false });
@@ -76,18 +77,26 @@ export default function OfficeUpdatePage() {
     [orders, selectedId],
   );
   const hasHoldReason = Boolean(form.hold_reason.trim());
+  const dueDateRequired = form.priority === "Yes" || form.priority === "AOG";
 
   async function activateOrder() {
     if (!activateId) return;
 
+    const order = orders.find((o) => o.work_order_id === activateId);
+    const preservedStep = order?.current_process_step?.trim() || "";
+    const nextProcessStep = preservedStep || "Intake";
+
     setActivateStatus("Activeren...");
+
+    const payload = {
+      is_active: true,
+      current_process_step: nextProcessStep,
+      last_manual_update: new Date().toISOString(),
+    };
 
     const { error } = await supabase
       .from("work_orders")
-      .update({
-        is_active: true,
-        last_manual_update: new Date().toISOString(),
-      })
+      .update(payload)
       .eq("work_order_id", activateId);
 
     if (error) {
@@ -98,7 +107,9 @@ export default function OfficeUpdatePage() {
     setActivateStatus("✅ Geactiveerd!");
     setOrders((prev) =>
       prev.map((o) =>
-        o.work_order_id === activateId ? { ...o, is_active: true } : o,
+        o.work_order_id === activateId
+          ? { ...o, is_active: true, current_process_step: nextProcessStep }
+          : o,
       ),
     );
     setActivateId("");
@@ -114,7 +125,7 @@ export default function OfficeUpdatePage() {
     setForm({
       due_date: order.due_date || "",
       priority: order.priority || "No",
-      assigned_person_team: order.assigned_person_team || "Shop",
+      assigned_person_team: order.assigned_person_team || "",
       hold_reason: order.hold_reason || "",
       required_next_action: orderHasHoldReason ? order.required_next_action || "" : "",
       action_owner: orderHasHoldReason ? order.action_owner || "" : "",
@@ -174,6 +185,11 @@ export default function OfficeUpdatePage() {
 
   async function saveOrder() {
     if (!selectedId) return;
+
+    if ((form.priority === "Yes" || form.priority === "AOG") && !form.due_date) {
+      setSaveStatus("❌ Due Date is verplicht bij Priority Yes of AOG.");
+      return;
+    }
 
     const normalizedAssignedPersonTeam = form.assigned_person_team.trim() || "Shop";
     const normalizedHoldReason = form.hold_reason.trim();
@@ -272,6 +288,13 @@ export default function OfficeUpdatePage() {
     color: "#666",
   };
 
+  const errorHelperStyle: React.CSSProperties = {
+    marginTop: "4px",
+    fontSize: "12px",
+    color: "#b91c1c",
+    fontWeight: "bold",
+  };
+
   const buttonStyle: React.CSSProperties = {
     padding: "10px 20px",
     backgroundColor: "#0070f3",
@@ -324,6 +347,11 @@ export default function OfficeUpdatePage() {
             </option>
           ))}
         </select>
+
+        <div style={helperStyle}>
+          Nieuwe actieve orders zonder processtap starten automatisch op <strong>Intake</strong>.
+          Orders die al verder waren, behouden hun huidige stap.
+        </div>
 
         {activateId && (
           <button style={buttonStyle} onClick={activateOrder}>
@@ -378,12 +406,20 @@ export default function OfficeUpdatePage() {
             <label style={labelStyle}>Due Date</label>
             <input
               type="date"
-              style={inputStyle}
+              style={{
+                ...inputStyle,
+                borderColor: dueDateRequired && !form.due_date ? "#dc2626" : "#ccc",
+              }}
               value={form.due_date}
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, due_date: e.target.value }))
               }
             />
+            {dueDateRequired && !form.due_date && (
+              <div style={errorHelperStyle}>
+                Due Date is verplicht wanneer Priority op Yes of AOG staat.
+              </div>
+            )}
 
             <label style={labelStyle}>Priority</label>
             <select
@@ -397,6 +433,11 @@ export default function OfficeUpdatePage() {
               <option value="Yes">Yes</option>
               <option value="AOG">AOG</option>
             </select>
+            {dueDateRequired && (
+              <div style={helperStyle}>
+                Bij <strong>Yes</strong> of <strong>AOG</strong> is een Due Date verplicht.
+              </div>
+            )}
 
             <label style={labelStyle}>Assigned Person/Team</label>
             <input

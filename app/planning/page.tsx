@@ -75,7 +75,7 @@ export default function PlanningPage() {
     return "white";
   }
 
-  function renderOrdersTable(list: WorkOrder[]) {
+  function renderNonBlockedOrdersTable(list: WorkOrder[]) {
     return (
       <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
@@ -87,7 +87,55 @@ export default function PlanningPage() {
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Toegewezen</th>
               <th style={headerStyle}>Processtap</th>
-              <th style={headerStyle}>Blocked</th>
+              <th style={headerStyle}>RFQ</th>
+              <th style={headerStyle}>Laatste update</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((o) => {
+              const lastUpdate = latestUpdate(
+                o.last_system_update,
+                o.last_manual_update,
+              );
+
+              return (
+                <tr
+                  key={o.work_order_id}
+                  style={{ backgroundColor: rowColor(o) }}
+                >
+                  <td style={cellStyle}>{o.work_order_id}</td>
+                  <td style={cellStyle}>{o.customer || "–"}</td>
+                  <td style={cellStyle}>{formatDate(o.due_date)}</td>
+                  <td style={cellStyle}>{o.priority || "No"}</td>
+                  <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
+                  <td style={cellStyle}>{o.current_process_step || "–"}</td>
+                  <td style={cellStyle}>
+                    {o.rfq_state && o.rfq_state !== "undefined"
+                      ? o.rfq_state
+                      : "No RFQ"}
+                  </td>
+                  <td style={cellStyle}>{formatDate(lastUpdate)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  function renderBlockedOrdersTable(list: WorkOrder[]) {
+    return (
+      <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead>
+            <tr>
+              <th style={headerStyle}>WO</th>
+              <th style={headerStyle}>Klant</th>
+              <th style={headerStyle}>Due Date</th>
+              <th style={headerStyle}>Prio</th>
+              <th style={headerStyle}>Toegewezen</th>
+              <th style={headerStyle}>Processtap</th>
               <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Laatste update</th>
@@ -111,7 +159,6 @@ export default function PlanningPage() {
                   <td style={cellStyle}>{o.priority || "No"}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                  <td style={cellStyle}>{isBlocked(o) ? "Ja" : "Nee"}</td>
                   <td style={cellStyle}>{blockReason(o)}</td>
                   <td style={cellStyle}>
                     {o.rfq_state && o.rfq_state !== "undefined"
@@ -149,14 +196,14 @@ export default function PlanningPage() {
         <h2 style={{ marginBottom: "0.25rem" }}>
           Niet geblokkeerde work orders ({nonBlockedOrders.length})
         </h2>
-        {renderOrdersTable(nonBlockedOrders)}
+        {renderNonBlockedOrdersTable(nonBlockedOrders)}
       </section>
 
       <section style={{ marginTop: "2rem" }}>
         <h2 style={{ marginBottom: "0.25rem" }}>
           Geblokkeerde work orders ({blockedOrders.length})
         </h2>
-        {renderOrdersTable(blockedOrders)}
+        {renderBlockedOrdersTable(blockedOrders)}
       </section>
     </main>
   );
