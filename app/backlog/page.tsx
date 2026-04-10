@@ -29,7 +29,7 @@ export default function BacklogPage() {
     load();
   }, []);
 
-  if (loading) return <p style={{ padding: "2rem" }}>Laden...</p>;
+  if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
 
   const cellStyle: React.CSSProperties = {
     padding: "6px 10px",
@@ -54,7 +54,7 @@ export default function BacklogPage() {
       </div>
 
       <p style={{ marginTop: "1rem", color: "#666" }}>
-        {orders.length} niet-actieve open work orders
+        {orders.length} inactive open work orders
       </p>
 
       <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
@@ -62,10 +62,10 @@ export default function BacklogPage() {
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>
-              <th style={headerStyle}>Klant</th>
+              <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Type</th>
               <th style={headerStyle}>RFQ</th>
-              <th style={headerStyle}>Laatste systeem update</th>
+              <th style={headerStyle}>Last System Update</th>
             </tr>
           </thead>
           <tbody>
@@ -75,7 +75,7 @@ export default function BacklogPage() {
                 <td style={cellStyle}>{o.customer || "�"}</td>
                 <td style={cellStyle}>{o.work_order_type || "�"}</td>
                 <td style={cellStyle}>{o.rfq_state && o.rfq_state !== "undefined" ? o.rfq_state : "No RFQ"}</td>
-                <td style={cellStyle}>{o.last_system_update ? new Date(o.last_system_update).toLocaleDateString("nl-NL") : "�"}</td>
+                <td style={cellStyle}>{o.last_system_update ? new Date(o.last_system_update).toLocaleDateString("en-GB") : "�"}</td>
               </tr>
             ))}
           </tbody>

@@ -57,7 +57,7 @@ export default function CapacityPage() {
   const [overdueOrders, setOverdueOrders] = useState<OrderCapacity[]>([]);
 
   async function loadData() {
-    // Cleanup verlopen absences
+    // Cleanup expired absences
     const today = new Date().toISOString().split("T")[0];
     await supabase.from("engineer_absences").delete().lt("absence_date", today);
 
@@ -87,7 +87,7 @@ export default function CapacityPage() {
     setAbsences(absData);
     setOrders(woData);
 
-    // Bereken capaciteit
+    // Calculate capacity
     const absenceDates = absData.map((a) => {
       const d = new Date(a.absence_date);
       d.setHours(0, 0, 0, 0);
@@ -150,9 +150,9 @@ export default function CapacityPage() {
     });
 
     if (error) {
-      setSaveStatus(`Fout: ${error.message}`);
+      setSaveStatus(`Error: ${error.message}`);
     } else {
-      setSaveStatus(`✅ ${dates.length} dag(en) toegevoegd`);
+      setSaveStatus(`✅ ${dates.length} day(s) added`);
       setAbsenceDate("");
       setAbsenceEndDate("");
       setAbsenceReason("");
@@ -176,11 +176,11 @@ export default function CapacityPage() {
     loadData();
   }
 
-  if (loading) return <p style={{ padding: "2rem" }}>Laden...</p>;
+  if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
 
   function formatDate(dateStr: string): string {
     const d = new Date(dateStr);
-    return d.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" });
+    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
   }
 
   function statusColor(status: string): string {
@@ -236,13 +236,13 @@ export default function CapacityPage() {
   return (
     <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "900px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ margin: 0 }}>Capaciteitsmanagement</h1>
+        <h1 style={{ margin: 0 }}>Capacity Management</h1>
         <a href="/">← Home</a>
       </div>
 
-      {/* Weekoverzicht */}
+      {/* Weekly Overview */}
       <section style={{ marginTop: "1.5rem" }}>
-        <h2>Weekoverzicht</h2>
+        <h2>Weekly Overview</h2>
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
           {weeks.map((w, i) => (
             <div
@@ -260,10 +260,10 @@ export default function CapacityPage() {
                 {w.weekLabel}
               </h3>
               <p style={{ margin: "4px 0", fontSize: "14px" }}>
-                Benodigd: <strong>{w.requiredHours}u</strong>
+                Required: <strong>{w.requiredHours}h</strong>
               </p>
               <p style={{ margin: "4px 0", fontSize: "14px" }}>
-                Beschikbaar: <strong>{w.availableHours}u</strong>
+                Available: <strong>{w.availableHours}h</strong>
               </p>
               <p
                 style={{
@@ -292,12 +292,12 @@ export default function CapacityPage() {
           }}
         >
           <strong style={{ color: "#dc2626" }}>
-            ⚠ {overdueOrders.length} work order(s) met overschreden due date!
+            ⚠ {overdueOrders.length} work order(s) past due date!
           </strong>
           <ul style={{ margin: "8px 0 0", paddingLeft: "20px" }}>
             {overdueOrders.map((o) => (
               <li key={o.work_order_id} style={{ fontSize: "13px" }}>
-                {o.work_order_id} — {o.customer || "–"} — due {formatDate(o.due_date)} — {o.remaining_hours}u resterend
+                {o.work_order_id} — {o.customer || "–"} — due {formatDate(o.due_date)} — {o.remaining_hours}h remaining
               </li>
             ))}
           </ul>
@@ -307,13 +307,13 @@ export default function CapacityPage() {
       {/* Order details */}
       {orderDetails.length > 0 && (
         <section style={{ marginTop: "1.5rem" }}>
-          <h2>Work Orders in capaciteitsberekening</h2>
+          <h2>Work Orders in capacity calculation</h2>
           <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%" }}>
               <thead>
                 <tr>
                   <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>WO</th>
-                  <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Klant</th>
+                  <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Customer</th>
                   <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Type</th>
                   <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Due Date</th>
                   <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Resterend</th>
@@ -348,14 +348,14 @@ export default function CapacityPage() {
               onClick={() => removeEngineer(e.id)}
               style={{ ...buttonStyle, backgroundColor: "#dc2626", fontSize: "11px", padding: "4px 10px", marginTop: 0 }}
             >
-              Verwijderen
+              Remove
             </button>
           </div>
         ))}
 
         <div style={{ display: "flex", gap: "8px", marginTop: "8px", alignItems: "end" }}>
           <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Nieuwe engineer</label>
+            <label style={labelStyle}>New engineer</label>
             <input
               type="text"
               style={inputStyle}
@@ -364,23 +364,23 @@ export default function CapacityPage() {
               placeholder="Naam..."
             />
           </div>
-          <button style={buttonStyle} onClick={addEngineer}>+ Toevoegen</button>
+          <button style={buttonStyle} onClick={addEngineer}>+ Add</button>
         </div>
       </section>
 
       {/* Absences */}
       <section style={{ marginTop: "2rem", borderTop: "2px solid #eee", paddingTop: "1.5rem" }}>
-        <h2>Afwezigheden</h2>
+        <h2>Absences</h2>
 
         {groupedAbsences.length > 0 ? (
           <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "12px" }}>
             <thead>
               <tr>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Engineer</th>
-                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Van</th>
-                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Tot en met</th>
+                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>From</th>
+                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Until (inclusive)</th>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Aantal dagen</th>
-                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Reden</th>
+                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Reason</th>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}></th>
               </tr>
             </thead>
@@ -399,7 +399,7 @@ export default function CapacityPage() {
                         onClick={() => removeAbsence(a.group_id, a.ids)}
                         style={{ ...buttonStyle, backgroundColor: "#dc2626", fontSize: "11px", padding: "4px 10px", marginTop: 0 }}
                       >
-                        Verwijderen
+                        Remove
                       </button>
                     </td>
                   </tr>
@@ -408,7 +408,7 @@ export default function CapacityPage() {
             </tbody>
           </table>
         ) : (
-          <p style={{ color: "#666", fontSize: "14px" }}>Geen afwezigheden gepland.</p>
+          <p style={{ color: "#666", fontSize: "14px" }}>No absences planned.</p>
         )}
 
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "end" }}>
@@ -419,14 +419,14 @@ export default function CapacityPage() {
               value={absenceEngineerId}
               onChange={(e) => setAbsenceEngineerId(e.target.value)}
             >
-              <option value="">-- Kies --</option>
+              <option value="">-- Select --</option>
               {engineers.map((e) => (
                 <option key={e.id} value={e.id}>{e.name}</option>
               ))}
             </select>
           </div>
           <div>
-            <label style={labelStyle}>Van</label>
+            <label style={labelStyle}>From</label>
             <input
               type="date"
               style={inputStyle}
@@ -435,7 +435,7 @@ export default function CapacityPage() {
             />
           </div>
           <div>
-            <label style={labelStyle}>Tot en met</label>
+            <label style={labelStyle}>Until (inclusive)</label>
             <input
               type="date"
               style={inputStyle}
@@ -444,7 +444,7 @@ export default function CapacityPage() {
             />
           </div>
           <div>
-            <label style={labelStyle}>Reden (optioneel)</label>
+            <label style={labelStyle}>Reason (optional)</label>
             <input
               type="text"
               style={inputStyle}
@@ -453,7 +453,7 @@ export default function CapacityPage() {
               placeholder="Bv. Ziek, Vakantie..."
             />
           </div>
-          <button style={buttonStyle} onClick={addAbsence}>+ Absence toevoegen</button>
+          <button style={buttonStyle} onClick={addAbsence}>+ Add absence</button>
         </div>
 
         {saveStatus && <p style={{ marginTop: "8px" }}><strong>{saveStatus}</strong></p>}

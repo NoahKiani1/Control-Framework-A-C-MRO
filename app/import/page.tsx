@@ -83,7 +83,7 @@ export default function ImportPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setStatus("Bestand wordt gelezen...");
+    setStatus("Reading file...");
     setFileName(file.name);
 
     const data = await file.arrayBuffer();
@@ -140,7 +140,7 @@ export default function ImportPage() {
     setClosedIds(tempClosedIds);
     setClosedSkipped(closedCount);
 
-    setStatus("Bestaande orders controleren...");
+    setStatus("Checking existing orders...");
     const ids = parsed.map((r) => r.work_order_id);
     const { data: existingData } = await supabase
       .from("work_orders")
@@ -161,12 +161,12 @@ export default function ImportPage() {
   }
 
   async function doImport() {
-    setStatus("Import loopt...");
+    setStatus("Importing...");
 
     const batchSize = 500;
     let updated = 0;
 
-    // 1. Update bestaande orders (alleen systeemvelden)
+    // 1. Update existing orders (system fields only)
     for (let i = 0; i < existingOrders.length; i += batchSize) {
       const batch = existingOrders.slice(i, i + batchSize);
       const { error } = await supabase
@@ -177,13 +177,13 @@ export default function ImportPage() {
         });
 
       if (error) {
-        setStatus(`Fout: ${error.message}`);
+        setStatus(`Error: ${error.message}`);
         return;
       }
       updated += batch.length;
     }
 
-    // 2. Insert nieuwe orders
+    // 2. Insert new orders
     let inserted = 0;
     for (let i = 0; i < newOrders.length; i += batchSize) {
       const batch = newOrders.slice(i, i + batchSize).map((r) => ({
@@ -197,13 +197,13 @@ export default function ImportPage() {
         .insert(batch);
 
       if (error) {
-        setStatus(`Fout: ${error.message}`);
+        setStatus(`Error: ${error.message}`);
         return;
       }
       inserted += batch.length;
     }
 
-    // 3. Verwijder orders ouder dan 1 jaar
+    // 3. Remove orders older than 1 year
     let deleted = 0;
     for (let i = 0; i < oldIds.length; i += batchSize) {
       const batch = oldIds.slice(i, i + batchSize);
@@ -211,7 +211,7 @@ export default function ImportPage() {
       deleted += batch.length;
     }
 
-    // 4. Verwijder gesloten work orders uit database (op basis van Excel Close Date)
+    // 4. Remove closed work orders from database (based on Excel Close Date)
     let closedRemoved = 0;
     for (let i = 0; i < closedIds.length; i += batchSize) {
       const batch = closedIds.slice(i, i + batchSize);
@@ -222,7 +222,7 @@ export default function ImportPage() {
       closedRemoved += count || 0;
     }
 
-    // 5. Verwijder oude import logs en maak nieuwe aan
+    // 5. Clean up old import logs and create new one
     await supabase.from("import_runs").delete().neq("id", 0);
 
     await supabase.from("import_runs").insert({
@@ -246,7 +246,7 @@ export default function ImportPage() {
       skipped,
     });
     setStep("done");
-    setStatus("Import voltooid!");
+    setStatus("Import complete!");
   }
 
   const buttonStyle: React.CSSProperties = {
@@ -267,8 +267,8 @@ export default function ImportPage() {
       {step === "upload" && (
         <>
           <p>
-            Upload een AcMP Excel-export (.xlsx). Gesloten en oude orders worden
-            automatisch overgeslagen en verwijderd.
+            Upload an AcMP Excel export (.xlsx). Closed and old orders will be
+            automatically skipped and removed.
           </p>
           <label
             style={{
@@ -282,7 +282,7 @@ export default function ImportPage() {
               fontWeight: "bold",
             }}
           >
-            📂 Bestand kiezen
+            📂 Choose file
             <input
               type="file"
               accept=".xlsx,.xls"
@@ -304,27 +304,27 @@ export default function ImportPage() {
               borderRadius: "6px",
             }}
           >
-            <strong>📊 Bestand geanalyseerd: {fileName}</strong>
+            <strong>📊 File analyzed: {fileName}</strong>
             <br />
-            {existingOrders.length} bestaande orders (systeemvelden worden bijgewerkt, handmatige velden blijven intact)
+            {existingOrders.length} existing orders (system fields will be updated, manual fields remain intact)
             <br />
-            <strong>{newOrders.length} nieuwe open orders gevonden</strong>
+            <strong>{newOrders.length} new open orders found</strong>
             <br />
             {closedSkipped > 0 && (
               <>
-                {closedSkipped} gesloten orders (worden overgeslagen + verwijderd uit database)
+                {closedSkipped} closed orders (will be skipped + removed from database)
                 <br />
               </>
             )}
             {tooOld > 0 && (
               <>
-                {tooOld} orders ouder dan 1 jaar (worden verwijderd)
+                {tooOld} orders older than 1 year (will be removed)
                 <br />
               </>
             )}
             {skipped > 0 && (
               <>
-                {skipped} overgeslagen (geen Work Order ID)
+                {skipped} skipped (no Work Order ID)
                 <br />
               </>
             )}
@@ -340,11 +340,11 @@ export default function ImportPage() {
                 borderRadius: "6px",
               }}
             >
-              <strong>Nieuwe work orders direct actief maken?</strong>
+              <strong>Make new work orders active immediately?</strong>
               <p style={{ margin: "8px 0 4px" }}>
-                Als je ze actief maakt, verschijnen ze direct in het Dashboard,
-                Planning en Shop. Nieuwe actieve orders starten automatisch op
-                <strong> Intake</strong>. Zo niet, komen ze in de Backlog.
+                If you make them active, they will appear in the Dashboard,
+                Planning and Shop right away. New active orders automatically start at
+                <strong> Intake</strong>. Otherwise, they will go to the Backlog.
               </p>
               <label
                 style={{
@@ -360,13 +360,13 @@ export default function ImportPage() {
                   onChange={(e) => setMakeNewActive(e.target.checked)}
                   style={{ width: "18px", height: "18px" }}
                 />
-                <span>Ja, maak de {newOrders.length} nieuwe orders direct actief</span>
+                <span>Yes, make the {newOrders.length} new orders active immediately</span>
               </label>
             </div>
           )}
 
           <button style={buttonStyle} onClick={doImport}>
-            ✅ Importeer nu
+            ✅ Import now
           </button>
         </>
       )}
@@ -376,33 +376,33 @@ export default function ImportPage() {
           <table style={{ borderCollapse: "collapse", marginTop: "1rem" }}>
             <tbody>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Rijen in bestand</td>
+                <td style={{ padding: "4px 12px" }}>Rows in file</td>
                 <td>{results.processed}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Nieuw ingevoegd</td>
+                <td style={{ padding: "4px 12px" }}>Newly inserted</td>
                 <td>{results.inserted}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Bijgewerkt</td>
+                <td style={{ padding: "4px 12px" }}>Updated</td>
                 <td>{results.updated}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Gesloten orders overgeslagen</td>
+                <td style={{ padding: "4px 12px" }}>Closed orders skipped</td>
                 <td>{results.closedSkipped}</td>
               </tr>
               <tr>
                 <td style={{ padding: "4px 12px" }}>
-                  Gesloten orders verwijderd uit database
+                  Closed orders removed from database
                 </td>
                 <td>{results.closedRemoved}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Verwijderd (ouder dan 1 jaar)</td>
+                <td style={{ padding: "4px 12px" }}>Removed (older than 1 year)</td>
                 <td>{results.deleted}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Overgeslagen (geen ID)</td>
+                <td style={{ padding: "4px 12px" }}>Skipped (no ID)</td>
                 <td>{results.skipped}</td>
               </tr>
             </tbody>
@@ -416,7 +416,7 @@ export default function ImportPage() {
               setStatus("");
             }}
           >
-            Nieuwe import starten
+            Start new import
           </button>
         </>
       )}
@@ -428,7 +428,7 @@ export default function ImportPage() {
       )}
 
       <p style={{ marginTop: "2rem" }}>
-        <a href="/">← Terug naar home</a>
+        <a href="/">← Back to home</a>
       </p>
     </main>
   );

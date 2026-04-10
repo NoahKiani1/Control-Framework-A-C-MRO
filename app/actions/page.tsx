@@ -25,7 +25,7 @@ function latestUpdate(system: string | null, manual: string | null): string | nu
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "–";
   const d = new Date(dateStr);
-  return d.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 export default function ActionsPage() {
@@ -46,7 +46,7 @@ export default function ActionsPage() {
     load();
   }, []);
 
-  if (loading) return <p style={{ padding: "2rem" }}>Laden...</p>;
+  if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
 
   const filtered = orders.filter((o) => {
     const hasAction = o.hold_reason || o.required_next_action;
@@ -112,13 +112,13 @@ export default function ActionsPage() {
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>
-              <th style={headerStyle}>Klant</th>
+              <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>Actie nodig</th>
               <th style={headerStyle}>Actie-eigenaar</th>
               <th style={headerStyle}>Actie status</th>
               <th style={headerStyle}>Actie gesloten</th>
-              <th style={headerStyle}>Laatste update</th>
+              <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
           <tbody>
@@ -142,7 +142,7 @@ export default function ActionsPage() {
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={8} style={{ ...cellStyle, textAlign: "center", color: "#999" }}>
-                  Geen acties of blockers gevonden
+                  No actions or blockers found
                 </td>
               </tr>
             )}

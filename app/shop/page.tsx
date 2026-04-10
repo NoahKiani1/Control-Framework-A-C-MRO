@@ -52,7 +52,7 @@ export default function ShopPage() {
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) return <p style={{ padding: "2rem", fontSize: "24px" }}>Laden...</p>;
+  if (loading) return <p style={{ padding: "2rem", fontSize: "24px" }}>Loading...</p>;
 
   const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
   const blockedOrders = orders.filter((o) => isBlocked(o));
@@ -93,13 +93,13 @@ export default function ShopPage() {
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>
-              <th style={headerStyle}>Klant</th>
+              <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Due Date</th>
-              <th style={headerStyle}>Toegewezen</th>
-              <th style={headerStyle}>Processtap</th>
+              <th style={headerStyle}>Assigned</th>
+              <th style={headerStyle}>Process Step</th>
               <th style={headerStyle}>RFQ</th>
-              <th style={headerStyle}>Laatste update</th>
+              <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
           <tbody>
@@ -144,15 +144,15 @@ export default function ShopPage() {
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>
-              <th style={headerStyle}>Klant</th>
+              <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Due Date</th>
-              <th style={headerStyle}>Toegewezen</th>
-              <th style={headerStyle}>Processtap</th>
+              <th style={headerStyle}>Assigned</th>
+              <th style={headerStyle}>Process Step</th>
               <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>RFQ</th>
-              <th style={headerStyle}>Actie nodig</th>
-              <th style={headerStyle}>Laatste update</th>
+              <th style={headerStyle}>Action Required</th>
+              <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
           <tbody>
@@ -208,19 +208,19 @@ export default function ShopPage() {
       </div>
 
       <p style={{ marginTop: "1rem", color: "#666", fontSize: "16px" }}>
-        {orders.length} actieve work orders
+        {orders.length} active work orders
       </p>
 
       <section style={{ marginTop: "1rem" }}>
         <h2 style={{ marginBottom: "0.25rem", fontSize: "22px" }}>
-          Niet geblokkeerde work orders ({nonBlockedOrders.length})
+          Non-blocked work orders ({nonBlockedOrders.length})
         </h2>
         {renderNonBlockedOrdersTable(nonBlockedOrders)}
       </section>
 
       <section style={{ marginTop: "2rem" }}>
         <h2 style={{ marginBottom: "0.25rem", fontSize: "22px" }}>
-          Geblokkeerde work orders ({blockedOrders.length})
+          Blocked work orders ({blockedOrders.length})
         </h2>
         {renderBlockedOrdersTable(blockedOrders)}
       </section>

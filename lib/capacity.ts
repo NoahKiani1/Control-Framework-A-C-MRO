@@ -11,7 +11,7 @@ export const TOTAL_HOURS: Record<string, number> = {
 };
 
 // === PROCESS STAPPEN MET GEWICHT (dummy, later aanpasbaar) ===
-// Gewicht = percentage van totale uren dat deze stap kost
+// Weight = percentage of total hours this step takes
 
 export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
   "Wheel Repair": {
@@ -85,7 +85,7 @@ export function getRemainingHours(workOrderType: string | null, currentStep: str
 
   if (!currentStep || !steps.includes(currentStep)) return total;
 
-  // Tel gewichten op van alle stappen NA de huidige stap (inclusief huidige)
+  // Sum weights of all steps AFTER the current step (including current)
   const currentIndex = steps.indexOf(currentStep);
   let completedWeight = 0;
   for (let i = 0; i < currentIndex; i++) {
@@ -116,18 +116,18 @@ export function getWorkDaysBetween(start: Date, end: Date): number {
 
 export function getHoursForDay(date: Date): number {
   const day = date.getDay();
-  if (day === 5) return 6; // vrijdag
-  if (day >= 1 && day <= 4) return 8; // ma-do
+  if (day === 5) return 6; // Friday
+  if (day >= 1 && day <= 4) return 8; // Mon-Thu
   return 0; // weekend
 }
 
-// Bereken de werkdagen in een week vanaf startDatum tot en met vrijdag
+// Calculate the work days in a week from startDate through Friday
 export function getWorkDaysInWeek(weekStart: Date): Date[] {
   const days: Date[] = [];
   const current = new Date(weekStart);
   current.setHours(0, 0, 0, 0);
 
-  // Ga naar het einde van de week (vrijdag)
+  // Go to end of the week (Friday)
   const endOfWeek = new Date(current);
   const dayOfWeek = endOfWeek.getDay();
   const daysUntilFriday = dayOfWeek <= 5 ? 5 - dayOfWeek : 0;
@@ -142,7 +142,7 @@ export function getWorkDaysInWeek(weekStart: Date): Date[] {
   return days;
 }
 
-// Bereken de maandag van een week
+// Calculate the Monday of a week
 export function getMondayOfWeek(date: Date): Date {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -188,31 +188,31 @@ export function calculateWeekCapacity(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // 3 weken: huidige week (vanaf vandaag) + 2 volgende weken
+  // 3 weeks: current week (from today) + 2 next weeks
   const weeks: WeekCapacity[] = [];
   const orderDetails: OrderCapacity[] = [];
   const overdueOrders: OrderCapacity[] = [];
 
-  // Week 1: vanaf vandaag tot vrijdag
+  // Week 1: from today to Friday
   const week1Start = new Date(today);
   const week1Monday = getMondayOfWeek(today);
 
-  // Week 2: volgende maandag
+  // Week 2: next Monday
   const week2Monday = new Date(week1Monday);
   week2Monday.setDate(week2Monday.getDate() + 7);
 
-  // Week 3: maandag daarna
+  // Week 3: Monday after that
   const week3Monday = new Date(week2Monday);
   week3Monday.setDate(week3Monday.getDate() + 7);
 
   const weekStarts = [week1Start, week2Monday, week3Monday];
-  const weekLabels = ["Deze week", "Volgende week", "Over 2 weken"];
+  const weekLabels = ["This week", "Next week", "In 2 weeks"];
 
-  // Bereken per week
+  // Calculate per week
   for (let w = 0; w < 3; w++) {
     const workDays = getWorkDaysInWeek(weekStarts[w]);
 
-    // Beschikbare uren: per dag per engineer, minus absences
+    // Available hours: per day per engineer, minus absences
     let available = 0;
     for (const day of workDays) {
       const hoursPerEngineer = getHoursForDay(day);
@@ -234,7 +234,7 @@ export function calculateWeekCapacity(
     });
   }
 
-  // Bereken per order de required hours per dag en verdeel over weken
+  // Calculate required hours per day per order and distribute across weeks
   const filteredOrders = orders.filter((o) => {
     if (!o.due_date) return false;
     if (o.hold_reason) return false;
@@ -263,7 +263,7 @@ export function calculateWeekCapacity(
     };
 
     if (isOverdue) {
-      // Alle uren op huidige week
+      // All hours on current week
       weeks[0].requiredHours += remaining;
       detail.hours_per_day = remaining;
       overdueOrders.push(detail);
@@ -271,7 +271,7 @@ export function calculateWeekCapacity(
       continue;
     }
 
-    // Werkdagen tussen vandaag en due_date
+    // Work days between today and due_date
     const workDays = getWorkDaysBetween(today, dueDate);
     if (workDays <= 0) continue;
 
@@ -279,7 +279,7 @@ export function calculateWeekCapacity(
     detail.hours_per_day = Math.round(hoursPerDay * 10) / 10;
     orderDetails.push(detail);
 
-    // Verdeel uren over de 3 weken
+    // Distribute hours across the 3 weeks
     for (let w = 0; w < 3; w++) {
       for (const day of weeks[w].workDays) {
         if (day >= today && day <= dueDate) {
@@ -289,7 +289,7 @@ export function calculateWeekCapacity(
     }
   }
 
-  // Afronden en status berekenen
+  // Round off and calculate status
   for (const week of weeks) {
     week.requiredHours = Math.round(week.requiredHours * 10) / 10;
 

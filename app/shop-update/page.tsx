@@ -56,7 +56,7 @@ export default function ShopUpdatePage() {
     const selectedOrder = orders.find((o) => o.work_order_id === selectedId);
     const nextProcessStep = processStep || selectedOrder?.current_process_step || null;
 
-    setSaveStatus("Opslaan...");
+    setSaveStatus("Saving...");
 
     const { error } = await supabase
       .from("work_orders")
@@ -68,9 +68,9 @@ export default function ShopUpdatePage() {
       .eq("work_order_id", selectedId);
 
     if (error) {
-      setSaveStatus(`Fout: ${error.message}`);
+      setSaveStatus(`Error: ${error.message}`);
     } else {
-      setSaveStatus("✅ Opgeslagen!");
+      setSaveStatus("✅ Saved!");
       setOrders((prev) =>
         prev.map((o) =>
           o.work_order_id === selectedId
@@ -85,7 +85,7 @@ export default function ShopUpdatePage() {
     }
   }
 
-  if (loading) return <p style={{ padding: "2rem" }}>Laden...</p>;
+  if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
 
   const selectedOrder = orders.find((o) => o.work_order_id === selectedId);
   const allSteps = getProcessStepsForType(selectedOrder?.work_order_type || null);
@@ -142,19 +142,19 @@ export default function ShopUpdatePage() {
       </div>
 
       <p style={{ color: "#666", marginTop: "8px" }}>
-        Update de processtap of meld een blokkade. ({orders.length} actieve orders)
+        Update the process step or report a blocker. ({orders.length} active orders)
       </p>
 
-      <label style={labelStyle}>Selecteer Work Order</label>
+      <label style={labelStyle}>Select Work Order</label>
       <select
         style={selectStyle}
         value={selectedId}
         onChange={(e) => selectOrder(e.target.value)}
       >
-        <option value="">-- Kies een work order --</option>
+        <option value="">-- Choose a work order --</option>
         {orders.map((o) => (
           <option key={o.work_order_id} value={o.work_order_id}>
-            {o.work_order_id} — {o.customer || "Geen klant"}{prioLabel(o)}
+            {o.work_order_id} — {o.customer || "No customer"}{prioLabel(o)}
           </option>
         ))}
       </select>
@@ -172,17 +172,17 @@ export default function ShopUpdatePage() {
           >
             <strong>{selectedOrder.work_order_id}</strong> — {selectedOrder.customer || "–"}
             <br />
-            Type: {selectedOrder.work_order_type || "Onbekend"}
-            {selectedOrder.assigned_person_team && <> | Toegewezen: {selectedOrder.assigned_person_team}</>}
+            Type: {selectedOrder.work_order_type || "Unknown"}
+            {selectedOrder.assigned_person_team && <> | Assigned: {selectedOrder.assigned_person_team}</>}
             {selectedOrder.current_process_step && (
               <>
                 {" "}
-                | Huidige stap: <strong>{selectedOrder.current_process_step}</strong>
+                | Current step: <strong>{selectedOrder.current_process_step}</strong>
               </>
             )}
           </div>
 
-          <label style={labelStyle}>Processtap</label>
+          <label style={labelStyle}>Process Step</label>
           {selectableSteps.length > 0 ? (
             <>
               <select
@@ -190,7 +190,7 @@ export default function ShopUpdatePage() {
                 value={processStep}
                 onChange={(e) => setProcessStep(e.target.value)}
               >
-                <option value="">-- Kies volgende stap --</option>
+                <option value="">-- Choose next step --</option>
                 {selectableSteps.map((s) => (
                   <option key={s} value={s}>
                     {s}
@@ -199,22 +199,22 @@ export default function ShopUpdatePage() {
               </select>
 
               <div style={helperStyle}>
-                <strong>Intake</strong> wordt automatisch gezet zodra een nieuwe work order actief wordt.
+                <strong>Intake</strong> is automatically set when a new work order becomes active.
               </div>
             </>
           ) : (
             <p style={{ color: "#e67e22", fontSize: "14px", marginTop: "4px" }}>
-              ⚠ Geen processtappen beschikbaar — work order type is niet ingesteld.
+              ⚠ No process steps available — work order type is not set.
             </p>
           )}
 
-          <label style={labelStyle}>Hold Reason (laat leeg als niet geblokkeerd)</label>
+          <label style={labelStyle}>Hold Reason (leave empty if not blocked)</label>
           <input
             type="text"
             style={inputStyle}
             value={holdReason}
             onChange={(e) => setHoldReason(e.target.value)}
-            placeholder="Bv. Onderdeel beschadigd, tooling niet beschikbaar..."
+            placeholder="E.g. Part damaged, tooling unavailable..."
           />
 
           {holdReason && (
@@ -228,12 +228,12 @@ export default function ShopUpdatePage() {
                 fontSize: "13px",
               }}
             >
-              ⚠ Deze work order wordt <strong>geblokkeerd</strong>
+              ⚠ This work order will be <strong>blocked</strong>
             </p>
           )}
 
           <button style={buttonStyle} onClick={saveUpdate}>
-            💾 Update opslaan
+            💾 Save update
           </button>
 
           {saveStatus && (

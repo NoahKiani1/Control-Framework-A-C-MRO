@@ -86,7 +86,7 @@ export default function OfficeUpdatePage() {
     const preservedStep = order?.current_process_step?.trim() || "";
     const nextProcessStep = preservedStep || "Intake";
 
-    setActivateStatus("Activeren...");
+    setActivateStatus("Activating...");
 
     const payload = {
       is_active: true,
@@ -100,11 +100,11 @@ export default function OfficeUpdatePage() {
       .eq("work_order_id", activateId);
 
     if (error) {
-      setActivateStatus(`Fout: ${error.message}`);
+      setActivateStatus(`Error: ${error.message}`);
       return;
     }
 
-    setActivateStatus("✅ Geactiveerd!");
+    setActivateStatus("✅ Activated!");
     setOrders((prev) =>
       prev.map((o) =>
         o.work_order_id === activateId
@@ -187,7 +187,7 @@ export default function OfficeUpdatePage() {
     if (!selectedId) return;
 
     if ((form.priority === "Yes" || form.priority === "AOG") && !form.due_date) {
-      setSaveStatus("❌ Due Date is verplicht bij Priority Yes of AOG.");
+      setSaveStatus("❌ Due Date is required when Priority is Yes or AOG.");
       return;
     }
 
@@ -200,7 +200,7 @@ export default function OfficeUpdatePage() {
       ? form.action_status || "Open"
       : null;
 
-    setSaveStatus("Opslaan...");
+    setSaveStatus("Saving...");
 
     const payload = {
       due_date: form.due_date || null,
@@ -229,11 +229,11 @@ export default function OfficeUpdatePage() {
       .eq("work_order_id", selectedId);
 
     if (error) {
-      setSaveStatus(`Fout: ${error.message}`);
+      setSaveStatus(`Error: ${error.message}`);
       return;
     }
 
-    setSaveStatus("✅ Opgeslagen!");
+    setSaveStatus("✅ Saved!");
     setOrders((prev) =>
       prev.map((o) =>
         o.work_order_id === selectedId
@@ -247,7 +247,7 @@ export default function OfficeUpdatePage() {
     );
   }
 
-  if (loading) return <div style={{ padding: "20px" }}>Laden...</div>;
+  if (loading) return <div style={{ padding: "20px" }}>Loading...</div>;
 
   const pageStyle: React.CSSProperties = {
     padding: "20px",
@@ -329,33 +329,33 @@ export default function OfficeUpdatePage() {
       </Link>
 
       <div style={sectionStyle}>
-        <h2 style={{ marginTop: 0 }}>Work Order activeren</h2>
+        <h2 style={{ marginTop: 0 }}>Activate Work Order</h2>
         <p>
-          Selecteer een niet-actieve work order om te activeren ({inactiveOrders.length} beschikbaar)
+          Select an inactive work order to activate ({inactiveOrders.length} available)
         </p>
 
-        <label style={labelStyle}>Selecteer Work Order</label>
+        <label style={labelStyle}>Select Work Order</label>
         <select
           style={selectStyle}
           value={activateId}
           onChange={(e) => setActivateId(e.target.value)}
         >
-          <option value="">-- Kies een niet-actieve work order --</option>
+          <option value="">-- Choose an inactive work order --</option>
           {inactiveOrders.map((o) => (
             <option key={o.work_order_id} value={o.work_order_id}>
-              {o.work_order_id} — {o.customer || "Geen klant"} — {o.work_order_type || "Onbekend type"}
+              {o.work_order_id} — {o.customer || "No customer"} — {o.work_order_type || "Unknown type"}
             </option>
           ))}
         </select>
 
         <div style={helperStyle}>
-          Nieuwe actieve orders zonder processtap starten automatisch op <strong>Intake</strong>.
-          Orders die al verder waren, behouden hun huidige stap.
+          New active orders without a process step automatically start at <strong>Intake</strong>.
+          Orders that were already further along keep their current step.
         </div>
 
         {activateId && (
           <button style={buttonStyle} onClick={activateOrder}>
-            ✅ Activeer deze work order
+            ✅ Activate this work order
           </button>
         )}
 
@@ -363,19 +363,19 @@ export default function OfficeUpdatePage() {
       </div>
 
       <div style={sectionStyle}>
-        <h2 style={{ marginTop: 0 }}>Actieve Work Order bijwerken</h2>
-        <p>{activeOrders.length} actieve work orders</p>
+        <h2 style={{ marginTop: 0 }}>Update Active Work Order</h2>
+        <p>{activeOrders.length} active work orders</p>
 
-        <label style={labelStyle}>Selecteer Work Order</label>
+        <label style={labelStyle}>Select Work Order</label>
         <select
           style={selectStyle}
           value={selectedId}
           onChange={(e) => selectOrder(e.target.value)}
         >
-          <option value="">-- Kies een actieve work order --</option>
+          <option value="">-- Choose an active work order --</option>
           {activeOrders.map((o) => (
             <option key={o.work_order_id} value={o.work_order_id}>
-              {o.work_order_id} — {o.customer || "Geen klant"} — {o.work_order_type || "Onbekend type"}
+              {o.work_order_id} — {o.customer || "No customer"} — {o.work_order_type || "Unknown type"}
             </option>
           ))}
         </select>
@@ -384,11 +384,11 @@ export default function OfficeUpdatePage() {
           <>
             {selectedOrder && (
               <p style={{ marginTop: "12px" }}>
-                Type: {selectedOrder.work_order_type || "Onbekend"} | Klant: {selectedOrder.customer || "–"}
+                Type: {selectedOrder.work_order_type || "Unknown"} | Customer: {selectedOrder.customer || "–"}
               </p>
             )}
 
-            <label style={labelStyle}>Actief</label>
+            <label style={labelStyle}>Active</label>
             <select
               style={selectStyle}
               value={String(form.is_active)}
@@ -399,8 +399,8 @@ export default function OfficeUpdatePage() {
                 }))
               }
             >
-              <option value="true">Ja — zichtbaar in Dashboard, Planning, Shop</option>
-              <option value="false">Nee — terug naar Backlog</option>
+              <option value="true">Yes — visible in Dashboard, Planning, Shop</option>
+              <option value="false">No — back to Backlog</option>
             </select>
 
             <label style={labelStyle}>Due Date</label>
@@ -417,7 +417,7 @@ export default function OfficeUpdatePage() {
             />
             {dueDateRequired && !form.due_date && (
               <div style={errorHelperStyle}>
-                Due Date is verplicht wanneer Priority op Yes of AOG staat.
+                Due Date is required when Priority is set to Yes or AOG.
               </div>
             )}
 
@@ -435,7 +435,7 @@ export default function OfficeUpdatePage() {
             </select>
             {dueDateRequired && (
               <div style={helperStyle}>
-                Bij <strong>Yes</strong> of <strong>AOG</strong> is een Due Date verplicht.
+                A Due Date is required for <strong>Yes</strong> or <strong>AOG</strong> priority.
               </div>
             )}
 
@@ -450,19 +450,19 @@ export default function OfficeUpdatePage() {
                   assigned_person_team: e.target.value,
                 }))
               }
-              placeholder="Naam invullen. Leeg laten = automatisch Shop"
+              placeholder="Enter a name. Leave empty = defaults to Shop"
             />
             <div style={helperStyle}>
-              Vul een specifieke naam of team in. Laat je dit leeg, dan wordt automatisch <strong>Shop</strong> opgeslagen.
+              Enter a specific name or team. If left empty, it will default to <strong>Shop</strong>.
             </div>
 
-            <label style={labelStyle}>Hold Reason (laat leeg als niet geblokkeerd)</label>
+            <label style={labelStyle}>Hold Reason (leave empty if not blocked)</label>
             <input
               type="text"
               style={inputStyle}
               value={form.hold_reason}
               onChange={(e) => updateHoldReason(e.target.value)}
-              placeholder="Bv. Parts bestellen, RFQ Send, Wachten op klant..."
+              placeholder="E.g. Parts on order, RFQ Send, Awaiting customer..."
             />
 
             {hasHoldReason ? (
@@ -478,7 +478,7 @@ export default function OfficeUpdatePage() {
                       required_next_action: e.target.value,
                     }))
                   }
-                  placeholder="Wat moet er concreet gebeuren?"
+                  placeholder="What needs to happen?"
                 />
 
                 <label style={labelStyle}>Action Owner</label>
@@ -492,7 +492,7 @@ export default function OfficeUpdatePage() {
                       action_owner: e.target.value,
                     }))
                   }
-                  placeholder="Wie is verantwoordelijk?"
+                  placeholder="Who is responsible?"
                 />
 
                 <label style={labelStyle}>Action Status</label>
@@ -503,22 +503,22 @@ export default function OfficeUpdatePage() {
                 >
                   <option value="Open">Open</option>
                   <option value="Done">
-                    Done — maakt hold reason, actie en owner automatisch leeg
+                    Done — automatically clears hold reason, action and owner
                   </option>
                 </select>
 
                 <div style={warningStyle}>
-                  ⚠ Deze work order is geblokkeerd vanwege: {form.hold_reason}
+                  ⚠ This work order is blocked due to: {form.hold_reason}
                 </div>
               </>
             ) : (
               <div style={helperStyle}>
-                Vul eerst een hold reason in. Dan verschijnen de actievelden automatisch.
+                Enter a hold reason first. The action fields will appear automatically.
               </div>
             )}
 
             <button style={secondaryButtonStyle} onClick={saveOrder}>
-              Work Order opslaan
+              Save Work Order
             </button>
 
             {saveStatus && <p>{saveStatus}</p>}

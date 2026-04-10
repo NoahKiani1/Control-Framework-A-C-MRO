@@ -52,7 +52,7 @@ export default function DashboardPage() {
     load();
   }, []);
 
-  if (loading) return <p style={{ padding: "2rem" }}>Laden...</p>;
+  if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
 
   const readyToClose = orders.filter(
     (o) => o.current_process_step === "EASA-Form 1",
@@ -93,13 +93,13 @@ export default function DashboardPage() {
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>
-              <th style={headerStyle}>Klant</th>
+              <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Prio</th>
-              <th style={headerStyle}>Toegewezen</th>
-              <th style={headerStyle}>Processtap</th>
+              <th style={headerStyle}>Assigned</th>
+              <th style={headerStyle}>Process Step</th>
               <th style={headerStyle}>RFQ</th>
-              <th style={headerStyle}>Laatste update</th>
+              <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
           <tbody>
@@ -142,17 +142,17 @@ export default function DashboardPage() {
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>
-              <th style={headerStyle}>Klant</th>
+              <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Prio</th>
-              <th style={headerStyle}>Toegewezen</th>
-              <th style={headerStyle}>Processtap</th>
+              <th style={headerStyle}>Assigned</th>
+              <th style={headerStyle}>Process Step</th>
               <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>RFQ</th>
-              <th style={headerStyle}>Actie nodig</th>
-              <th style={headerStyle}>Actie-eigenaar</th>
-              <th style={headerStyle}>Actie status</th>
-              <th style={headerStyle}>Laatste update</th>
+              <th style={headerStyle}>Action Required</th>
+              <th style={headerStyle}>Action Owner</th>
+              <th style={headerStyle}>Action Status</th>
+              <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
           <tbody>
@@ -175,7 +175,7 @@ export default function DashboardPage() {
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
                   <td style={cellStyle}>
                     {blockReason(o, {
-                      rfqSentLabel: "RFQ verstuurd — wacht op klant",
+                      rfqSentLabel: "RFQ sent — awaiting customer",
                     })}
                   </td>
                   <td style={cellStyle}>
@@ -222,7 +222,7 @@ export default function DashboardPage() {
           }}
         >
           <h3 style={{ margin: "0 0 8px", color: "#166534" }}>
-            ✅ Klaar om te sluiten in AcMP ({readyToClose.length})
+            ✅ Ready to close in AcMP ({readyToClose.length})
           </h3>
           <table style={{ borderCollapse: "collapse" }}>
             <thead>
@@ -243,7 +243,7 @@ export default function DashboardPage() {
                     backgroundColor: "#dcfce7",
                   }}
                 >
-                  Klant
+                  Customer
                 </th>
                 <th
                   style={{
@@ -275,19 +275,19 @@ export default function DashboardPage() {
       )}
 
       <p style={{ marginTop: "1rem", color: "#666" }}>
-        {activeOrders.length} actieve work orders
+        {activeOrders.length} active work orders
       </p>
 
       <section style={{ marginTop: "1rem" }}>
         <h2 style={{ marginBottom: "0.25rem" }}>
-          Niet geblokkeerde work orders ({nonBlockedOrders.length})
+          Non-blocked work orders ({nonBlockedOrders.length})
         </h2>
         {renderNonBlockedOrdersTable(nonBlockedOrders)}
       </section>
 
       <section style={{ marginTop: "2rem" }}>
         <h2 style={{ marginBottom: "0.25rem" }}>
-          Geblokkeerde work orders ({blockedOrders.length})
+          Blocked work orders ({blockedOrders.length})
         </h2>
         {renderBlockedOrdersTable(blockedOrders)}
       </section>

@@ -50,7 +50,7 @@ export function latestUpdate(system: string | null, manual: string | null): stri
 export function formatDate(dateStr: string | null): string {
   if (!dateStr) return "–";
   const date = new Date(dateStr);
-  return date.toLocaleDateString("nl-NL", {
+  return date.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -62,7 +62,7 @@ export function blockReason(
   options: BlockReasonOptions = {},
 ): string {
   if (order.hold_reason) return order.hold_reason;
-  if (order.rfq_state === "RFQ Send") return options.rfqSentLabel || "RFQ verstuurd";
-  if (order.rfq_state === "RFQ Rejected") return "RFQ afgewezen";
+  if (order.rfq_state === "RFQ Send") return options.rfqSentLabel || "RFQ sent";
+  if (order.rfq_state === "RFQ Rejected") return "RFQ rejected";
   return "–";
 }

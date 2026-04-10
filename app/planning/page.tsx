@@ -48,7 +48,7 @@ export default function PlanningPage() {
     load();
   }, []);
 
-  if (loading) return <p style={{ padding: "2rem" }}>Laden...</p>;
+  if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
 
   const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
   const blockedOrders = orders.filter((o) => isBlocked(o));
@@ -82,13 +82,13 @@ export default function PlanningPage() {
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>
-              <th style={headerStyle}>Klant</th>
+              <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Prio</th>
-              <th style={headerStyle}>Toegewezen</th>
-              <th style={headerStyle}>Processtap</th>
+              <th style={headerStyle}>Assigned</th>
+              <th style={headerStyle}>Process Step</th>
               <th style={headerStyle}>RFQ</th>
-              <th style={headerStyle}>Laatste update</th>
+              <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
           <tbody>
@@ -131,14 +131,14 @@ export default function PlanningPage() {
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>
-              <th style={headerStyle}>Klant</th>
+              <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Prio</th>
-              <th style={headerStyle}>Toegewezen</th>
-              <th style={headerStyle}>Processtap</th>
+              <th style={headerStyle}>Assigned</th>
+              <th style={headerStyle}>Process Step</th>
               <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>RFQ</th>
-              <th style={headerStyle}>Laatste update</th>
+              <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
           <tbody>
@@ -189,19 +189,19 @@ export default function PlanningPage() {
       </div>
 
       <p style={{ marginTop: "1rem", color: "#666" }}>
-        {orders.length} actieve work orders
+        {orders.length} active work orders
       </p>
 
       <section style={{ marginTop: "1rem" }}>
         <h2 style={{ marginBottom: "0.25rem" }}>
-          Niet geblokkeerde work orders ({nonBlockedOrders.length})
+          Non-blocked work orders ({nonBlockedOrders.length})
         </h2>
         {renderNonBlockedOrdersTable(nonBlockedOrders)}
       </section>
 
       <section style={{ marginTop: "2rem" }}>
         <h2 style={{ marginBottom: "0.25rem" }}>
-          Geblokkeerde work orders ({blockedOrders.length})
+          Blocked work orders ({blockedOrders.length})
         </h2>
         {renderBlockedOrdersTable(blockedOrders)}
       </section>
