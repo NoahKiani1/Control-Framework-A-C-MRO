@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getEngineers, insertEngineer, updateEngineer } from "@/lib/engineers";
 
@@ -32,7 +33,8 @@ export default function StaffPage() {
   }
 
   useEffect(() => {
-    loadStaff();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadStaff();
   }, []);
 
   async function addMember() {
@@ -195,7 +197,7 @@ export default function StaffPage() {
     <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "700px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Staff Management</h1>
-        <a href="/">← Home</a>
+        <Link href="/">← Home</Link>
       </div>
 
       <p style={{ color: "#666", marginTop: "8px" }}>

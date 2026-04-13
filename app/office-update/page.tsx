@@ -55,7 +55,6 @@ export default function OfficeUpdatePage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
   const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
-  const [allStaff, setAllStaff] = useState<StaffMember[]>([]);
   const [activateId, setActivateId] = useState("");
   const [activateStatus, setActivateStatus] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -78,7 +77,6 @@ export default function OfficeUpdatePage() {
         orderBy: { column: "name" },
       });
 
-      setAllStaff(staffData);
       setShopStaff(staffData.filter((s) => s.role === "shop"));
       setOfficeStaff(staffData.filter((s) => s.role === "office"));
 

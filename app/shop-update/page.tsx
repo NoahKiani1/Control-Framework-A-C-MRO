@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getProcessStepsForType } from "@/lib/process-steps";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
@@ -134,7 +135,7 @@ export default function ShopUpdatePage() {
     <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "500px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>🛠 Shop Update</h1>
-        <a href="/">← Home</a>
+        <Link href="/">← Home</Link>
       </div>
 
       <p style={{ color: "#666", marginTop: "8px" }}>

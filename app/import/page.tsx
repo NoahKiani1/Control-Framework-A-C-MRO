@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -384,7 +385,7 @@ export default function ImportPage() {
       )}
 
       <p style={{ marginTop: "2rem" }}>
-        <a href="/">← Back to home</a>
+        <Link href="/">← Back to home</Link>
       </p>
     </main>
   );

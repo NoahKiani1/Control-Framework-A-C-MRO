@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatDate, isStale, latestUpdate } from "@/lib/work-order-rules";
 import { getWorkOrders } from "@/lib/work-orders";
@@ -81,7 +82,7 @@ export default function ActionsPage() {
     <main style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Actions / Blockers</h1>
-        <a href="/">← Home</a>
+        <Link href="/">← Home</Link>
       </div>
 
       <div style={{ marginTop: "1rem", display: "flex", gap: "8px" }}>

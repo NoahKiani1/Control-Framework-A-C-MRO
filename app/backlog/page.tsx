@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatDate, latestUpdate, rfqDisplay } from "@/lib/work-order-rules";
 import { getWorkOrders } from "@/lib/work-orders";
@@ -53,7 +54,7 @@ export default function BacklogPage() {
     <main style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Backlog</h1>
-        <a href="/">← Home</a>
+        <Link href="/">← Home</Link>
       </div>
 
       <p style={{ marginTop: "1rem", color: "#666" }}>

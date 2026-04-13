@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   blockReason,
@@ -216,7 +217,7 @@ export default function DashboardPage() {
         }}
       >
         <h1 style={{ margin: 0 }}>Office Dashboard</h1>
-        <a href="/">← Home</a>
+        <Link href="/">← Home</Link>
       </div>
 
       {readyToClose.length > 0 && (

@@ -21,7 +21,11 @@ type ImportRunPayload = {
   status: string;
 };
 
-function applyOrderBy(query: any, orderBy?: OrderBy | OrderBy[]) {
+type OrderableQuery = {
+  order: (column: string, options: { ascending: boolean }) => OrderableQuery;
+};
+
+function applyOrderBy<T extends OrderableQuery>(query: T, orderBy?: OrderBy | OrderBy[]): T {
   const orders = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
 
   let currentQuery = query;
@@ -32,7 +36,7 @@ function applyOrderBy(query: any, orderBy?: OrderBy | OrderBy[]) {
     });
   }
 
-  return currentQuery;
+  return currentQuery as T;
 }
 
 export async function getWorkOrders<T = unknown>({

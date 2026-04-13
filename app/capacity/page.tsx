@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   deleteEngineerAbsenceGroup,
@@ -50,7 +51,6 @@ type GroupedAbsence = {
 export default function CapacityPage() {
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
-  const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [absenceEngineerId, setAbsenceEngineerId] = useState("");
@@ -90,7 +90,6 @@ export default function CapacityPage() {
 
     setEngineers(engData);
     setAbsences(absData);
-    setOrders(woData);
 
     // Calculate capacity
     const absenceDates = absData.map((a) => {
@@ -107,7 +106,8 @@ export default function CapacityPage() {
   }
 
   useEffect(() => {
-    loadData();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadData();
   }, []);
 
   async function addAbsence() {
@@ -222,7 +222,7 @@ export default function CapacityPage() {
     <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "900px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Capacity Management</h1>
-        <a href="/">← Home</a>
+        <Link href="/">← Home</Link>
       </div>
 
       {/* Weekly Overview */}

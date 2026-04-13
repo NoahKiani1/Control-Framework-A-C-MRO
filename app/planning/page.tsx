@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   blockReason,
@@ -197,7 +198,7 @@ export default function PlanningPage() {
         }}
       >
         <h1 style={{ margin: 0 }}>Shared Planning</h1>
-        <a href="/">← Home</a>
+        <Link href="/">← Home</Link>
       </div>
 
       <p style={{ marginTop: "1rem", color: "#666" }}>
