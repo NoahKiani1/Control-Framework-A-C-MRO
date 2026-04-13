@@ -167,6 +167,7 @@ export type OrderCapacity = {
   work_order_id: string;
   customer: string | null;
   work_order_type: string | null;
+  part_number: string | null;
   due_date: string;
   remaining_hours: number;
   hours_per_day: number;
@@ -178,6 +179,7 @@ export function calculateWeekCapacity(
     work_order_id: string;
     customer: string | null;
     work_order_type: string | null;
+    part_number: string | null;
     current_process_step: string | null;
     due_date: string | null;
     hold_reason: string | null;
@@ -257,6 +259,7 @@ export function calculateWeekCapacity(
       work_order_id: order.work_order_id,
       customer: order.customer,
       work_order_type: order.work_order_type,
+      part_number: order.part_number,
       due_date: order.due_date!,
       remaining_hours: remaining,
       hours_per_day: 0,
