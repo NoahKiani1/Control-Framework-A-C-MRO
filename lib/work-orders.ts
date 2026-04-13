@@ -22,18 +22,18 @@ type ImportRunPayload = {
 };
 
 type OrderableQuery = {
-  order: (column: string, options: { ascending: boolean }) => OrderableQuery;
+  order: (column: string, options: { ascending: boolean }) => unknown;
 };
 
-function applyOrderBy<T extends OrderableQuery>(query: T, orderBy?: OrderBy | OrderBy[]): T {
+function applyOrderBy<T>(query: T, orderBy?: OrderBy | OrderBy[]): T {
   const orders = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
 
-  let currentQuery = query;
+  let currentQuery = query as T & OrderableQuery;
 
   for (const order of orders) {
     currentQuery = currentQuery.order(order.column, {
       ascending: order.ascending ?? true,
-    });
+    }) as T & OrderableQuery;
   }
 
   return currentQuery as T;
