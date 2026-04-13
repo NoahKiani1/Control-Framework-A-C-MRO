@@ -11,6 +11,7 @@ export default function Home() {
     { href: "/office-update", label: "Office Update", color: "#0891b2", desc: "Edit and activate work orders" },
     { href: "/shop-update", label: "Shop Update", color: "#4f46e5", desc: "Update process steps and report blockers" },
     { href: "/import", label: "AcMP Import", color: "#16a34a", desc: "Upload Excel export" },
+    { href: "/staff", label: "Staff Management", color: "#8b5cf6", desc: "Manage team members and roles" },
   ];
 
   return (

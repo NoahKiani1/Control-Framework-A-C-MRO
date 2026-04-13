@@ -24,3 +24,41 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.stale-warning {
+  position: relative;
+  color: #dc2626;
+  cursor: help;
+  margin-left: 4px;
+  border-bottom: 1px dashed #dc2626;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.stale-warning .stale-tooltip {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: white;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+  z-index: 10;
+  margin-bottom: 4px;
+}
+
+.stale-warning:hover .stale-tooltip {
+  display: block;
+}
+
+.stale-warning:hover {
+  animation: none;
+}

@@ -44,8 +44,17 @@ const EMPTY_FORM: FormState = {
   is_active: true,
 };
 
+type StaffMember = {
+  id: number;
+  name: string;
+  role: string | null;
+};
+
 export default function OfficeUpdatePage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
+  const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
+  const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
+  const [allStaff, setAllStaff] = useState<StaffMember[]>([]);
   const [activateId, setActivateId] = useState("");
   const [activateStatus, setActivateStatus] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -62,6 +71,17 @@ export default function OfficeUpdatePage() {
         )
         .eq("is_open", true)
         .order("work_order_id", { ascending: false });
+
+      const { data: staff } = await supabase
+        .from("engineers")
+        .select("id, name, role")
+        .eq("is_active", true)
+        .order("name");
+
+      const staffData = (staff as StaffMember[]) || [];
+      setAllStaff(staffData);
+      setShopStaff(staffData.filter((s) => s.role === "shop"));
+      setOfficeStaff(staffData.filter((s) => s.role === "office"));
 
       setOrders((wo as WorkOrder[]) || []);
       setLoading(false);
@@ -440,9 +460,8 @@ export default function OfficeUpdatePage() {
             )}
 
             <label style={labelStyle}>Assigned Person/Team</label>
-            <input
-              type="text"
-              style={inputStyle}
+            <select
+              style={selectStyle}
               value={form.assigned_person_team}
               onChange={(e) =>
                 setForm((prev) => ({
@@ -450,10 +469,14 @@ export default function OfficeUpdatePage() {
                   assigned_person_team: e.target.value,
                 }))
               }
-              placeholder="Enter a name. Leave empty = defaults to Shop"
-            />
+            >
+              <option value="">Shop (default)</option>
+              {shopStaff.map((s) => (
+                <option key={s.id} value={s.name}>{s.name}</option>
+              ))}
+            </select>
             <div style={helperStyle}>
-              Enter a specific name or team. If left empty, it will default to <strong>Shop</strong>.
+              Assign to a specific engineer or leave as <strong>Shop</strong>.
             </div>
 
             <label style={labelStyle}>Hold Reason (leave empty if not blocked)</label>
@@ -482,9 +505,8 @@ export default function OfficeUpdatePage() {
                 />
 
                 <label style={labelStyle}>Action Owner</label>
-                <input
-                  type="text"
-                  style={inputStyle}
+                <select
+                  style={selectStyle}
                   value={form.action_owner}
                   onChange={(e) =>
                     setForm((prev) => ({
@@ -492,8 +514,23 @@ export default function OfficeUpdatePage() {
                       action_owner: e.target.value,
                     }))
                   }
-                  placeholder="Who is responsible?"
-                />
+                >
+                  <option value="">-- Select owner --</option>
+                  {officeStaff.length > 0 && (
+                    <optgroup label="Office">
+                      {officeStaff.map((s) => (
+                        <option key={s.id} value={s.name}>{s.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {shopStaff.length > 0 && (
+                    <optgroup label="Shop">
+                      {shopStaff.map((s) => (
+                        <option key={s.id} value={s.name}>{s.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
 
                 <label style={labelStyle}>Action Status</label>
                 <select

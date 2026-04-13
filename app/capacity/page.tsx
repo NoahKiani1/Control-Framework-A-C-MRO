@@ -45,7 +45,6 @@ export default function CapacityPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [newEngineerName, setNewEngineerName] = useState("");
   const [absenceEngineerId, setAbsenceEngineerId] = useState("");
   const [absenceDate, setAbsenceDate] = useState("");
   const [absenceEndDate, setAbsenceEndDate] = useState("");
@@ -65,6 +64,7 @@ export default function CapacityPage() {
       .from("engineers")
       .select("*")
       .eq("is_active", true)
+      .eq("role", "shop")
       .order("name");
 
     const { data: abs } = await supabase
@@ -104,18 +104,6 @@ export default function CapacityPage() {
   useEffect(() => {
     loadData();
   }, []);
-
-  async function addEngineer() {
-    if (!newEngineerName.trim()) return;
-    await supabase.from("engineers").insert({ name: newEngineerName.trim() });
-    setNewEngineerName("");
-    loadData();
-  }
-
-  async function removeEngineer(id: number) {
-    await supabase.from("engineers").update({ is_active: false }).eq("id", id);
-    loadData();
-  }
 
   async function addAbsence() {
     if (!absenceEngineerId || !absenceDate) return;
@@ -316,8 +304,8 @@ export default function CapacityPage() {
                   <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Customer</th>
                   <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Type</th>
                   <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Due Date</th>
-                  <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Resterend</th>
-                  <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Per dag</th>
+                  <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Remaining</th>
+                  <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Per day</th>
                 </tr>
               </thead>
               <tbody>
@@ -327,8 +315,8 @@ export default function CapacityPage() {
                     <td style={cellStyle}>{o.customer || "–"}</td>
                     <td style={cellStyle}>{o.work_order_type || "–"}</td>
                     <td style={cellStyle}>{formatDate(o.due_date)}{o.is_overdue ? " ⚠" : ""}</td>
-                    <td style={cellStyle}>{o.remaining_hours}u</td>
-                    <td style={cellStyle}>{o.hours_per_day}u/dag</td>
+                    <td style={cellStyle}>{o.remaining_hours}h</td>
+                    <td style={cellStyle}>{o.hours_per_day}h/day</td>
                   </tr>
                 ))}
               </tbody>
@@ -339,33 +327,16 @@ export default function CapacityPage() {
 
       {/* Engineers */}
       <section style={{ marginTop: "2rem", borderTop: "2px solid #eee", paddingTop: "1.5rem" }}>
-        <h2>Engineers ({engineers.length})</h2>
-
+        <h2>Shop Engineers ({engineers.length})</h2>
+        <p style={{ fontSize: "14px", color: "#666", margin: "4px 0 8px" }}>
+          Only shop staff count towards capacity. Manage your team on the{" "}
+          <a href="/staff" style={{ color: "#0070f3" }}>Staff Management</a> page.
+        </p>
         {engineers.map((e) => (
-          <div key={e.id} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "6px 0" }}>
-            <span style={{ fontSize: "14px" }}>{e.name}</span>
-            <button
-              onClick={() => removeEngineer(e.id)}
-              style={{ ...buttonStyle, backgroundColor: "#dc2626", fontSize: "11px", padding: "4px 10px", marginTop: 0 }}
-            >
-              Remove
-            </button>
+          <div key={e.id} style={{ padding: "4px 0", fontSize: "14px" }}>
+            • {e.name}
           </div>
         ))}
-
-        <div style={{ display: "flex", gap: "8px", marginTop: "8px", alignItems: "end" }}>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>New engineer</label>
-            <input
-              type="text"
-              style={inputStyle}
-              value={newEngineerName}
-              onChange={(e) => setNewEngineerName(e.target.value)}
-              placeholder="Naam..."
-            />
-          </div>
-          <button style={buttonStyle} onClick={addEngineer}>+ Add</button>
-        </div>
       </section>
 
       {/* Absences */}
@@ -379,7 +350,7 @@ export default function CapacityPage() {
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Engineer</th>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>From</th>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Until (inclusive)</th>
-                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Aantal dagen</th>
+                <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Days</th>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}>Reason</th>
                 <th style={{ ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" }}></th>
               </tr>
@@ -389,7 +360,7 @@ export default function CapacityPage() {
                 const eng = engineers.find((e) => e.id === a.engineer_id);
                 return (
                   <tr key={a.key}>
-                    <td style={cellStyle}>{eng?.name || "Onbekend"}</td>
+                    <td style={cellStyle}>{eng?.name || "Unknown"}</td>
                     <td style={cellStyle}>{formatDate(a.start_date)}</td>
                     <td style={cellStyle}>{formatDate(a.end_date)}</td>
                     <td style={cellStyle}>{a.days}</td>
@@ -450,7 +421,7 @@ export default function CapacityPage() {
               style={inputStyle}
               value={absenceReason}
               onChange={(e) => setAbsenceReason(e.target.value)}
-              placeholder="Bv. Ziek, Vakantie..."
+              placeholder="E.g. Sick leave, Holiday..."
             />
           </div>
           <button style={buttonStyle} onClick={addAbsence}>+ Add absence</button>

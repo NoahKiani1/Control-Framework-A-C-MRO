@@ -54,6 +54,7 @@ type ParsedRow = {
   last_system_update: string | null;
   is_open: boolean;
   work_order_type: string | null;
+  part_number: string | null;
 };
 
 export default function ImportPage() {
@@ -123,6 +124,7 @@ export default function ImportPage() {
       const rfqState = String(row["RFQ State"] || "").trim();
       const compType = String(row["Comp. Type"] || "").trim();
       const description = String(row["Description"] || "").trim();
+      const partNumber = String(row["Comp. Pn"] || "").trim();
 
       parsed.push({
         work_order_id: workOrderId,
@@ -131,6 +133,7 @@ export default function ImportPage() {
         last_system_update: parseExcelDate(row["LastUpdatedOn"]),
         is_open: true,
         work_order_type: mapWorkOrderType(compType, description),
+        part_number: partNumber || null,
       });
     }
 

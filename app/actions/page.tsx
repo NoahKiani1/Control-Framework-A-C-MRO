@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatDate, isStale, latestUpdate } from "@/lib/work-order-rules";
 import { supabase } from "@/lib/supabase";
 
 type WorkOrder = {
   work_order_id: string;
   customer: string | null;
+  part_number: string | null;
   hold_reason: string | null;
   required_next_action: string | null;
   action_owner: string | null;
@@ -14,19 +16,6 @@ type WorkOrder = {
   last_manual_update: string | null;
   last_system_update: string | null;
 };
-
-function latestUpdate(system: string | null, manual: string | null): string | null {
-  if (!system && !manual) return null;
-  if (!system) return manual;
-  if (!manual) return system;
-  return new Date(system) > new Date(manual) ? system : manual;
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "–";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
 
 export default function ActionsPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
@@ -37,7 +26,7 @@ export default function ActionsPage() {
     async function load() {
       const { data } = await supabase
         .from("work_orders")
-        .select("work_order_id, customer, hold_reason, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update")
+        .select("work_order_id, customer, part_number, hold_reason, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update")
         .eq("is_open", true)
         .eq("is_active", true);
       setOrders((data as WorkOrder[]) || []);
@@ -113,11 +102,12 @@ export default function ActionsPage() {
             <tr>
               <th style={headerStyle}>WO</th>
               <th style={headerStyle}>Customer</th>
+              <th style={headerStyle}>Part Number</th>
               <th style={headerStyle}>Hold Reason</th>
-              <th style={headerStyle}>Actie nodig</th>
-              <th style={headerStyle}>Actie-eigenaar</th>
-              <th style={headerStyle}>Actie status</th>
-              <th style={headerStyle}>Actie gesloten</th>
+              <th style={headerStyle}>Action Required</th>
+              <th style={headerStyle}>Action Owner</th>
+              <th style={headerStyle}>Action Status</th>
+              <th style={headerStyle}>Action Closed</th>
               <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
@@ -128,20 +118,26 @@ export default function ActionsPage() {
                 <tr key={o.work_order_id} style={{ backgroundColor: rowColor(o) }}>
                   <td style={cellStyle}>{o.work_order_id}</td>
                   <td style={cellStyle}>{o.customer || "–"}</td>
+                  <td style={cellStyle}>{o.part_number || "–"}</td>
                   <td style={{ ...cellStyle, fontWeight: o.hold_reason ? "bold" : "normal" }}>
                     {o.hold_reason || "–"}
                   </td>
                   <td style={cellStyle}>{o.required_next_action || "–"}</td>
                   <td style={cellStyle}>{o.action_owner || "–"}</td>
                   <td style={cellStyle}>{o.action_status || "Open"}</td>
-                  <td style={cellStyle}>{o.action_closed ? "Ja" : "Nee"}</td>
-                  <td style={cellStyle}>{formatDate(lastUpdate)}</td>
+                  <td style={cellStyle}>{o.action_closed ? "Yes" : "No"}</td>
+                  <td style={cellStyle}>
+                    {formatDate(lastUpdate)}
+                    {isStale(lastUpdate) && (
+                      <span className="stale-warning">⚠<span className="stale-tooltip">Not updated in over 2 weeks</span></span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ ...cellStyle, textAlign: "center", color: "#999" }}>
+                <td colSpan={9} style={{ ...cellStyle, textAlign: "center", color: "#999" }}>
                   No actions or blockers found
                 </td>
               </tr>

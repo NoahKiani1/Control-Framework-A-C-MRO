@@ -12,9 +12,14 @@ type BlockReasonOptions = {
   rfqSentLabel?: string;
 };
 
+function normalizeRfq(state: string | null | undefined): string {
+  return (state || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 export function isBlocked(order: BlockableOrder): boolean {
   if (order.hold_reason) return true;
-  if (order.rfq_state === "RFQ Send" || order.rfq_state === "RFQ Rejected") return true;
+  const rfq = normalizeRfq(order.rfq_state);
+  if (rfq === "rfq send" || rfq === "rfq rejected") return true;
   return false;
 }
 
@@ -57,12 +62,29 @@ export function formatDate(dateStr: string | null): string {
   });
 }
 
+export function isStale(dateStr: string | null): boolean {
+  if (!dateStr) return false;
+  const twoWeeksAgo = new Date();
+  twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+  return new Date(dateStr) < twoWeeksAgo;
+}
+
 export function blockReason(
   order: BlockableOrder,
   options: BlockReasonOptions = {},
 ): string {
   if (order.hold_reason) return order.hold_reason;
-  if (order.rfq_state === "RFQ Send") return options.rfqSentLabel || "RFQ sent";
-  if (order.rfq_state === "RFQ Rejected") return "RFQ rejected";
+  const rfq = normalizeRfq(order.rfq_state);
+  if (rfq === "rfq send") return options.rfqSentLabel || "RFQ sent";
+  if (rfq === "rfq rejected") return "RFQ rejected";
   return "–";
+}
+
+export function rfqDisplay(rfqState: string | null): { label: string; color: string } {
+  const rfq = normalizeRfq(rfqState);
+  if (!rfq || rfq === "undefined") return { label: "No RFQ", color: "#999" };
+  if (rfq === "rfq send") return { label: "RFQ Send", color: "#dc2626" };
+  if (rfq === "rfq rejected") return { label: "RFQ Rejected", color: "#dc2626" };
+  if (rfq === "rfq send - continue") return { label: "RFQ Send - Continue", color: "#16a34a" };
+  return { label: rfqState || "", color: "#666" };
 }

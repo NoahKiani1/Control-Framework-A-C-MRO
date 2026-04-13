@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatDate, latestUpdate, rfqDisplay } from "@/lib/work-order-rules";
 import { supabase } from "@/lib/supabase";
 
 type WorkOrder = {
@@ -9,6 +10,7 @@ type WorkOrder = {
   rfq_state: string | null;
   work_order_type: string | null;
   last_system_update: string | null;
+  last_manual_update: string | null;
 };
 
 export default function BacklogPage() {
@@ -19,7 +21,7 @@ export default function BacklogPage() {
     async function load() {
       const { data } = await supabase
         .from("work_orders")
-        .select("work_order_id, customer, rfq_state, work_order_type, last_system_update")
+        .select("work_order_id, customer, rfq_state, work_order_type, last_system_update, last_manual_update")
         .eq("is_open", true)
         .eq("is_active", false)
         .order("last_system_update", { ascending: false });
@@ -50,7 +52,7 @@ export default function BacklogPage() {
     <main style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Backlog</h1>
-        <a href="/">? Home</a>
+        <a href="/">← Home</a>
       </div>
 
       <p style={{ marginTop: "1rem", color: "#666" }}>
@@ -65,19 +67,25 @@ export default function BacklogPage() {
               <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Type</th>
               <th style={headerStyle}>RFQ</th>
-              <th style={headerStyle}>Last System Update</th>
+              <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
           <tbody>
-            {orders.map((o) => (
-              <tr key={o.work_order_id}>
-                <td style={cellStyle}>{o.work_order_id}</td>
-                <td style={cellStyle}>{o.customer || "�"}</td>
-                <td style={cellStyle}>{o.work_order_type || "�"}</td>
-                <td style={cellStyle}>{o.rfq_state && o.rfq_state !== "undefined" ? o.rfq_state : "No RFQ"}</td>
-                <td style={cellStyle}>{o.last_system_update ? new Date(o.last_system_update).toLocaleDateString("en-GB") : "�"}</td>
-              </tr>
-            ))}
+            {orders.map((o) => {
+              const lastUpdate = latestUpdate(o.last_system_update, o.last_manual_update);
+
+              return (
+                <tr key={o.work_order_id}>
+                  <td style={cellStyle}>{o.work_order_id}</td>
+                  <td style={cellStyle}>{o.customer || "–"}</td>
+                  <td style={cellStyle}>{o.work_order_type || "–"}</td>
+                  <td style={{ ...cellStyle, color: rfqDisplay(o.rfq_state).color }}>
+                    {rfqDisplay(o.rfq_state).label}
+                  </td>
+                  <td style={cellStyle}>{formatDate(lastUpdate)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

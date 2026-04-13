@@ -6,6 +6,8 @@ import {
   formatDate,
   isBlocked,
   latestUpdate,
+  isStale,
+  rfqDisplay,
   sortOrders,
 } from "@/lib/work-order-rules";
 import { supabase } from "@/lib/supabase";
@@ -13,6 +15,7 @@ import { supabase } from "@/lib/supabase";
 type WorkOrder = {
   work_order_id: string;
   customer: string | null;
+  part_number: string | null;
   due_date: string | null;
   priority: string | null;
   assigned_person_team: string | null;
@@ -33,7 +36,7 @@ export default function ShopPage() {
       const { data } = await supabase
         .from("work_orders")
         .select(
-          "work_order_id, customer, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, last_manual_update, last_system_update",
+          "work_order_id, customer, part_number, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, last_manual_update, last_system_update",
         )
         .eq("is_open", true)
         .eq("is_active", true);
@@ -94,6 +97,7 @@ export default function ShopPage() {
             <tr>
               <th style={headerStyle}>WO</th>
               <th style={headerStyle}>Customer</th>
+              <th style={headerStyle}>Part Number</th>
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Assigned</th>
@@ -118,16 +122,20 @@ export default function ShopPage() {
                     {o.work_order_id}
                   </td>
                   <td style={cellStyle}>{o.customer || "–"}</td>
+                  <td style={cellStyle}>{o.part_number || "–"}</td>
                   <td style={cellStyle}>{prioLabel(o)}</td>
                   <td style={cellStyle}>{formatDate(o.due_date)}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                  <td style={cellStyle}>
-                    {o.rfq_state && o.rfq_state !== "undefined"
-                      ? o.rfq_state
-                      : "No RFQ"}
+                  <td style={{ ...cellStyle, color: rfqDisplay(o.rfq_state).color }}>
+                    {rfqDisplay(o.rfq_state).label}
                   </td>
-                  <td style={cellStyle}>{formatDate(lastUpdate)}</td>
+                  <td style={cellStyle}>
+                    {formatDate(lastUpdate)}
+                    {isStale(lastUpdate) && (
+                      <span className="stale-warning">⚠<span className="stale-tooltip">Not updated in over 2 weeks</span></span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -145,6 +153,7 @@ export default function ShopPage() {
             <tr>
               <th style={headerStyle}>WO</th>
               <th style={headerStyle}>Customer</th>
+              <th style={headerStyle}>Part Number</th>
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Assigned</th>
@@ -171,18 +180,22 @@ export default function ShopPage() {
                     {o.work_order_id}
                   </td>
                   <td style={cellStyle}>{o.customer || "–"}</td>
+                  <td style={cellStyle}>{o.part_number || "–"}</td>
                   <td style={cellStyle}>{prioLabel(o)}</td>
                   <td style={cellStyle}>{formatDate(o.due_date)}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
                   <td style={cellStyle}>{blockReason(o)}</td>
-                  <td style={cellStyle}>
-                    {o.rfq_state && o.rfq_state !== "undefined"
-                      ? o.rfq_state
-                      : "No RFQ"}
+                  <td style={{ ...cellStyle, color: rfqDisplay(o.rfq_state).color }}>
+                    {rfqDisplay(o.rfq_state).label}
                   </td>
                   <td style={cellStyle}>{o.required_next_action || "–"}</td>
-                  <td style={cellStyle}>{formatDate(lastUpdate)}</td>
+                  <td style={cellStyle}>
+                    {formatDate(lastUpdate)}
+                    {isStale(lastUpdate) && (
+                      <span className="stale-warning">⚠<span className="stale-tooltip">Not updated in over 2 weeks</span></span>
+                    )}
+                  </td>
                 </tr>
               );
             })}

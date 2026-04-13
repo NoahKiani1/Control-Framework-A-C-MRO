@@ -5,7 +5,9 @@ import {
   blockReason,
   formatDate,
   isBlocked,
+  isStale,
   latestUpdate,
+  rfqDisplay,
   sortOrders,
 } from "@/lib/work-order-rules";
 import { supabase } from "@/lib/supabase";
@@ -120,12 +122,15 @@ export default function DashboardPage() {
                   <td style={cellStyle}>{o.priority || "No"}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                  <td style={cellStyle}>
-                    {o.rfq_state && o.rfq_state !== "undefined"
-                      ? o.rfq_state
-                      : "No RFQ"}
+                  <td style={{ ...cellStyle, color: rfqDisplay(o.rfq_state).color }}>
+                    {rfqDisplay(o.rfq_state).label}
                   </td>
-                  <td style={cellStyle}>{formatDate(lastUpdate)}</td>
+                  <td style={cellStyle}>
+                    {formatDate(lastUpdate)}
+                    {isStale(lastUpdate) && (
+                      <span className="stale-warning">⚠<span className="stale-tooltip">Not updated in over 2 weeks</span></span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -178,17 +183,20 @@ export default function DashboardPage() {
                       rfqSentLabel: "RFQ sent — awaiting customer",
                     })}
                   </td>
-                  <td style={cellStyle}>
-                    {o.rfq_state && o.rfq_state !== "undefined"
-                      ? o.rfq_state
-                      : "No RFQ"}
+                  <td style={{ ...cellStyle, color: rfqDisplay(o.rfq_state).color }}>
+                    {rfqDisplay(o.rfq_state).label}
                   </td>
                   <td style={cellStyle}>{o.required_next_action || "–"}</td>
                   <td style={cellStyle}>{o.action_owner || "–"}</td>
                   <td style={cellStyle}>
                     {hasAction(o) ? o.action_status || "Open" : "–"}
                   </td>
-                  <td style={cellStyle}>{formatDate(lastUpdate)}</td>
+                  <td style={cellStyle}>
+                    {formatDate(lastUpdate)}
+                    {isStale(lastUpdate) && (
+                      <span className="stale-warning">⚠<span className="stale-tooltip">Not updated in over 2 weeks</span></span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
