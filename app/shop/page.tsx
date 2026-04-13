@@ -10,7 +10,7 @@ import {
   rfqDisplay,
   sortOrders,
 } from "@/lib/work-order-rules";
-import { supabase } from "@/lib/supabase";
+import { getWorkOrders } from "@/lib/work-orders";
 
 type WorkOrder = {
   work_order_id: string;
@@ -33,15 +33,14 @@ export default function ShopPage() {
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
-        .from("work_orders")
-        .select(
+      const data = await getWorkOrders<WorkOrder>({
+        select:
           "work_order_id, customer, part_number, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, last_manual_update, last_system_update",
-        )
-        .eq("is_open", true)
-        .eq("is_active", true);
+        isOpen: true,
+        isActive: true,
+      });
 
-      const filtered = ((data as WorkOrder[]) || []).filter(
+      const filtered = data.filter(
         (o) => o.current_process_step !== "EASA-Form 1",
       );
 

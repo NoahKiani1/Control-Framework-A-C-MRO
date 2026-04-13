@@ -1,4 +1,5 @@
 import { PROCESS_STEPS } from "@/lib/process-steps";
+import { isRfqBlockedState } from "@/lib/work-order-rules";
 
 // === STANDAARD MANUREN PER TYPE (dummy, later aanpasbaar) ===
 
@@ -238,7 +239,7 @@ export function calculateWeekCapacity(
   const filteredOrders = orders.filter((o) => {
     if (!o.due_date) return false;
     if (o.hold_reason) return false;
-    if (o.rfq_state === "RFQ Send" || o.rfq_state === "RFQ Denied") return false;
+    if (isRfqBlockedState(o.rfq_state)) return false;
     if (o.current_process_step === "EASA-Form 1") return false;
     return true;
   });

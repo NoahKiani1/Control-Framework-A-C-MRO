@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { getEngineers, insertEngineer, updateEngineer } from "@/lib/engineers";
 
 type StaffMember = {
   id: number;
@@ -18,14 +18,16 @@ export default function StaffPage() {
   const [saveStatus, setSaveStatus] = useState("");
 
   async function loadStaff() {
-    const { data } = await supabase
-      .from("engineers")
-      .select("*")
-      .eq("is_active", true)
-      .order("role", { ascending: true })
-      .order("name", { ascending: true });
+    const data = await getEngineers<StaffMember>({
+      select: "*",
+      isActive: true,
+      orderBy: [
+        { column: "role", ascending: true },
+        { column: "name", ascending: true },
+      ],
+    });
 
-    setStaff((data as StaffMember[]) || []);
+    setStaff(data);
     setLoading(false);
   }
 
@@ -36,7 +38,7 @@ export default function StaffPage() {
   async function addMember() {
     if (!newName.trim()) return;
 
-    const { error } = await supabase.from("engineers").insert({
+    const { error } = await insertEngineer({
       name: newName.trim(),
       role: newRole,
     });
@@ -52,10 +54,7 @@ export default function StaffPage() {
   }
 
   async function removeMember(id: number, name: string) {
-    const { error } = await supabase
-      .from("engineers")
-      .update({ is_active: false })
-      .eq("id", id);
+    const { error } = await updateEngineer(id, { is_active: false });
 
     if (error) {
       setSaveStatus(`Error: ${error.message}`);
@@ -67,10 +66,7 @@ export default function StaffPage() {
   }
 
   async function updateRole(id: number, role: string) {
-    const { error } = await supabase
-      .from("engineers")
-      .update({ role })
-      .eq("id", id);
+    const { error } = await updateEngineer(id, { role });
 
     if (error) {
       setSaveStatus(`Error: ${error.message}`);

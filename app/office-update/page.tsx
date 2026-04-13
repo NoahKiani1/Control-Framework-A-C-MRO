@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { getEngineers } from "@/lib/engineers";
+import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 
 type WorkOrder = {
   work_order_id: string;
@@ -64,26 +65,24 @@ export default function OfficeUpdatePage() {
 
   useEffect(() => {
     async function load() {
-      const { data: wo } = await supabase
-        .from("work_orders")
-        .select(
+      const wo = await getWorkOrders<WorkOrder>({
+        select:
           "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, required_next_action, action_owner, action_status, action_closed, is_active, work_order_type, current_process_step",
-        )
-        .eq("is_open", true)
-        .order("work_order_id", { ascending: false });
+        isOpen: true,
+        orderBy: { column: "work_order_id", ascending: false },
+      });
 
-      const { data: staff } = await supabase
-        .from("engineers")
-        .select("id, name, role")
-        .eq("is_active", true)
-        .order("name");
+      const staffData = await getEngineers<StaffMember>({
+        select: "id, name, role",
+        isActive: true,
+        orderBy: { column: "name" },
+      });
 
-      const staffData = (staff as StaffMember[]) || [];
       setAllStaff(staffData);
       setShopStaff(staffData.filter((s) => s.role === "shop"));
       setOfficeStaff(staffData.filter((s) => s.role === "office"));
 
-      setOrders((wo as WorkOrder[]) || []);
+      setOrders(wo);
       setLoading(false);
     }
 
@@ -114,10 +113,7 @@ export default function OfficeUpdatePage() {
       last_manual_update: new Date().toISOString(),
     };
 
-    const { error } = await supabase
-      .from("work_orders")
-      .update(payload)
-      .eq("work_order_id", activateId);
+    const { error } = await updateWorkOrder(activateId, payload);
 
     if (error) {
       setActivateStatus(`Error: ${error.message}`);
@@ -243,10 +239,7 @@ export default function OfficeUpdatePage() {
       last_manual_update: new Date().toISOString(),
     };
 
-    const { error } = await supabase
-      .from("work_orders")
-      .update(payload)
-      .eq("work_order_id", selectedId);
+    const { error } = await updateWorkOrder(selectedId, payload);
 
     if (error) {
       setSaveStatus(`Error: ${error.message}`);

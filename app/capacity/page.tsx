@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import {
+  deleteEngineerAbsenceGroup,
+  deleteEngineerAbsencesByIds,
+  deletePastEngineerAbsences,
+  getEngineerAbsences,
+  getEngineers,
+  upsertEngineerAbsences,
+} from "@/lib/engineers";
+import { getWorkOrders } from "@/lib/work-orders";
 import { calculateWeekCapacity, type WeekCapacity, type OrderCapacity } from "@/lib/capacity";
 
 type Engineer = {
@@ -58,30 +66,27 @@ export default function CapacityPage() {
   async function loadData() {
     // Cleanup expired absences
     const today = new Date().toISOString().split("T")[0];
-    await supabase.from("engineer_absences").delete().lt("absence_date", today);
+    await deletePastEngineerAbsences(today);
 
-    const { data: eng } = await supabase
-      .from("engineers")
-      .select("*")
-      .eq("is_active", true)
-      .eq("role", "shop")
-      .order("name");
+    const engData = await getEngineers<Engineer>({
+      select: "*",
+      isActive: true,
+      role: "shop",
+      orderBy: { column: "name" },
+    });
 
-    const { data: abs } = await supabase
-      .from("engineer_absences")
-      .select("*")
-      .gte("absence_date", new Date().toISOString().split("T")[0])
-      .order("absence_date", { ascending: true });
+    const absData = await getEngineerAbsences<Absence>({
+      select: "*",
+      fromDate: new Date().toISOString().split("T")[0],
+      orderBy: { column: "absence_date", ascending: true },
+    });
 
-    const { data: wo } = await supabase
-      .from("work_orders")
-      .select("work_order_id, customer, work_order_type, current_process_step, due_date, hold_reason, rfq_state")
-      .eq("is_open", true)
-      .eq("is_active", true);
-
-    const engData = (eng as Engineer[]) || [];
-    const absData = (abs as Absence[]) || [];
-    const woData = (wo as WorkOrder[]) || [];
+    const woData = await getWorkOrders<WorkOrder>({
+      select:
+        "work_order_id, customer, work_order_type, current_process_step, due_date, hold_reason, rfq_state",
+      isOpen: true,
+      isActive: true,
+    });
 
     setEngineers(engData);
     setAbsences(absData);
@@ -133,9 +138,7 @@ export default function CapacityPage() {
       absence_group_id: groupId,
     }));
 
-    const { error } = await supabase.from("engineer_absences").upsert(rows, {
-      onConflict: "engineer_id,absence_date",
-    });
+    const { error } = await upsertEngineerAbsences(rows);
 
     if (error) {
       setSaveStatus(`Error: ${error.message}`);
@@ -150,15 +153,9 @@ export default function CapacityPage() {
 
   async function removeAbsence(groupId: string | null, ids: number[]) {
     if (groupId) {
-      await supabase
-        .from("engineer_absences")
-        .delete()
-        .eq("absence_group_id", groupId);
+      await deleteEngineerAbsenceGroup(groupId);
     } else {
-      await supabase
-        .from("engineer_absences")
-        .delete()
-        .in("id", ids);
+      await deleteEngineerAbsencesByIds(ids);
     }
 
     loadData();

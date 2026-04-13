@@ -12,14 +12,18 @@ type BlockReasonOptions = {
   rfqSentLabel?: string;
 };
 
-function normalizeRfq(state: string | null | undefined): string {
+export function normalizeRfqState(state: string | null | undefined): string {
   return (state || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function isRfqBlockedState(state: string | null | undefined): boolean {
+  const rfq = normalizeRfqState(state);
+  return rfq === "rfq send" || rfq === "rfq rejected";
 }
 
 export function isBlocked(order: BlockableOrder): boolean {
   if (order.hold_reason) return true;
-  const rfq = normalizeRfq(order.rfq_state);
-  if (rfq === "rfq send" || rfq === "rfq rejected") return true;
+  if (isRfqBlockedState(order.rfq_state)) return true;
   return false;
 }
 
@@ -74,14 +78,14 @@ export function blockReason(
   options: BlockReasonOptions = {},
 ): string {
   if (order.hold_reason) return order.hold_reason;
-  const rfq = normalizeRfq(order.rfq_state);
+  const rfq = normalizeRfqState(order.rfq_state);
   if (rfq === "rfq send") return options.rfqSentLabel || "RFQ sent";
   if (rfq === "rfq rejected") return "RFQ rejected";
   return "–";
 }
 
 export function rfqDisplay(rfqState: string | null): { label: string; color: string } {
-  const rfq = normalizeRfq(rfqState);
+  const rfq = normalizeRfqState(rfqState);
   if (!rfq || rfq === "undefined") return { label: "No RFQ", color: "#999" };
   if (rfq === "rfq send") return { label: "RFQ Send", color: "#dc2626" };
   if (rfq === "rfq rejected") return { label: "RFQ Rejected", color: "#dc2626" };

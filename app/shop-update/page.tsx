@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getProcessStepsForType } from "@/lib/process-steps";
-import { supabase } from "@/lib/supabase";
+import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 
 type WorkOrder = {
   work_order_id: string;
@@ -24,16 +24,15 @@ export default function ShopUpdatePage() {
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
-        .from("work_orders")
-        .select(
+      const data = await getWorkOrders<WorkOrder>({
+        select:
           "work_order_id, customer, work_order_type, current_process_step, hold_reason, priority, assigned_person_team",
-        )
-        .eq("is_open", true)
-        .eq("is_active", true)
-        .order("work_order_id", { ascending: false });
+        isOpen: true,
+        isActive: true,
+        orderBy: { column: "work_order_id", ascending: false },
+      });
 
-      setOrders((data as WorkOrder[]) || []);
+      setOrders(data);
       setLoading(false);
     }
 
@@ -58,14 +57,11 @@ export default function ShopUpdatePage() {
 
     setSaveStatus("Saving...");
 
-    const { error } = await supabase
-      .from("work_orders")
-      .update({
-        current_process_step: nextProcessStep,
-        hold_reason: holdReason || null,
-        last_manual_update: new Date().toISOString(),
-      })
-      .eq("work_order_id", selectedId);
+    const { error } = await updateWorkOrder(selectedId, {
+      current_process_step: nextProcessStep,
+      hold_reason: holdReason || null,
+      last_manual_update: new Date().toISOString(),
+    });
 
     if (error) {
       setSaveStatus(`Error: ${error.message}`);

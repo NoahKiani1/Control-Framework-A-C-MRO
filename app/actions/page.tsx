@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatDate, isStale, latestUpdate } from "@/lib/work-order-rules";
-import { supabase } from "@/lib/supabase";
+import { getWorkOrders } from "@/lib/work-orders";
 
 type WorkOrder = {
   work_order_id: string;
@@ -24,12 +24,13 @@ export default function ActionsPage() {
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
-        .from("work_orders")
-        .select("work_order_id, customer, part_number, hold_reason, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update")
-        .eq("is_open", true)
-        .eq("is_active", true);
-      setOrders((data as WorkOrder[]) || []);
+      const data = await getWorkOrders<WorkOrder>({
+        select:
+          "work_order_id, customer, part_number, hold_reason, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update",
+        isOpen: true,
+        isActive: true,
+      });
+      setOrders(data);
       setLoading(false);
     }
     load();

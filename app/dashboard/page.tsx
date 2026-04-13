@@ -10,7 +10,7 @@ import {
   rfqDisplay,
   sortOrders,
 } from "@/lib/work-order-rules";
-import { supabase } from "@/lib/supabase";
+import { getWorkOrders } from "@/lib/work-orders";
 
 type WorkOrder = {
   work_order_id: string;
@@ -41,13 +41,13 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: wo } = await supabase
-        .from("work_orders")
-        .select("*")
-        .eq("is_open", true)
-        .eq("is_active", true);
+      const wo = await getWorkOrders<WorkOrder>({
+        select: "*",
+        isOpen: true,
+        isActive: true,
+      });
 
-      setOrders(sortOrders((wo as WorkOrder[]) || []));
+      setOrders(sortOrders(wo));
       setLoading(false);
     }
 

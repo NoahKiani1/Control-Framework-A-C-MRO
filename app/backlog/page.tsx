@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatDate, latestUpdate, rfqDisplay } from "@/lib/work-order-rules";
-import { supabase } from "@/lib/supabase";
+import { getWorkOrders } from "@/lib/work-orders";
 
 type WorkOrder = {
   work_order_id: string;
@@ -19,13 +19,14 @@ export default function BacklogPage() {
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
-        .from("work_orders")
-        .select("work_order_id, customer, rfq_state, work_order_type, last_system_update, last_manual_update")
-        .eq("is_open", true)
-        .eq("is_active", false)
-        .order("last_system_update", { ascending: false });
-      setOrders((data as WorkOrder[]) || []);
+      const data = await getWorkOrders<WorkOrder>({
+        select:
+          "work_order_id, customer, rfq_state, work_order_type, last_system_update, last_manual_update",
+        isOpen: true,
+        isActive: false,
+        orderBy: { column: "last_system_update", ascending: false },
+      });
+      setOrders(data);
       setLoading(false);
     }
     load();

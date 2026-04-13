@@ -2,50 +2,20 @@
 
 import { useState } from "react";
 import * as XLSX from "xlsx";
-import { supabase } from "@/lib/supabase";
-
-function mapWorkOrderType(compType: string, description: string): string | null {
-  const type = (compType || "").toLowerCase().trim();
-  const desc = (description || "").toLowerCase().trim();
-
-  if (type === "battery") return "Battery";
-
-  if (type === "wheel") {
-    if (desc.startsWith("overhaul")) return "Wheel Overhaul";
-    return "Wheel Repair";
-  }
-
-  if (type === "brake") {
-    if (desc.startsWith("overhaul")) return "Brake Overhaul";
-    return "Brake Repair";
-  }
-
-  return null;
-}
-
-function parseExcelDate(value: unknown): string | null {
-  if (!value) return null;
-
-  if (typeof value === "number") {
-    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
-    return date.toISOString();
-  }
-
-  if (typeof value === "string") {
-    const d = new Date(value);
-    if (!isNaN(d.getTime())) return d.toISOString();
-  }
-
-  return null;
-}
-
-function isOlderThanOneYear(value: unknown): boolean {
-  const dateStr = parseExcelDate(value);
-  if (!dateStr) return false;
-  const oneYearAgo = new Date();
-  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  return new Date(dateStr) < oneYearAgo;
-}
+import {
+  isOlderThanOneYear,
+  mapWorkOrderType,
+  normalizeImportedRfqState,
+  parseExcelDate,
+} from "@/lib/import-normalize";
+import {
+  clearImportRuns,
+  createImportRun,
+  deleteWorkOrdersByIds,
+  getExistingWorkOrderIds,
+  insertWorkOrders,
+  upsertWorkOrders,
+} from "@/lib/work-orders";
 
 type ParsedRow = {
   work_order_id: string;
@@ -129,7 +99,7 @@ export default function ImportPage() {
       parsed.push({
         work_order_id: workOrderId,
         customer: customer || null,
-        rfq_state: rfqState || null,
+        rfq_state: normalizeImportedRfqState(rfqState),
         last_system_update: parseExcelDate(row["LastUpdatedOn"]),
         is_open: true,
         work_order_type: mapWorkOrderType(compType, description),
@@ -145,14 +115,7 @@ export default function ImportPage() {
 
     setStatus("Checking existing orders...");
     const ids = parsed.map((r) => r.work_order_id);
-    const { data: existingData } = await supabase
-      .from("work_orders")
-      .select("work_order_id")
-      .in("work_order_id", ids);
-
-    const existingIds = new Set(
-      (existingData || []).map((r: { work_order_id: string }) => r.work_order_id),
-    );
+    const existingIds = new Set(await getExistingWorkOrderIds(ids));
 
     const newOnes = parsed.filter((r) => !existingIds.has(r.work_order_id));
     const existingOnes = parsed.filter((r) => existingIds.has(r.work_order_id));
@@ -172,12 +135,7 @@ export default function ImportPage() {
     // 1. Update existing orders (system fields only)
     for (let i = 0; i < existingOrders.length; i += batchSize) {
       const batch = existingOrders.slice(i, i + batchSize);
-      const { error } = await supabase
-        .from("work_orders")
-        .upsert(batch, {
-          onConflict: "work_order_id",
-          ignoreDuplicates: false,
-        });
+      const { error } = await upsertWorkOrders(batch);
 
       if (error) {
         setStatus(`Error: ${error.message}`);
@@ -195,9 +153,7 @@ export default function ImportPage() {
         current_process_step: makeNewActive ? "Intake" : null,
       }));
 
-      const { error } = await supabase
-        .from("work_orders")
-        .insert(batch);
+      const { error } = await insertWorkOrders(batch);
 
       if (error) {
         setStatus(`Error: ${error.message}`);
@@ -210,7 +166,7 @@ export default function ImportPage() {
     let deleted = 0;
     for (let i = 0; i < oldIds.length; i += batchSize) {
       const batch = oldIds.slice(i, i + batchSize);
-      await supabase.from("work_orders").delete().in("work_order_id", batch);
+      await deleteWorkOrdersByIds(batch);
       deleted += batch.length;
     }
 
@@ -218,17 +174,14 @@ export default function ImportPage() {
     let closedRemoved = 0;
     for (let i = 0; i < closedIds.length; i += batchSize) {
       const batch = closedIds.slice(i, i + batchSize);
-      const { count } = await supabase
-        .from("work_orders")
-        .delete({ count: "exact" })
-        .in("work_order_id", batch);
+      const { count } = await deleteWorkOrdersByIds(batch, { withCount: true });
       closedRemoved += count || 0;
     }
 
     // 5. Clean up old import logs and create new one
-    await supabase.from("import_runs").delete().neq("id", 0);
+    await clearImportRuns();
 
-    await supabase.from("import_runs").insert({
+    await createImportRun({
       filename: fileName,
       rows_processed:
         newOrders.length + existingOrders.length + tooOld + skipped + closedSkipped,
