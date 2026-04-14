@@ -1,73 +1,74 @@
 import { PROCESS_STEPS } from "@/lib/process-steps";
 import { isRfqBlockedState } from "@/lib/work-order-rules";
-
-// === STANDAARD MANUREN PER TYPE (dummy, later aanpasbaar) ===
-
-export const TOTAL_HOURS: Record<string, number> = {
-  "Wheel Repair": 10,
-  "Wheel Overhaul": 20,
-  "Brake Repair": 10,
-  "Brake Overhaul": 20,
-  "Battery": 6,
-};
+import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
 
 // === PROCESS STAPPEN MET GEWICHT (dummy, later aanpasbaar) ===
 // Weight = percentage of total hours this step takes
 
+// === STEP WEIGHTS - gebaseerd op representatieve tijden per stap ===
+// Repair  totaal: 210 min  (Intake 10 + Disassembly 10 + Cleaning 20 + Magnetic Test 0 +
+//                           Eddy Current 60 + Inspection 20 + Assembly 60 + EASA 30)
+// Overhaul totaal: 350 min (Intake 10 + Disassembly 10 + Cleaning 20 + Paint Stripping 20 +
+//                           Magnetic Test 0 + Penetrant 60 + Eddy Current 60 +
+//                           Inspection 20 + Painting 60 + Assembly 60 + EASA 30)
+// Magnetic Test heeft weight 0: de stap bestaat in de flow maar telt niet mee in uren
+// (wordt optioneel uitgevoerd, zelden van toepassing)
+// "Repair" stap is vervallen: valt samen met Assembly
+
 export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
   "Wheel Repair": {
-    "Intake": 0.05,
-    "Disassembly": 0.10,
-    "Cleaning": 0.10,
-    "Inspection": 0.15,
-    "Eddy Current": 0.15,
-    "Repair": 0.25,
-    "Assembly": 0.15,
-    "EASA-Form 1": 0.05,
+    "Intake":          0.05, // 10/210
+    "Disassembly":     0.05, // 10/210
+    "Cleaning":        0.10, // 20/210
+    "Magnetic Test":   0.00, // optioneel, geen vaste tijd
+    "Eddy Current":    0.28, // 60/210
+    "Inspection":      0.10, // 20/210
+    "Assembly":        0.28, // 60/210 (inclusief repair)
+    "EASA-Form 1":     0.14, // 30/210
   },
   "Wheel Overhaul": {
-    "Intake": 0.03,
-    "Disassembly": 0.08,
-    "Cleaning": 0.07,
-    "Paint Stripping": 0.07,
-    "Inspection": 0.10,
-    "Penetrant NDT Inspection": 0.10,
-    "Eddy Current": 0.10,
-    "Repair": 0.20,
-    "Painting": 0.07,
-    "Assembly": 0.13,
-    "EASA-Form 1": 0.05,
+    "Intake":                  0.03, // 10/350
+    "Disassembly":             0.03, // 10/350
+    "Cleaning":                0.06, // 20/350
+    "Paint Stripping":         0.06, // 20/350
+    "Magnetic Test":           0.00, // optioneel, geen vaste tijd
+    "Penetrant NDT Inspection":0.17, // 60/350
+    "Eddy Current":            0.17, // 60/350
+    "Inspection":              0.06, // 20/350
+    "Painting":                0.17, // 60/350
+    "Assembly":                0.17, // 60/350 (inclusief repair)
+    "EASA-Form 1":             0.08, // 30/350
   },
   "Brake Repair": {
-    "Intake": 0.05,
-    "Disassembly": 0.10,
-    "Cleaning": 0.10,
-    "Inspection": 0.15,
-    "Eddy Current": 0.15,
-    "Repair": 0.25,
-    "Assembly": 0.15,
-    "EASA-Form 1": 0.05,
+    "Intake":          0.05,
+    "Disassembly":     0.05,
+    "Cleaning":        0.10,
+    "Magnetic Test":   0.00,
+    "Eddy Current":    0.28,
+    "Inspection":      0.10,
+    "Assembly":        0.28,
+    "EASA-Form 1":     0.14,
   },
   "Brake Overhaul": {
-    "Intake": 0.03,
-    "Disassembly": 0.08,
-    "Cleaning": 0.07,
-    "Paint Stripping": 0.07,
-    "Inspection": 0.10,
-    "Penetrant NDT Inspection": 0.10,
-    "Eddy Current": 0.10,
-    "Repair": 0.20,
-    "Painting": 0.07,
-    "Assembly": 0.13,
-    "EASA-Form 1": 0.05,
+    "Intake":                  0.03,
+    "Disassembly":             0.03,
+    "Cleaning":                0.06,
+    "Paint Stripping":         0.06,
+    "Magnetic Test":           0.00,
+    "Penetrant NDT Inspection":0.17,
+    "Eddy Current":            0.17,
+    "Inspection":              0.06,
+    "Painting":                0.17,
+    "Assembly":                0.17,
+    "EASA-Form 1":             0.08,
   },
   "Battery": {
-    "Disassembly": 0.10,
-    "Cleaning": 0.10,
-    "Inspection": 0.20,
-    "Repair": 0.35,
-    "Assembly": 0.20,
-    "EASA-Form 1": 0.05,
+    "Disassembly":  0.10,
+    "Cleaning":     0.10,
+    "Inspection":   0.20,
+    "Repair":       0.35,
+    "Assembly":     0.20,
+    "EASA-Form 1":  0.05,
   },
 };
 
@@ -77,10 +78,15 @@ export const STEP_ORDER: Record<string, string[]> = PROCESS_STEPS;
 
 // === BEREKENINGEN ===
 
-export function getRemainingHours(workOrderType: string | null, currentStep: string | null): number {
-  if (!workOrderType || !TOTAL_HOURS[workOrderType]) return 0;
+export function getRemainingHours(
+  workOrderType: string | null,
+  currentStep: string | null,
+  partNumber?: string | null, // ← nieuw
+): number {
+  if (!workOrderType || !FALLBACK_HOURS[workOrderType]) return 0;
 
-  const total = TOTAL_HOURS[workOrderType];
+  const total = getTotalHoursForPart(workOrderType, partNumber);
+
   const steps = STEP_ORDER[workOrderType];
   const weights = STEP_WEIGHTS[workOrderType];
 
@@ -247,7 +253,8 @@ export function calculateWeekCapacity(
   });
 
   for (const order of filteredOrders) {
-    const remaining = getRemainingHours(order.work_order_type, order.current_process_step);
+    // ↓ enige wijziging: geef part_number mee
+    const remaining = getRemainingHours(order.work_order_type, order.current_process_step, order.part_number);
     if (remaining <= 0) continue;
 
     const dueDate = new Date(order.due_date!);
