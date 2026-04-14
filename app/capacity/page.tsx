@@ -13,11 +13,14 @@ import {
 import { getWorkOrders } from "@/lib/work-orders";
 import { calculateWeekCapacity, type WeekCapacity, type OrderCapacity } from "@/lib/capacity";
 import { isRfqBlockedState } from "@/lib/work-order-rules";
+import { RESTRICTION_LABELS, RESTRICTION_BLOCKED_STEPS } from "@/lib/restrictions";
+import { PROCESS_STEPS } from "@/lib/process-steps";
 
 type Engineer = {
   id: number;
   name: string;
   is_active: boolean;
+  restrictions: string[] | null;
 };
 
 type Absence = {
@@ -71,6 +74,7 @@ export default function CapacityPage() {
   const [overdueOrders, setOverdueOrders] = useState<OrderCapacity[]>([]);
 
   const [showInfoBanner, setShowInfoBanner] = useState(true);
+  const [showAllAbsences, setShowAllAbsences] = useState(false);
 
   async function loadData() {
     const today = new Date().toISOString().split("T")[0];
@@ -194,6 +198,95 @@ export default function CapacityPage() {
   const ordersBlocked = excludedOrders.filter((o) => o.due_date && (o.hold_reason || isRfqBlockedState(o.rfq_state)));
   const ordersEasa = excludedOrders.filter((o) => o.due_date && o.current_process_step === "EASA-Form 1" && !o.hold_reason && !isRfqBlockedState(o.rfq_state));
 
+  // --- Restriction warnings ---
+  // For each day in the 3-week window, check if any capability is unavailable
+  // because all present engineers have that restriction.
+
+  type RestrictionWarning = {
+    restriction: string;
+    label: string;
+    blockedSteps: string[];
+    unavailableDates: string[];
+    affectedOrders: { work_order_id: string; customer: string | null; current_step: string | null; due_date: string | null }[];
+  };
+
+  const restrictionWarnings: RestrictionWarning[] = (() => {
+    const allDays: Date[] = weeks.flatMap((w) => w.workDays);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const warnings: RestrictionWarning[] = [];
+
+    for (const [restriction, label] of Object.entries(RESTRICTION_LABELS)) {
+      const blockedSteps = RESTRICTION_BLOCKED_STEPS[restriction] || [];
+
+      // Find days where no present engineer can do this
+      const unavailableDates: string[] = [];
+
+      for (const day of allDays) {
+        if (day < today) continue;
+        const dayStr = day.toISOString().split("T")[0];
+
+        // Which engineers are present this day?
+        const absentIds = new Set(
+          absences.filter((a) => a.absence_date === dayStr).map((a) => a.engineer_id),
+        );
+        const presentEngineers = engineers.filter((e) => !absentIds.has(e.id));
+
+        if (presentEngineers.length === 0) {
+          unavailableDates.push(dayStr);
+          continue;
+        }
+
+        // Can any present engineer do this?
+        const anyoneCanDo = presentEngineers.some(
+          (e) => !(e.restrictions || []).includes(restriction),
+        );
+
+        if (!anyoneCanDo) {
+          unavailableDates.push(dayStr);
+        }
+      }
+
+      if (unavailableDates.length === 0) continue;
+
+      // Find affected orders: orders that still need one of the blocked steps
+      const affected = allOrders
+        .filter((o) => {
+          if (!o.work_order_type || !o.current_process_step) return false;
+          const steps = PROCESS_STEPS[o.work_order_type];
+          if (!steps) return false;
+
+          const currentIdx = steps.indexOf(o.current_process_step);
+          if (currentIdx === -1) return false;
+
+          // Check if any blocked step is at or after the current step
+          return blockedSteps.some((bs) => {
+            const bsIdx = steps.indexOf(bs);
+            return bsIdx >= currentIdx;
+          });
+        })
+        .map((o) => ({
+          work_order_id: o.work_order_id,
+          customer: o.customer,
+          current_step: o.current_process_step,
+          due_date: o.due_date,
+        }));
+
+      if (affected.length === 0) continue;
+
+      warnings.push({
+        restriction,
+        label,
+        blockedSteps,
+        unavailableDates,
+        affectedOrders: affected,
+      });
+    }
+
+    return warnings;
+  })();
+
   function getActiveEngineersForWeek(week: WeekCapacity): number {
     const absentIds = new Set<number>();
     for (const day of week.workDays) {
@@ -296,6 +389,22 @@ export default function CapacityPage() {
     }, {} as Record<string, GroupedAbsence>)
   ).sort((a, b) => a.start_date.localeCompare(b.start_date));
 
+  // Split absences: within 3-week capacity window vs later
+  const threeWeekCutoff = (() => {
+    if (weeks.length === 0) return "";
+    const lastWeek = weeks[weeks.length - 1];
+    if (lastWeek.workDays.length === 0) return "";
+    const lastDay = lastWeek.workDays[lastWeek.workDays.length - 1];
+    return lastDay.toISOString().split("T")[0];
+  })();
+
+  const absencesThisWindow = groupedAbsences.filter(
+    (a) => !threeWeekCutoff || a.start_date <= threeWeekCutoff,
+  );
+  const absencesLater = groupedAbsences.filter(
+    (a) => threeWeekCutoff && a.start_date > threeWeekCutoff,
+  );
+
   // --- Styles ---
 
   const labelStyle: React.CSSProperties = { display: "block", marginTop: "10px", fontWeight: "bold", fontSize: "13px" };
@@ -347,10 +456,11 @@ export default function CapacityPage() {
           <strong style={{ color: "#4338ca", fontSize: "14px" }}>ℹ How this page works</strong>
 
           <div style={{ marginTop: "10px" }}>
-            <strong>Planned hours</strong> — Each work order type has a standard number of hours
-            (e.g. Wheel Repair = 10h, Wheel Overhaul = 20h). The remaining hours are estimated from the
-            current process step — earlier steps mean more work left. These hours are then spread
-            evenly across the working days between today and the due date.
+            <strong>Planned hours</strong> — Each work order has estimated hours based on data per
+            part number. When there is insufficient data for a part number, a fallback value per work
+            order type is used (e.g. Wheel Repair = 5.0h, Brake Overhaul = 12.2h). The remaining hours
+            are estimated from the current process step — earlier steps mean more work left. These
+            hours are then spread evenly across the working days between today and the due date.
           </div>
 
           <div style={{ marginTop: "8px" }}>
@@ -510,6 +620,47 @@ export default function CapacityPage() {
         </section>
       )}
 
+      {/* Restriction warnings */}
+      {restrictionWarnings.length > 0 && restrictionWarnings.map((w) => (
+        <section
+          key={w.restriction}
+          style={{
+            marginTop: "1.5rem",
+            padding: "14px 16px",
+            backgroundColor: "#fffbeb",
+            border: "1px solid #fde68a",
+            borderRadius: "8px",
+          }}
+        >
+          <strong style={{ color: "#92400e", fontSize: "14px" }}>
+            ⚠ {w.label} — unavailable on {w.unavailableDates.length} day{w.unavailableDates.length !== 1 ? "s" : ""}
+          </strong>
+          <p style={{ margin: "6px 0 4px", fontSize: "13px", color: "#78350f" }}>
+            On these dates no available engineer can perform{" "}
+            <strong>{w.blockedSteps.join(", ")}</strong>:
+          </p>
+          <p style={{ margin: "0 0 10px", fontSize: "13px", color: "#92400e", fontWeight: "bold" }}>
+            {w.unavailableDates.map((d) => formatDate(d)).join(", ")}
+          </p>
+
+          <p style={{ margin: "0 0 4px", fontSize: "13px", color: "#78350f" }}>
+            {w.affectedOrders.length} order{w.affectedOrders.length !== 1 ? "s" : ""} still
+            {w.affectedOrders.length !== 1 ? " need" : " needs"} this — make sure{" "}
+            {w.restriction === "certification" ? "certification is" : "these steps are"}{" "}
+            done on a day when a qualified engineer is present:
+          </p>
+          <ul style={{ margin: 0, paddingLeft: "20px" }}>
+            {w.affectedOrders.map((o) => (
+              <li key={o.work_order_id} style={{ fontSize: "13px", padding: "2px 0" }}>
+                <strong>{o.work_order_id}</strong> — {o.customer || "–"}
+                {" "}(now at {o.current_step || "–"})
+                {o.due_date ? ` — due ${formatDate(o.due_date)}` : " — no due date"}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+
       {/* Order details table */}
       {orderDetails.length > 0 && (
         <section style={{ marginTop: "1.5rem" }}>
@@ -622,7 +773,7 @@ export default function CapacityPage() {
       <section style={{ marginTop: "2rem", borderTop: "2px solid #eee", paddingTop: "1.5rem" }}>
         <h2>Absences</h2>
 
-        {groupedAbsences.length > 0 ? (
+        {absencesThisWindow.length > 0 ? (
           <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "12px" }}>
             <thead>
               <tr>
@@ -635,7 +786,7 @@ export default function CapacityPage() {
               </tr>
             </thead>
             <tbody>
-              {groupedAbsences.map((a) => {
+              {absencesThisWindow.map((a) => {
                 const eng = engineers.find((e) => e.id === a.engineer_id);
                 return (
                   <tr key={a.key}>
@@ -658,7 +809,59 @@ export default function CapacityPage() {
             </tbody>
           </table>
         ) : (
-          <p style={{ color: "#666", fontSize: "14px" }}>No absences planned.</p>
+          <p style={{ color: "#666", fontSize: "14px" }}>No absences planned in the next 3 weeks.</p>
+        )}
+
+        {absencesLater.length > 0 && !showAllAbsences && (
+          <p style={{ margin: "0 0 12px", fontSize: "13px" }}>
+            <a
+              href="#"
+              onClick={(e) => { e.preventDefault(); setShowAllAbsences(true); }}
+              style={{ color: "#0070f3", textDecoration: "underline", cursor: "pointer" }}
+            >
+              View {absencesLater.length} later absence{absencesLater.length !== 1 ? "s" : ""} →
+            </a>
+          </p>
+        )}
+
+        {showAllAbsences && absencesLater.length > 0 && (
+          <>
+            <h3 style={{ margin: "0 0 6px", fontSize: "14px", color: "#666" }}>Later absences</h3>
+            <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "12px" }}>
+              <thead>
+                <tr>
+                  <th style={headerCellStyle}>Engineer</th>
+                  <th style={headerCellStyle}>From</th>
+                  <th style={headerCellStyle}>Until (inclusive)</th>
+                  <th style={headerCellStyle}>Days</th>
+                  <th style={headerCellStyle}>Reason</th>
+                  <th style={headerCellStyle}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {absencesLater.map((a) => {
+                  const eng = engineers.find((e) => e.id === a.engineer_id);
+                  return (
+                    <tr key={a.key}>
+                      <td style={cellStyle}>{eng?.name || "Unknown"}</td>
+                      <td style={cellStyle}>{formatDate(a.start_date)}</td>
+                      <td style={cellStyle}>{formatDate(a.end_date)}</td>
+                      <td style={cellStyle}>{a.days}</td>
+                      <td style={cellStyle}>{a.reason || "–"}</td>
+                      <td style={cellStyle}>
+                        <button
+                          onClick={() => removeAbsence(a.group_id, a.ids)}
+                          style={{ ...buttonStyle, backgroundColor: "#dc2626", fontSize: "11px", padding: "4px 10px", marginTop: 0 }}
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </>
         )}
 
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "end" }}>
@@ -681,7 +884,12 @@ export default function CapacityPage() {
               type="date"
               style={inputStyle}
               value={absenceDate}
-              onChange={(e) => setAbsenceDate(e.target.value)}
+              onChange={(e) => {
+                setAbsenceDate(e.target.value);
+                if (!absenceEndDate || absenceEndDate < e.target.value) {
+                  setAbsenceEndDate(e.target.value);
+                }
+              }}
             />
           </div>
           <div>
@@ -690,6 +898,7 @@ export default function CapacityPage() {
               type="date"
               style={inputStyle}
               value={absenceEndDate}
+              min={absenceDate || undefined}
               onChange={(e) => setAbsenceEndDate(e.target.value)}
             />
           </div>

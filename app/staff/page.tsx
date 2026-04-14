@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getEngineers, insertEngineer, updateEngineer } from "@/lib/engineers";
+import { RESTRICTION_LABELS } from "@/lib/restrictions";
 
 type StaffMember = {
   id: number;
   name: string;
   role: string | null;
   is_active: boolean;
+  restrictions: string[] | null;
 };
 
 export default function StaffPage() {
@@ -78,6 +80,22 @@ export default function StaffPage() {
     loadStaff();
   }
 
+  async function toggleRestriction(member: StaffMember, restriction: string) {
+    const current = member.restrictions || [];
+    const updated = current.includes(restriction)
+      ? current.filter((r) => r !== restriction)
+      : [...current, restriction];
+
+    const { error } = await updateEngineer(member.id, { restrictions: updated });
+
+    if (error) {
+      setSaveStatus(`Error: ${error.message}`);
+      return;
+    }
+
+    loadStaff();
+  }
+
   if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
 
   const shopStaff = staff.filter((s) => s.role === "shop");
@@ -125,6 +143,8 @@ export default function StaffPage() {
   };
 
   function renderTable(members: StaffMember[], roleLabel: string, roleColor: string) {
+    const isShop = roleLabel.startsWith("Shop");
+
     return (
       <div style={{ marginTop: "1.5rem" }}>
         <h2 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -148,6 +168,7 @@ export default function StaffPage() {
               <tr>
                 <th style={headerStyle}>Name</th>
                 <th style={headerStyle}>Role</th>
+                {isShop && <th style={headerStyle}>Restrictions</th>}
                 <th style={headerStyle}></th>
               </tr>
             </thead>
@@ -170,6 +191,25 @@ export default function StaffPage() {
                       <option value="office">Office</option>
                     </select>
                   </td>
+                  {isShop && (
+                    <td style={cellStyle}>
+                      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                        {Object.entries(RESTRICTION_LABELS).map(([key, label]) => (
+                          <label
+                            key={key}
+                            style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", cursor: "pointer" }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={(m.restrictions || []).includes(key)}
+                              onChange={() => toggleRestriction(m, key)}
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </td>
+                  )}
                   <td style={cellStyle}>
                     <button
                       onClick={() => removeMember(m.id, m.name)}
