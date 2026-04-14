@@ -9,7 +9,7 @@ export const RESTRICTION_LABELS: Record<string, string> = {
 };
 
 export const RESTRICTION_BLOCKED_STEPS: Record<string, string[]> = {
-  ndt: ["Eddy Current", "Penetrant NDT Inspection", "Magnetic Test (if applicable)"],
+  ndt: ["Eddy Current", "Penetrant Testing", "Magnetic Test"],
   certification: ["EASA-Form 1"],
 };
 

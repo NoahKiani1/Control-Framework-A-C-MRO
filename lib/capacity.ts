@@ -20,7 +20,7 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
     "Intake":          0.05, // 10/210
     "Disassembly":     0.05, // 10/210
     "Cleaning":        0.10, // 20/210
-    "Magnetic Test":   0.00, // optioneel, geen vaste tijd
+    "Magnetic Test": 0.00, // optioneel, geen vaste tijd
     "Eddy Current":    0.28, // 60/210
     "Inspection":      0.10, // 20/210
     "Assembly":        0.28, // 60/210 (inclusief repair)
@@ -31,8 +31,8 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
     "Disassembly":             0.03, // 10/350
     "Cleaning":                0.06, // 20/350
     "Paint Stripping":         0.06, // 20/350
-    "Magnetic Test":           0.00, // optioneel, geen vaste tijd
-    "Penetrant NDT Inspection":0.17, // 60/350
+    "Magnetic Test": 0.00, // optioneel, geen vaste tijd
+    "Penetrant Testing":0.17, // 60/350
     "Eddy Current":            0.17, // 60/350
     "Inspection":              0.06, // 20/350
     "Painting":                0.17, // 60/350
@@ -43,7 +43,7 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
     "Intake":          0.05,
     "Disassembly":     0.05,
     "Cleaning":        0.10,
-    "Magnetic Test":   0.00,
+    "Magnetic Test": 0.00,
     "Eddy Current":    0.28,
     "Inspection":      0.10,
     "Assembly":        0.28,
@@ -54,8 +54,8 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
     "Disassembly":             0.03,
     "Cleaning":                0.06,
     "Paint Stripping":         0.06,
-    "Magnetic Test":           0.00,
-    "Penetrant NDT Inspection":0.17,
+    "Magnetic Test": 0.00,
+    "Penetrant Testing":0.17,
     "Eddy Current":            0.17,
     "Inspection":              0.06,
     "Painting":                0.17,

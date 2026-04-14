@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  getCompletedStepSelectionForCurrent,
   getCompletableStepsForType,
+  getLastCompletedStep,
   getNextProcessStepAfterCompleted,
+  hasOptionalSteps,
 } from "@/lib/process-steps";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 
@@ -17,6 +18,7 @@ type WorkOrder = {
   hold_reason: string | null;
   priority: string | null;
   assigned_person_team: string | null;
+  magnetic_test_required: boolean | null;
 };
 
 export default function ShopUpdatePage() {
@@ -24,6 +26,7 @@ export default function ShopUpdatePage() {
   const [selectedId, setSelectedId] = useState("");
   const [completedStep, setCompletedStep] = useState("");
   const [holdReason, setHoldReason] = useState("");
+  const [magneticTestRequired, setMagneticTestRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState("");
 
@@ -31,7 +34,7 @@ export default function ShopUpdatePage() {
     async function load() {
       const data = await getWorkOrders<WorkOrder>({
         select:
-          "work_order_id, customer, work_order_type, current_process_step, hold_reason, priority, assigned_person_team",
+          "work_order_id, customer, work_order_type, current_process_step, hold_reason, priority, assigned_person_team, magnetic_test_required",
         isOpen: true,
         isActive: true,
         orderBy: { column: "work_order_id", ascending: false },
@@ -48,15 +51,35 @@ export default function ShopUpdatePage() {
     const order = orders.find((o) => o.work_order_id === id);
     if (!order) return;
 
+    const mtRequired = order.magnetic_test_required ?? false;
+
     setSelectedId(id);
+    setMagneticTestRequired(mtRequired);
     setCompletedStep(
-      getCompletedStepSelectionForCurrent(
+      getLastCompletedStep(
         order.work_order_type,
         order.current_process_step,
+        mtRequired,
       ),
     );
     setHoldReason(order.hold_reason || "");
     setSaveStatus("");
+  }
+
+  function handleMagneticTestToggle(checked: boolean) {
+    setMagneticTestRequired(checked);
+
+    // Re-compute pre-selection with the new flag
+    const order = orders.find((o) => o.work_order_id === selectedId);
+    if (order) {
+      setCompletedStep(
+        getLastCompletedStep(
+          order.work_order_type,
+          order.current_process_step,
+          checked,
+        ),
+      );
+    }
   }
 
   async function saveUpdate() {
@@ -70,19 +93,21 @@ export default function ShopUpdatePage() {
       return;
     }
 
+    // null means the completed step was the final step (EASA-Form 1);
+    // keep current_process_step at that step so the order shows as "ready to close"
     const nextProcessStep =
       getNextProcessStepAfterCompleted(
         selectedOrder.work_order_type,
         completedStep,
-      ) ??
-      selectedOrder.current_process_step ??
-      null;
+        magneticTestRequired,
+      ) ?? completedStep;
 
     setSaveStatus("Saving...");
 
     const { error } = await updateWorkOrder(selectedId, {
       current_process_step: nextProcessStep,
       hold_reason: holdReason || null,
+      magnetic_test_required: magneticTestRequired,
       last_manual_update: new Date().toISOString(),
     });
 
@@ -100,6 +125,7 @@ export default function ShopUpdatePage() {
               ...o,
               current_process_step: nextProcessStep,
               hold_reason: holdReason || null,
+              magnetic_test_required: magneticTestRequired,
             }
           : o,
       ),
@@ -109,8 +135,12 @@ export default function ShopUpdatePage() {
   if (loading) return <div style={{ padding: "24px" }}>Loading...</div>;
 
   const selectedOrder = orders.find((o) => o.work_order_id === selectedId);
+  const showMagneticTestOption =
+    selectedOrder && hasOptionalSteps(selectedOrder.work_order_type);
+
   const completableSteps = getCompletableStepsForType(
     selectedOrder?.work_order_type || null,
+    magneticTestRequired,
   );
 
   const previewNextStep =
@@ -118,6 +148,7 @@ export default function ShopUpdatePage() {
       ? getNextProcessStepAfterCompleted(
           selectedOrder.work_order_type,
           completedStep,
+          magneticTestRequired,
         )
       : null;
 
@@ -214,9 +245,36 @@ export default function ShopUpdatePage() {
               <> | Assigned: {selectedOrder.assigned_person_team}</>
             )}
             {selectedOrder.current_process_step && (
-              <> | Current next step: {selectedOrder.current_process_step}</>
+              <> | Current step: {selectedOrder.current_process_step}</>
             )}
           </div>
+
+          {showMagneticTestOption && (
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginTop: "12px",
+                padding: "10px 12px",
+                backgroundColor: magneticTestRequired ? "#fef3c7" : "#f9fafb",
+                border: magneticTestRequired
+                  ? "1px solid #f59e0b"
+                  : "1px solid #e5e7eb",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontSize: "14px",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={magneticTestRequired}
+                onChange={(e) => handleMagneticTestToggle(e.target.checked)}
+                style={{ width: "16px", height: "16px" }}
+              />
+              Magnetic Test required for this work order
+            </label>
+          )}
 
           <label style={labelStyle}>
             Completed Step
@@ -240,9 +298,15 @@ export default function ShopUpdatePage() {
                   will automatically move to the next required step.
                 </div>
 
-                {previewNextStep && (
+                {completedStep && previewNextStep && (
                   <div style={{ ...helperStyle, fontWeight: "bold" }}>
-                    Next step after saving: {previewNextStep}
+                    → Current step after saving: {previewNextStep}
+                  </div>
+                )}
+
+                {completedStep && !previewNextStep && (
+                  <div style={{ ...helperStyle, fontWeight: "bold", color: "#059669" }}>
+                    ✓ Final step — order will be ready to close
                   </div>
                 )}
               </>

@@ -100,7 +100,7 @@ export default function ShopPage() {
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Assigned</th>
-              <th style={headerStyle}>Process Step</th>
+              <th style={headerStyle}>Current Step</th>
               <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Last Update</th>
             </tr>
@@ -156,7 +156,7 @@ export default function ShopPage() {
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Assigned</th>
-              <th style={headerStyle}>Process Step</th>
+              <th style={headerStyle}>Current Step</th>
               <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Action Required</th>
