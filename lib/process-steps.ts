@@ -122,14 +122,20 @@ export function getTrackedStepsForType(workOrderType: string | null): string[] {
   return getActiveStepsForType(workOrderType, false);
 }
 
+/** The first step, set automatically when a work order is activated. */
+export const INTAKE_STEP = "Intake";
+
 /**
  * Steps the shop engineer can select as "completed" in the shop-update form.
+ * Excludes Intake (set automatically) and optional steps (unless overridden).
  */
 export function getCompletableStepsForType(
   workOrderType: string | null,
   includeOptional = false,
 ): string[] {
-  return getActiveStepsForType(workOrderType, includeOptional);
+  return getActiveStepsForType(workOrderType, includeOptional).filter(
+    (step) => step !== INTAKE_STEP,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -182,11 +188,11 @@ export function getLastCompletedStep(
 ): string {
   if (!workOrderType || !currentProcessStep) return "";
 
-  const activeSteps = getActiveStepsForType(workOrderType, includeOptional);
-  const currentIndex = activeSteps.indexOf(currentProcessStep);
+  const completable = getCompletableStepsForType(workOrderType, includeOptional);
+  const currentIndex = completable.indexOf(currentProcessStep);
 
-  // Current step is the first step or not found — nothing completed yet
+  // Current step is the first completable step or not found — nothing completed yet
   if (currentIndex <= 0) return "";
 
-  return activeSteps[currentIndex - 1];
+  return completable[currentIndex - 1];
 }

@@ -14,6 +14,7 @@ import {
   createImportRun,
   deleteWorkOrdersByIds,
   getExistingWorkOrderIds,
+  getWorkOrders,
   insertWorkOrders,
   upsertWorkOrders,
 } from "@/lib/work-orders";
@@ -131,11 +132,35 @@ export default function ImportPage() {
     setStatus("Importing...");
 
     const batchSize = 500;
+    const importTimestamp = new Date().toISOString();
     let updated = 0;
 
-    // 1. Update existing orders (system fields only)
+    // 1. Update existing orders — only bump last_system_update when data changed
+    const existingIds = existingOrders.map((r) => r.work_order_id);
+    const currentData = await getWorkOrders<ParsedRow>({
+      select: "work_order_id, customer, rfq_state, work_order_type, part_number",
+      workOrderIds: existingIds,
+    });
+
+    const currentMap = new Map(
+      currentData.map((r) => [r.work_order_id, r]),
+    );
+
     for (let i = 0; i < existingOrders.length; i += batchSize) {
-      const batch = existingOrders.slice(i, i + batchSize);
+      const batch = existingOrders.slice(i, i + batchSize).map((r) => {
+        const current = currentMap.get(r.work_order_id);
+        const changed =
+          !current ||
+          current.customer !== r.customer ||
+          current.rfq_state !== r.rfq_state ||
+          current.work_order_type !== r.work_order_type ||
+          current.part_number !== r.part_number;
+
+        return {
+          ...r,
+          last_system_update: changed ? importTimestamp : r.last_system_update,
+        };
+      });
       const { error } = await upsertWorkOrders(batch);
 
       if (error) {
@@ -152,6 +177,7 @@ export default function ImportPage() {
         ...r,
         is_active: makeNewActive,
         current_process_step: makeNewActive ? "Intake" : null,
+        last_system_update: importTimestamp,
       }));
 
       const { error } = await insertWorkOrders(batch);
