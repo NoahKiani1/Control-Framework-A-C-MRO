@@ -48,10 +48,12 @@ export default function PlanningPage() {
       setLoading(false);
     }
 
-    load();
+    void load();
   }, []);
 
-  if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
+  if (loading) {
+    return <p style={{ padding: "2rem" }}>Loading...</p>;
+  }
 
   const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
   const blockedOrders = orders.filter((o) => isBlocked(o));
@@ -90,7 +92,7 @@ export default function PlanningPage() {
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Assigned</th>
-              <th style={headerStyle}>Process Step</th>
+              <th style={headerStyle}>Next Step</th>
               <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Last Update</th>
             </tr>
@@ -114,13 +116,23 @@ export default function PlanningPage() {
                   <td style={cellStyle}>{o.priority || "No"}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                  <td style={{ ...cellStyle, color: rfqDisplay(o.rfq_state).color }}>
+                  <td
+                    style={{
+                      ...cellStyle,
+                      color: rfqDisplay(o.rfq_state).color,
+                    }}
+                  >
                     {rfqDisplay(o.rfq_state).label}
                   </td>
                   <td style={cellStyle}>
                     {formatDate(lastUpdate)}
                     {isStale(lastUpdate) && (
-                      <span className="stale-warning">⚠<span className="stale-tooltip">Not updated in over 2 weeks</span></span>
+                      <span className="stale-warning">
+                        ⚠
+                        <span className="stale-tooltip">
+                          Not updated in over 2 weeks
+                        </span>
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -144,7 +156,7 @@ export default function PlanningPage() {
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Assigned</th>
-              <th style={headerStyle}>Process Step</th>
+              <th style={headerStyle}>Next Step</th>
               <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Last Update</th>
@@ -170,13 +182,23 @@ export default function PlanningPage() {
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
                   <td style={cellStyle}>{blockReason(o)}</td>
-                  <td style={{ ...cellStyle, color: rfqDisplay(o.rfq_state).color }}>
+                  <td
+                    style={{
+                      ...cellStyle,
+                      color: rfqDisplay(o.rfq_state).color,
+                    }}
+                  >
                     {rfqDisplay(o.rfq_state).label}
                   </td>
                   <td style={cellStyle}>
                     {formatDate(lastUpdate)}
                     {isStale(lastUpdate) && (
-                      <span className="stale-warning">⚠<span className="stale-tooltip">Not updated in over 2 weeks</span></span>
+                      <span className="stale-warning">
+                        ⚠
+                        <span className="stale-tooltip">
+                          Not updated in over 2 weeks
+                        </span>
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -203,6 +225,11 @@ export default function PlanningPage() {
 
       <p style={{ marginTop: "1rem", color: "#666" }}>
         {orders.length} active work orders
+      </p>
+
+      <p style={{ marginTop: "0.5rem", color: "#666", fontSize: "13px" }}>
+        The planning board shows the next required step for each active work
+        order.
       </p>
 
       <section style={{ marginTop: "1rem" }}>

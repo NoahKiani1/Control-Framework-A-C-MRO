@@ -72,6 +72,10 @@ export async function updateEngineer(id: number, payload: Record<string, unknown
   return supabase.from("engineers").update(payload).eq("id", id);
 }
 
+export async function deleteEngineer(id: number) {
+  return supabase.from("engineers").delete().eq("id", id);
+}
+
 export async function deletePastEngineerAbsences(beforeDate: string) {
   return supabase.from("engineer_absences").delete().lt("absence_date", beforeDate);
 }

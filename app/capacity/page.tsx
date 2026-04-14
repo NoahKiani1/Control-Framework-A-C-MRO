@@ -3,12 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  deleteEngineerAbsenceGroup,
-  deleteEngineerAbsencesByIds,
   deletePastEngineerAbsences,
   getEngineerAbsences,
   getEngineers,
-  upsertEngineerAbsences,
 } from "@/lib/engineers";
 import { getWorkOrders } from "@/lib/work-orders";
 import { calculateWeekCapacity, type WeekCapacity, type OrderCapacity } from "@/lib/capacity";
@@ -63,18 +60,12 @@ export default function CapacityPage() {
   const [allOrders, setAllOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [absenceEngineerId, setAbsenceEngineerId] = useState("");
-  const [absenceDate, setAbsenceDate] = useState("");
-  const [absenceEndDate, setAbsenceEndDate] = useState("");
-  const [absenceReason, setAbsenceReason] = useState("");
-  const [saveStatus, setSaveStatus] = useState("");
 
   const [weeks, setWeeks] = useState<WeekCapacity[]>([]);
   const [orderDetails, setOrderDetails] = useState<OrderCapacity[]>([]);
   const [overdueOrders, setOverdueOrders] = useState<OrderCapacity[]>([]);
 
   const [showInfoBanner, setShowInfoBanner] = useState(true);
-  const [showAllAbsences, setShowAllAbsences] = useState(false);
 
   async function loadData() {
     const today = new Date().toISOString().split("T")[0];
@@ -87,11 +78,14 @@ export default function CapacityPage() {
       orderBy: { column: "name" },
     });
 
-    const absData = await getEngineerAbsences<Absence>({
+    const allAbsData = await getEngineerAbsences<Absence>({
       select: "*",
       fromDate: new Date().toISOString().split("T")[0],
       orderBy: { column: "absence_date", ascending: true },
     });
+
+    const shopEngineerIds = new Set(engData.map((e) => e.id));
+    const absData = allAbsData.filter((a) => shopEngineerIds.has(a.engineer_id));
 
     const woData = await getWorkOrders<WorkOrder>({
       select:
@@ -122,56 +116,6 @@ export default function CapacityPage() {
     void loadData();
   }, []);
 
-  async function addAbsence() {
-    if (!absenceEngineerId || !absenceDate) return;
-
-    const start = new Date(absenceDate);
-    const end = absenceEndDate ? new Date(absenceEndDate) : new Date(absenceDate);
-
-    const dates: string[] = [];
-    const current = new Date(start);
-
-    while (current <= end) {
-      const day = current.getDay();
-      if (day >= 1 && day <= 5) {
-        dates.push(current.toISOString().split("T")[0]);
-      }
-      current.setDate(current.getDate() + 1);
-    }
-
-    if (dates.length === 0) return;
-
-    const groupId = crypto.randomUUID();
-
-    const rows = dates.map((d) => ({
-      engineer_id: parseInt(absenceEngineerId),
-      absence_date: d,
-      reason: absenceReason || null,
-      absence_group_id: groupId,
-    }));
-
-    const { error } = await upsertEngineerAbsences(rows);
-
-    if (error) {
-      setSaveStatus(`Error: ${error.message}`);
-    } else {
-      setSaveStatus(`✅ ${dates.length} day(s) added`);
-      setAbsenceDate("");
-      setAbsenceEndDate("");
-      setAbsenceReason("");
-      loadData();
-    }
-  }
-
-  async function removeAbsence(groupId: string | null, ids: number[]) {
-    if (groupId) {
-      await deleteEngineerAbsenceGroup(groupId);
-    } else {
-      await deleteEngineerAbsencesByIds(ids);
-    }
-
-    loadData();
-  }
 
   if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
 
@@ -466,7 +410,7 @@ export default function CapacityPage() {
           <div style={{ marginTop: "8px" }}>
             <strong>Available hours</strong> — Based on <strong>{engineers.length} shop
             engineer{engineers.length !== 1 ? "s" : ""}</strong>, working Mon–Thu 8h and Fri 6h,
-            minus any planned absences listed at the bottom of this page.
+            minus any planned shop engineer absences listed at the bottom of this page.
           </div>
 
           <div style={{ marginTop: "8px" }}>
@@ -755,26 +699,34 @@ export default function CapacityPage() {
         </section>
       )}
 
-      {/* Engineers */}
+      {/* Shop engineer absences */}
       <section style={{ marginTop: "2rem", borderTop: "2px solid #eee", paddingTop: "1.5rem" }}>
-        <h2>Shop Engineers ({engineers.length})</h2>
-        <p style={{ fontSize: "14px", color: "#666", margin: "4px 0 8px" }}>
-          Only shop staff count towards capacity. Manage your team on the{" "}
-          <a href="/staff" style={{ color: "#0070f3" }}>Staff Management</a> page.
-        </p>
-        {engineers.map((e) => (
-          <div key={e.id} style={{ padding: "4px 0", fontSize: "14px" }}>
-            • {e.name}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            gap: "12px",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0 }}>Shop Engineer Absences (Next 3 Weeks)</h2>
+            <p style={{ color: "#666", fontSize: "14px", margin: "6px 0 0" }}>
+              Manage all shop engineer absences on the{" "}
+              <a href="/staff" style={{ color: "#0070f3" }}>Staff Management</a> page.
+            </p>
           </div>
-        ))}
-      </section>
 
-      {/* Absences */}
-      <section style={{ marginTop: "2rem", borderTop: "2px solid #eee", paddingTop: "1.5rem" }}>
-        <h2>Absences</h2>
+          {absencesLater.length > 0 && (
+            <a href="/staff#later-upcoming-absences" style={{ color: "#0070f3", fontSize: "13px" }}>
+              View {absencesLater.length} later upcoming absence{absencesLater.length !== 1 ? "s" : ""} →
+            </a>
+          )}
+        </div>
 
         {absencesThisWindow.length > 0 ? (
-          <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "12px" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", marginTop: "12px" }}>
             <thead>
               <tr>
                 <th style={headerCellStyle}>Engineer</th>
@@ -782,7 +734,6 @@ export default function CapacityPage() {
                 <th style={headerCellStyle}>Until (inclusive)</th>
                 <th style={headerCellStyle}>Days</th>
                 <th style={headerCellStyle}>Reason</th>
-                <th style={headerCellStyle}></th>
               </tr>
             </thead>
             <tbody>
@@ -795,127 +746,16 @@ export default function CapacityPage() {
                     <td style={cellStyle}>{formatDate(a.end_date)}</td>
                     <td style={cellStyle}>{a.days}</td>
                     <td style={cellStyle}>{a.reason || "–"}</td>
-                    <td style={cellStyle}>
-                      <button
-                        onClick={() => removeAbsence(a.group_id, a.ids)}
-                        style={{ ...buttonStyle, backgroundColor: "#dc2626", fontSize: "11px", padding: "4px 10px", marginTop: 0 }}
-                      >
-                        Remove
-                      </button>
-                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         ) : (
-          <p style={{ color: "#666", fontSize: "14px" }}>No absences planned in the next 3 weeks.</p>
-        )}
-
-        {absencesLater.length > 0 && !showAllAbsences && (
-          <p style={{ margin: "0 0 12px", fontSize: "13px" }}>
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); setShowAllAbsences(true); }}
-              style={{ color: "#0070f3", textDecoration: "underline", cursor: "pointer" }}
-            >
-              View {absencesLater.length} later absence{absencesLater.length !== 1 ? "s" : ""} →
-            </a>
+          <p style={{ color: "#666", fontSize: "14px", marginTop: "12px" }}>
+            No shop engineer absences planned in the next 3 weeks.
           </p>
         )}
-
-        {showAllAbsences && absencesLater.length > 0 && (
-          <>
-            <h3 style={{ margin: "0 0 6px", fontSize: "14px", color: "#666" }}>Later absences</h3>
-            <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: "12px" }}>
-              <thead>
-                <tr>
-                  <th style={headerCellStyle}>Engineer</th>
-                  <th style={headerCellStyle}>From</th>
-                  <th style={headerCellStyle}>Until (inclusive)</th>
-                  <th style={headerCellStyle}>Days</th>
-                  <th style={headerCellStyle}>Reason</th>
-                  <th style={headerCellStyle}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {absencesLater.map((a) => {
-                  const eng = engineers.find((e) => e.id === a.engineer_id);
-                  return (
-                    <tr key={a.key}>
-                      <td style={cellStyle}>{eng?.name || "Unknown"}</td>
-                      <td style={cellStyle}>{formatDate(a.start_date)}</td>
-                      <td style={cellStyle}>{formatDate(a.end_date)}</td>
-                      <td style={cellStyle}>{a.days}</td>
-                      <td style={cellStyle}>{a.reason || "–"}</td>
-                      <td style={cellStyle}>
-                        <button
-                          onClick={() => removeAbsence(a.group_id, a.ids)}
-                          style={{ ...buttonStyle, backgroundColor: "#dc2626", fontSize: "11px", padding: "4px 10px", marginTop: 0 }}
-                        >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </>
-        )}
-
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "end" }}>
-          <div>
-            <label style={labelStyle}>Engineer</label>
-            <select
-              style={inputStyle}
-              value={absenceEngineerId}
-              onChange={(e) => setAbsenceEngineerId(e.target.value)}
-            >
-              <option value="">-- Select --</option>
-              {engineers.map((e) => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>From</label>
-            <input
-              type="date"
-              style={inputStyle}
-              value={absenceDate}
-              onChange={(e) => {
-                setAbsenceDate(e.target.value);
-                if (!absenceEndDate || absenceEndDate < e.target.value) {
-                  setAbsenceEndDate(e.target.value);
-                }
-              }}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Until (inclusive)</label>
-            <input
-              type="date"
-              style={inputStyle}
-              value={absenceEndDate}
-              min={absenceDate || undefined}
-              onChange={(e) => setAbsenceEndDate(e.target.value)}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Reason (optional)</label>
-            <input
-              type="text"
-              style={inputStyle}
-              value={absenceReason}
-              onChange={(e) => setAbsenceReason(e.target.value)}
-              placeholder="E.g. Sick leave, Holiday..."
-            />
-          </div>
-          <button style={buttonStyle} onClick={addAbsence}>+ Add absence</button>
-        </div>
-
-        {saveStatus && <p style={{ marginTop: "8px" }}><strong>{saveStatus}</strong></p>}
       </section>
     </main>
   );

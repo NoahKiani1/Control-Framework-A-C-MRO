@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getProcessStepsForType } from "@/lib/process-steps";
+import {
+  getCompletedStepSelectionForCurrent,
+  getCompletableStepsForType,
+  getNextProcessStepAfterCompleted,
+} from "@/lib/process-steps";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 
 type WorkOrder = {
@@ -18,7 +22,7 @@ type WorkOrder = {
 export default function ShopUpdatePage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [selectedId, setSelectedId] = useState("");
-  const [processStep, setProcessStep] = useState("");
+  const [completedStep, setCompletedStep] = useState("");
   const [holdReason, setHoldReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState("");
@@ -37,7 +41,7 @@ export default function ShopUpdatePage() {
       setLoading(false);
     }
 
-    load();
+    void load();
   }, []);
 
   function selectOrder(id: string) {
@@ -45,7 +49,12 @@ export default function ShopUpdatePage() {
     if (!order) return;
 
     setSelectedId(id);
-    setProcessStep(order.current_process_step === "Intake" ? "" : order.current_process_step || "");
+    setCompletedStep(
+      getCompletedStepSelectionForCurrent(
+        order.work_order_type,
+        order.current_process_step,
+      ),
+    );
     setHoldReason(order.hold_reason || "");
     setSaveStatus("");
   }
@@ -54,7 +63,20 @@ export default function ShopUpdatePage() {
     if (!selectedId) return;
 
     const selectedOrder = orders.find((o) => o.work_order_id === selectedId);
-    const nextProcessStep = processStep || selectedOrder?.current_process_step || null;
+    if (!selectedOrder) return;
+
+    if (!completedStep) {
+      setSaveStatus("Please choose the completed step.");
+      return;
+    }
+
+    const nextProcessStep =
+      getNextProcessStepAfterCompleted(
+        selectedOrder.work_order_type,
+        completedStep,
+      ) ??
+      selectedOrder.current_process_step ??
+      null;
 
     setSaveStatus("Saving...");
 
@@ -66,27 +88,38 @@ export default function ShopUpdatePage() {
 
     if (error) {
       setSaveStatus(`Error: ${error.message}`);
-    } else {
-      setSaveStatus("✅ Saved!");
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.work_order_id === selectedId
-            ? {
-                ...o,
-                current_process_step: nextProcessStep,
-                hold_reason: holdReason || null,
-              }
-            : o,
-        ),
-      );
+      return;
     }
+
+    setSaveStatus("✅ Saved!");
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.work_order_id === selectedId
+          ? {
+              ...o,
+              current_process_step: nextProcessStep,
+              hold_reason: holdReason || null,
+            }
+          : o,
+      ),
+    );
   }
 
-  if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
+  if (loading) return <div style={{ padding: "24px" }}>Loading...</div>;
 
   const selectedOrder = orders.find((o) => o.work_order_id === selectedId);
-  const allSteps = getProcessStepsForType(selectedOrder?.work_order_type || null);
-  const selectableSteps = allSteps.filter((s) => s !== "Intake");
+  const completableSteps = getCompletableStepsForType(
+    selectedOrder?.work_order_type || null,
+  );
+
+  const previewNextStep =
+    selectedOrder && completedStep
+      ? getNextProcessStepAfterCompleted(
+          selectedOrder.work_order_type,
+          completedStep,
+        )
+      : null;
 
   const labelStyle: React.CSSProperties = {
     display: "block",
@@ -104,7 +137,9 @@ export default function ShopUpdatePage() {
     marginTop: "4px",
   };
 
-  const inputStyle: React.CSSProperties = { ...selectStyle };
+  const inputStyle: React.CSSProperties = {
+    ...selectStyle,
+  };
 
   const helperStyle: React.CSSProperties = {
     marginTop: "4px",
@@ -126,120 +161,141 @@ export default function ShopUpdatePage() {
   };
 
   function prioLabel(order: WorkOrder): string {
-    if (order.priority === "AOG") return " 🔴 AOG";
-    if (order.priority === "Yes") return " 🟡 Prio";
+    if (order.priority === "AOG") return " AOG";
+    if (order.priority === "Yes") return " Prio";
     return "";
   }
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "500px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ margin: 0 }}>🛠 Shop Update</h1>
-        <Link href="/">← Home</Link>
-      </div>
+    <div style={{ maxWidth: "700px", margin: "0 auto", padding: "24px" }}>
+      <h1>📍 Shop Update</h1>
 
-      <p style={{ color: "#666", marginTop: "8px" }}>
-        Update the process step or report a blocker. ({orders.length} active orders)
+      <p>
+        <Link href="/">← Home</Link>
       </p>
 
-      <label style={labelStyle}>Select Work Order</label>
-      <select
-        style={selectStyle}
-        value={selectedId}
-        onChange={(e) => selectOrder(e.target.value)}
-      >
-        <option value="">-- Choose a work order --</option>
-        {orders.map((o) => (
-          <option key={o.work_order_id} value={o.work_order_id}>
-            {o.work_order_id} — {o.customer || "No customer"}{prioLabel(o)}
-          </option>
-        ))}
-      </select>
+      <p>
+        Update the completed shop step or report a blocker. ({orders.length} active orders)
+      </p>
+
+      <label style={labelStyle}>
+        Select Work Order
+        <select
+          value={selectedId}
+          onChange={(e) => selectOrder(e.target.value)}
+          style={selectStyle}
+        >
+          <option value="">-- Choose a work order --</option>
+          {orders.map((o) => (
+            <option key={o.work_order_id} value={o.work_order_id}>
+              {o.work_order_id} — {o.customer || "No customer"}
+              {prioLabel(o)}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {selectedId && selectedOrder && (
         <>
           <div
             style={{
               marginTop: "12px",
-              padding: "10px 14px",
-              backgroundColor: "#f5f5f5",
-              borderRadius: "6px",
+              padding: "12px",
+              backgroundColor: "#f7f7f7",
+              borderRadius: "8px",
               fontSize: "14px",
             }}
           >
-            <strong>{selectedOrder.work_order_id}</strong> — {selectedOrder.customer || "–"}
+            <strong>{selectedOrder.work_order_id}</strong> —{" "}
+            {selectedOrder.customer || "–"}
             <br />
             Type: {selectedOrder.work_order_type || "Unknown"}
-            {selectedOrder.assigned_person_team && <> | Assigned: {selectedOrder.assigned_person_team}</>}
+            {selectedOrder.assigned_person_team && (
+              <> | Assigned: {selectedOrder.assigned_person_team}</>
+            )}
             {selectedOrder.current_process_step && (
-              <>
-                {" "}
-                | Current step: <strong>{selectedOrder.current_process_step}</strong>
-              </>
+              <> | Current next step: {selectedOrder.current_process_step}</>
             )}
           </div>
 
-          <label style={labelStyle}>Process Step</label>
-          {selectableSteps.length > 0 ? (
-            <>
-              <select
-                style={selectStyle}
-                value={processStep}
-                onChange={(e) => setProcessStep(e.target.value)}
+          <label style={labelStyle}>
+            Completed Step
+            {completableSteps.length > 0 ? (
+              <>
+                <select
+                  value={completedStep}
+                  onChange={(e) => setCompletedStep(e.target.value)}
+                  style={selectStyle}
+                >
+                  <option value="">-- Choose completed step --</option>
+                  {completableSteps.map((step) => (
+                    <option key={step} value={step}>
+                      {step}
+                    </option>
+                  ))}
+                </select>
+
+                <div style={helperStyle}>
+                  Select the step that has just been completed. The work order
+                  will automatically move to the next required step.
+                </div>
+
+                {previewNextStep && (
+                  <div style={{ ...helperStyle, fontWeight: "bold" }}>
+                    Next step after saving: {previewNextStep}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div
+                style={{
+                  marginTop: "6px",
+                  padding: "10px",
+                  backgroundColor: "#fff4e5",
+                  borderRadius: "6px",
+                  color: "#8a5a00",
+                }}
               >
-                <option value="">-- Choose next step --</option>
-                {selectableSteps.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-
-              <div style={helperStyle}>
-                <strong>Intake</strong> is automatically set when a new work order becomes active.
+                ⚠ No completable steps available — work order type is not set.
               </div>
-            </>
-          ) : (
-            <p style={{ color: "#e67e22", fontSize: "14px", marginTop: "4px" }}>
-              ⚠ No process steps available — work order type is not set.
-            </p>
-          )}
+            )}
+          </label>
 
-          <label style={labelStyle}>Hold Reason (leave empty if not blocked)</label>
-          <input
-            type="text"
-            style={inputStyle}
-            value={holdReason}
-            onChange={(e) => setHoldReason(e.target.value)}
-            placeholder="E.g. Part damaged, tooling unavailable..."
-          />
+          <label style={labelStyle}>
+            Hold Reason (leave empty if not blocked)
+            <input
+              value={holdReason}
+              onChange={(e) => setHoldReason(e.target.value)}
+              placeholder="E.g. Part damaged, tooling unavailable..."
+              style={inputStyle}
+            />
+          </label>
 
           {holdReason && (
-            <p
-              style={{
-                marginTop: "8px",
-                padding: "8px 12px",
-                backgroundColor: "#fff0f0",
-                border: "1px solid #e88",
-                borderRadius: "4px",
-                fontSize: "13px",
-              }}
-            >
-              ⚠ This work order will be <strong>blocked</strong>
-            </p>
+            <div style={{ ...helperStyle, color: "#b45309" }}>
+              ⚠ This work order will be blocked
+            </div>
           )}
 
-          <button style={buttonStyle} onClick={saveUpdate}>
-            💾 Save update
+          <button onClick={() => void saveUpdate()} style={buttonStyle}>
+            Save update
           </button>
 
           {saveStatus && (
-            <p style={{ marginTop: "8px", textAlign: "center" }}>
-              <strong>{saveStatus}</strong>
-            </p>
+            <div
+              style={{
+                marginTop: "12px",
+                padding: "10px",
+                backgroundColor: "#f5f5f5",
+                borderRadius: "6px",
+                fontSize: "14px",
+              }}
+            >
+              {saveStatus}
+            </div>
           )}
         </>
       )}
-    </main>
+    </div>
   );
 }
