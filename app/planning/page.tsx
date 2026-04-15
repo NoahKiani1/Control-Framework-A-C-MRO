@@ -92,7 +92,7 @@ export default function PlanningPage() {
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Assigned</th>
-              <th style={headerStyle}>Current Step</th>
+              <th style={headerStyle}>Next Process Step</th>
               <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Last Update</th>
             </tr>
@@ -156,7 +156,7 @@ export default function PlanningPage() {
               <th style={headerStyle}>Due Date</th>
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Assigned</th>
-              <th style={headerStyle}>Current Step</th>
+              <th style={headerStyle}>Next Process Step</th>
               <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Last Update</th>
@@ -228,7 +228,7 @@ export default function PlanningPage() {
       </p>
 
       <p style={{ marginTop: "0.5rem", color: "#666", fontSize: "13px" }}>
-        The planning board shows the current process step for each active work
+        The planning board shows the next process step for each active work
         order.
       </p>
 

@@ -66,8 +66,7 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
     "Disassembly":  0.10,
     "Cleaning":     0.10,
     "Inspection":   0.20,
-    "Repair":       0.35,
-    "Assembly":     0.20,
+    "Assembly":     0.55,
     "EASA-Form 1":  0.05,
   },
 };

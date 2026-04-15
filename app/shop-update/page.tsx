@@ -13,9 +13,14 @@ import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 type WorkOrder = {
   work_order_id: string;
   customer: string | null;
+  part_number: string | null;
   work_order_type: string | null;
   current_process_step: string | null;
   hold_reason: string | null;
+  required_next_action: string | null;
+  action_owner: string | null;
+  action_status: string | null;
+  action_closed: boolean | null;
   priority: string | null;
   assigned_person_team: string | null;
   magnetic_test_required: boolean | null;
@@ -26,6 +31,8 @@ export default function ShopUpdatePage() {
   const [selectedId, setSelectedId] = useState("");
   const [completedStep, setCompletedStep] = useState("");
   const [holdReason, setHoldReason] = useState("");
+  const [requiredNextAction, setRequiredNextAction] = useState("");
+  const [actionStatus, setActionStatus] = useState("");
   const [magneticTestRequired, setMagneticTestRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState("");
@@ -34,7 +41,7 @@ export default function ShopUpdatePage() {
     async function load() {
       const data = await getWorkOrders<WorkOrder>({
         select:
-          "work_order_id, customer, work_order_type, current_process_step, hold_reason, priority, assigned_person_team, magnetic_test_required",
+          "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, magnetic_test_required",
         isOpen: true,
         isActive: true,
         orderBy: { column: "work_order_id", ascending: false },
@@ -52,6 +59,7 @@ export default function ShopUpdatePage() {
     if (!order) return;
 
     const mtRequired = order.magnetic_test_required ?? false;
+    const hasHold = Boolean(order.hold_reason?.trim());
 
     setSelectedId(id);
     setMagneticTestRequired(mtRequired);
@@ -63,13 +71,14 @@ export default function ShopUpdatePage() {
       ),
     );
     setHoldReason(order.hold_reason || "");
+    setRequiredNextAction(hasHold ? order.required_next_action || "" : "");
+    setActionStatus(hasHold ? order.action_status || "Open" : "");
     setSaveStatus("");
   }
 
   function handleMagneticTestToggle(checked: boolean) {
     setMagneticTestRequired(checked);
 
-    // Re-compute pre-selection with the new flag
     const order = orders.find((o) => o.work_order_id === selectedId);
     if (order) {
       setCompletedStep(
@@ -80,6 +89,33 @@ export default function ShopUpdatePage() {
         ),
       );
     }
+  }
+
+  function updateHoldReason(value: string) {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      setHoldReason("");
+      setRequiredNextAction("");
+      setActionStatus("");
+      return;
+    }
+
+    const isNewAction = !holdReason.trim() || actionStatus === "Done";
+
+    setHoldReason(value);
+    setActionStatus(isNewAction ? "Open" : actionStatus || "Open");
+  }
+
+  function handleActionStatusChange(status: string) {
+    if (status === "Done") {
+      setActionStatus("Done");
+      setHoldReason("");
+      setRequiredNextAction("");
+      return;
+    }
+
+    setActionStatus(status);
   }
 
   async function saveUpdate() {
@@ -93,8 +129,6 @@ export default function ShopUpdatePage() {
       return;
     }
 
-    // null means the completed step was the final step (EASA-Form 1);
-    // keep current_process_step at that step so the order shows as "ready to close"
     const nextProcessStep =
       getNextProcessStepAfterCompleted(
         selectedOrder.work_order_type,
@@ -102,14 +136,27 @@ export default function ShopUpdatePage() {
         magneticTestRequired,
       ) ?? completedStep;
 
+    const normalizedHoldReason = holdReason.trim();
+    const normalizedRequiredNextAction = requiredNextAction.trim();
+    const shouldStoreActionFields = Boolean(normalizedHoldReason);
+
     setSaveStatus("Saving...");
 
-    const { error } = await updateWorkOrder(selectedId, {
+    const payload = {
       current_process_step: nextProcessStep,
-      hold_reason: holdReason || null,
+      hold_reason: shouldStoreActionFields ? normalizedHoldReason : null,
+      required_next_action:
+        shouldStoreActionFields && normalizedRequiredNextAction
+          ? normalizedRequiredNextAction
+          : null,
+      action_owner: shouldStoreActionFields ? selectedOrder.action_owner || null : null,
+      action_status: shouldStoreActionFields ? actionStatus || "Open" : null,
+      action_closed: false,
       magnetic_test_required: magneticTestRequired,
       last_manual_update: new Date().toISOString(),
-    });
+    };
+
+    const { error } = await updateWorkOrder(selectedId, payload);
 
     if (error) {
       setSaveStatus(`Error: ${error.message}`);
@@ -123,9 +170,7 @@ export default function ShopUpdatePage() {
         o.work_order_id === selectedId
           ? {
               ...o,
-              current_process_step: nextProcessStep,
-              hold_reason: holdReason || null,
-              magnetic_test_required: magneticTestRequired,
+              ...payload,
             }
           : o,
       ),
@@ -151,6 +196,8 @@ export default function ShopUpdatePage() {
           magneticTestRequired,
         )
       : null;
+
+  const hasHoldReason = Boolean(holdReason.trim());
 
   const labelStyle: React.CSSProperties = {
     display: "block",
@@ -206,7 +253,8 @@ export default function ShopUpdatePage() {
       </p>
 
       <p>
-        Update the completed shop step or report a blocker. ({orders.length} active orders)
+        Update the completed shop step or report a blocker. ({orders.length} active
+        orders)
       </p>
 
       <label style={labelStyle}>
@@ -219,7 +267,8 @@ export default function ShopUpdatePage() {
           <option value="">-- Choose a work order --</option>
           {orders.map((o) => (
             <option key={o.work_order_id} value={o.work_order_id}>
-              {o.work_order_id} — {o.customer || "No customer"}
+              {o.work_order_id} — {"PN: "} {o.part_number || "No PN"} —{" "}
+              {o.customer || "No customer"} — {o.work_order_type || "No type"}
               {prioLabel(o)}
             </option>
           ))}
@@ -228,27 +277,6 @@ export default function ShopUpdatePage() {
 
       {selectedId && selectedOrder && (
         <>
-          <div
-            style={{
-              marginTop: "12px",
-              padding: "12px",
-              backgroundColor: "#f7f7f7",
-              borderRadius: "8px",
-              fontSize: "14px",
-            }}
-          >
-            <strong>{selectedOrder.work_order_id}</strong> —{" "}
-            {selectedOrder.customer || "–"}
-            <br />
-            Type: {selectedOrder.work_order_type || "Unknown"}
-            {selectedOrder.assigned_person_team && (
-              <> | Assigned: {selectedOrder.assigned_person_team}</>
-            )}
-            {selectedOrder.current_process_step && (
-              <> | Current step: {selectedOrder.current_process_step}</>
-            )}
-          </div>
-
           {showMagneticTestOption && (
             <label
               style={{
@@ -293,14 +321,9 @@ export default function ShopUpdatePage() {
                   ))}
                 </select>
 
-                <div style={helperStyle}>
-                  Select the step that has just been completed. The work order
-                  will automatically move to the next required step.
-                </div>
-
                 {completedStep && previewNextStep && (
                   <div style={{ ...helperStyle, fontWeight: "bold" }}>
-                    → Current step after saving: {previewNextStep}
+                    → Next step after saving: {previewNextStep}
                   </div>
                 )}
 
@@ -329,11 +352,37 @@ export default function ShopUpdatePage() {
             Hold Reason (leave empty if not blocked)
             <input
               value={holdReason}
-              onChange={(e) => setHoldReason(e.target.value)}
+              onChange={(e) => updateHoldReason(e.target.value)}
               placeholder="E.g. Part damaged, tooling unavailable..."
               style={inputStyle}
             />
           </label>
+
+          {hasHoldReason && (
+            <>
+              <label style={labelStyle}>
+                Required Next Action
+                <input
+                  value={requiredNextAction}
+                  onChange={(e) => setRequiredNextAction(e.target.value)}
+                  placeholder="What needs to happen?"
+                  style={inputStyle}
+                />
+              </label>
+
+              <label style={labelStyle}>
+                Action Status
+                <select
+                  value={actionStatus}
+                  onChange={(e) => handleActionStatusChange(e.target.value)}
+                  style={selectStyle}
+                >
+                  <option value="Open">Open</option>
+                  <option value="Done">Done</option>
+                </select>
+              </label>
+            </>
+          )}
 
           {holdReason && (
             <div style={{ ...helperStyle, color: "#b45309" }}>
