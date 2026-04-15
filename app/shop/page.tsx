@@ -1,21 +1,21 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
-  blockReason,
   formatDate,
   isBlocked,
-  latestUpdate,
-  isStale,
-  rfqDisplay,
+  normalizeRfqState,
   sortOrders,
 } from "@/lib/work-order-rules";
+import { getEngineerPhotoUrl, getEngineers } from "@/lib/engineers";
 import { getWorkOrders } from "@/lib/work-orders";
 
 type WorkOrder = {
   work_order_id: string;
   customer: string | null;
   part_number: string | null;
+  work_order_type: string | null;
   due_date: string | null;
   priority: string | null;
   assigned_person_team: string | null;
@@ -27,24 +27,75 @@ type WorkOrder = {
   last_system_update: string | null;
 };
 
+type Engineer = {
+  id: number;
+  name: string;
+  photo_path: string | null;
+};
+
+function AssignedPerson({
+  name,
+  photoUrl,
+}: {
+  name: string | null;
+  photoUrl: string | null;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  if (!name) return <>–</>;
+
+  if (!photoUrl || imageFailed) {
+    return <>{name}</>;
+  }
+
+  return (
+    <span style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <Image
+        src={photoUrl}
+        alt={name}
+        width={38}
+        height={38}
+        unoptimized
+        onError={() => setImageFailed(true)}
+        style={{
+          width: "38px",
+          height: "38px",
+          borderRadius: "50%",
+          objectFit: "contain",
+          flexShrink: 0,
+        }}
+      />
+    </span>
+  );
+}
+
 export default function ShopPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      const data = await getWorkOrders<WorkOrder>({
-        select:
-          "work_order_id, customer, part_number, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, last_manual_update, last_system_update",
-        isOpen: true,
-        isActive: true,
-      });
+      const [data, engineerData] = await Promise.all([
+        getWorkOrders<WorkOrder>({
+          select:
+            "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, last_manual_update, last_system_update",
+          isOpen: true,
+          isActive: true,
+        }),
+        getEngineers<Engineer>({
+          select: "id, name, photo_path",
+          isActive: true,
+          role: "shop",
+        }),
+      ]);
 
       const filtered = data.filter(
         (o) => o.current_process_step !== "EASA-Form 1",
       );
 
       setOrders(sortOrders(filtered));
+      setEngineers(engineerData);
       setLoading(false);
     }
 
@@ -58,12 +109,16 @@ export default function ShopPage() {
 
   const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
   const blockedOrders = orders.filter((o) => isBlocked(o));
+  const engineerByName = new Map(engineers.map((e) => [e.name, e]));
 
   const cellStyle: React.CSSProperties = {
     padding: "10px 14px",
     borderBottom: "2px solid #ddd",
     fontSize: "18px",
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
+    verticalAlign: "top",
+    textAlign: "left",
   };
 
   const headerStyle: React.CSSProperties = {
@@ -88,56 +143,65 @@ export default function ShopPage() {
     return "–";
   }
 
+  function holdReasonDisplay(o: WorkOrder): string {
+    if (o.hold_reason) return o.hold_reason;
+    const rfqState = normalizeRfqState(o.rfq_state);
+    if (rfqState === "rfq rejected") return "RFQ Rejected";
+    if (rfqState === "rfq send") return "Waiting for RFQ Approval";
+    return "–";
+  }
+
   function renderNonBlockedOrdersTable(list: WorkOrder[]) {
     return (
       <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "8%" }} />
+          </colgroup>
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>
               <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Part Number</th>
+              <th style={headerStyle}>Type</th>
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Due Date</th>
-              <th style={headerStyle}>Assigned</th>
               <th style={headerStyle}>Next Process Step</th>
-              <th style={headerStyle}>RFQ</th>
-              <th style={headerStyle}>Last Update</th>
+              <th style={headerStyle}>Assigned</th>
             </tr>
           </thead>
           <tbody>
-            {list.map((o) => {
-              const lastUpdate = latestUpdate(
-                o.last_system_update,
-                o.last_manual_update,
-              );
-
-              return (
-                <tr
-                  key={o.work_order_id}
-                  style={{ backgroundColor: rowColor(o) }}
-                >
-                  <td style={{ ...cellStyle, fontWeight: "bold" }}>
-                    {o.work_order_id}
-                  </td>
-                  <td style={cellStyle}>{o.customer || "–"}</td>
-                  <td style={cellStyle}>{o.part_number || "–"}</td>
-                  <td style={cellStyle}>{prioLabel(o)}</td>
-                  <td style={cellStyle}>{formatDate(o.due_date)}</td>
-                  <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
-                  <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                  <td style={{ ...cellStyle, color: rfqDisplay(o.rfq_state).color }}>
-                    {rfqDisplay(o.rfq_state).label}
-                  </td>
-                  <td style={cellStyle}>
-                    {formatDate(lastUpdate)}
-                    {isStale(lastUpdate) && (
-                      <span className="stale-warning">⚠<span className="stale-tooltip">Not updated in over 2 weeks</span></span>
+            {list.map((o) => (
+              <tr
+                key={o.work_order_id}
+                style={{ backgroundColor: rowColor(o) }}
+              >
+                <td style={{ ...cellStyle, fontWeight: "bold" }}>
+                  {o.work_order_id}
+                </td>
+                <td style={cellStyle}>{o.customer || "–"}</td>
+                <td style={cellStyle}>{o.part_number || "–"}</td>
+                <td style={cellStyle}>{o.work_order_type || "–"}</td>
+                <td style={cellStyle}>{prioLabel(o)}</td>
+                <td style={cellStyle}>{formatDate(o.due_date)}</td>
+                <td style={cellStyle}>{o.current_process_step || "–"}</td>
+                <td style={{ ...cellStyle, textAlign: "center" }}>
+                  <AssignedPerson
+                    name={o.assigned_person_team}
+                    photoUrl={getEngineerPhotoUrl(
+                      engineerByName.get(o.assigned_person_team || "")?.photo_path,
                     )}
-                  </td>
-                </tr>
-              );
-            })}
+                  />
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -147,57 +211,47 @@ export default function ShopPage() {
   function renderBlockedOrdersTable(list: WorkOrder[]) {
     return (
       <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "10%" }} />
+          </colgroup>
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>
               <th style={headerStyle}>Customer</th>
               <th style={headerStyle}>Part Number</th>
+              <th style={headerStyle}>Type</th>
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Due Date</th>
-              <th style={headerStyle}>Assigned</th>
-              <th style={headerStyle}>Next Process Step</th>
               <th style={headerStyle}>Hold Reason</th>
-              <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Action Required</th>
-              <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
           <tbody>
-            {list.map((o) => {
-              const lastUpdate = latestUpdate(
-                o.last_system_update,
-                o.last_manual_update,
-              );
-
-              return (
-                <tr
-                  key={o.work_order_id}
-                  style={{ backgroundColor: rowColor(o) }}
-                >
-                  <td style={{ ...cellStyle, fontWeight: "bold" }}>
-                    {o.work_order_id}
-                  </td>
-                  <td style={cellStyle}>{o.customer || "–"}</td>
-                  <td style={cellStyle}>{o.part_number || "–"}</td>
-                  <td style={cellStyle}>{prioLabel(o)}</td>
-                  <td style={cellStyle}>{formatDate(o.due_date)}</td>
-                  <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
-                  <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                  <td style={cellStyle}>{blockReason(o)}</td>
-                  <td style={{ ...cellStyle, color: rfqDisplay(o.rfq_state).color }}>
-                    {rfqDisplay(o.rfq_state).label}
-                  </td>
-                  <td style={cellStyle}>{o.required_next_action || "–"}</td>
-                  <td style={cellStyle}>
-                    {formatDate(lastUpdate)}
-                    {isStale(lastUpdate) && (
-                      <span className="stale-warning">⚠<span className="stale-tooltip">Not updated in over 2 weeks</span></span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+            {list.map((o) => (
+              <tr
+                key={o.work_order_id}
+                style={{ backgroundColor: rowColor(o) }}
+              >
+                <td style={{ ...cellStyle, fontWeight: "bold" }}>
+                  {o.work_order_id}
+                </td>
+                <td style={cellStyle}>{o.customer || "–"}</td>
+                <td style={cellStyle}>{o.part_number || "–"}</td>
+                <td style={cellStyle}>{o.work_order_type || "–"}</td>
+                <td style={cellStyle}>{prioLabel(o)}</td>
+                <td style={cellStyle}>{formatDate(o.due_date)}</td>
+                <td style={cellStyle}>{holdReasonDisplay(o)}</td>
+                <td style={cellStyle}>{o.required_next_action || "–"}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -215,7 +269,7 @@ export default function ShopPage() {
       >
         <h1 style={{ margin: 0, fontSize: "28px" }}>🛠 Shop Wall Screen</h1>
         <span style={{ fontSize: "14px", color: "#888" }}>
-          Ververst automatisch elke 30s
+          Auto-refreshes every 30s
         </span>
       </div>
 

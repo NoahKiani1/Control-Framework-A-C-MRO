@@ -1,16 +1,19 @@
 "use client";
 
-import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
   deleteEngineer,
   deleteEngineerAbsenceGroup,
   deleteEngineerAbsencesByIds,
+  deleteEngineerPhoto,
   deletePastEngineerAbsences,
   getEngineerAbsences,
+  getEngineerPhotoUrl,
   getEngineers,
   insertEngineer,
   updateEngineer,
+  uploadEngineerPhoto,
   upsertEngineerAbsences,
 } from "@/lib/engineers";
 import { RESTRICTION_LABELS } from "@/lib/restrictions";
@@ -21,6 +24,7 @@ type StaffMember = {
   role: string | null;
   is_active: boolean;
   restrictions: string[] | null;
+  photo_path: string | null;
 };
 
 type Absence = {
@@ -134,6 +138,16 @@ export default function StaffPage() {
       return;
     }
 
+    const { error: photoError } = await deleteEngineerPhoto(member.photo_path);
+
+    if (photoError) {
+      setSaveStatus(
+        `${member.name} permanently deleted, but the photo could not be removed: ${photoError.message}`,
+      );
+      await loadData();
+      return;
+    }
+
     setSaveStatus(`✅ ${member.name} permanently deleted`);
     await loadData();
   }
@@ -162,6 +176,68 @@ export default function StaffPage() {
       return;
     }
 
+    await loadData();
+  }
+
+  async function changePhoto(member: StaffMember, file: File | null) {
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setSaveStatus("Error: Please select an image file.");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setSaveStatus("Error: Photo must be 2 MB or smaller.");
+      return;
+    }
+
+    const { error, cleanupError } = await uploadEngineerPhoto(
+      member.id,
+      file,
+      member.photo_path,
+    );
+
+    if (error) {
+      setSaveStatus(`Error: ${error.message}`);
+      return;
+    }
+
+    if (cleanupError) {
+      setSaveStatus(
+        `Photo changed for ${member.name}, but the old photo could not be removed: ${cleanupError.message}`,
+      );
+      await loadData();
+      return;
+    }
+
+    setSaveStatus(`${member.photo_path ? "Photo changed" : "Photo added"} for ${member.name}`);
+    await loadData();
+  }
+
+  async function removePhoto(member: StaffMember) {
+    if (!member.photo_path) return;
+
+    const { error: updateError } = await updateEngineer(member.id, {
+      photo_path: null,
+    });
+
+    if (updateError) {
+      setSaveStatus(`Error: ${updateError.message}`);
+      return;
+    }
+
+    const { error: photoError } = await deleteEngineerPhoto(member.photo_path);
+
+    if (photoError) {
+      setSaveStatus(
+        `Photo removed from ${member.name}, but the file could not be deleted: ${photoError.message}`,
+      );
+      await loadData();
+      return;
+    }
+
+    setSaveStatus(`Photo removed from ${member.name}`);
     await loadData();
   }
 
@@ -281,12 +357,15 @@ export default function StaffPage() {
     borderBottom: "1px solid #eee",
     fontSize: "14px",
     verticalAlign: "top",
+    overflowWrap: "break-word",
+    textAlign: "left",
   };
 
   const headerStyle: React.CSSProperties = {
     ...cellStyle,
     fontWeight: "bold",
     backgroundColor: "#f5f5f5",
+    verticalAlign: "middle",
   };
 
   const labelStyle: React.CSSProperties = {
@@ -317,6 +396,16 @@ export default function StaffPage() {
     marginTop: "8px",
   };
 
+  const smallButtonStyle: React.CSSProperties = {
+    ...buttonStyle,
+    fontSize: "11px",
+    padding: "6px 10px",
+    marginTop: 0,
+    whiteSpace: "nowrap",
+    lineHeight: 1,
+    minWidth: "74px",
+  };
+
   function renderTable(members: StaffMember[], roleLabel: string, roleColor: string) {
     const isShop = roleLabel.startsWith("Shop");
 
@@ -340,13 +429,32 @@ export default function StaffPage() {
             No {roleLabel.toLowerCase()} members yet.
           </p>
         ) : (
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+            <colgroup>
+              {isShop ? (
+                <>
+                  <col style={{ width: "20%" }} />
+                  <col style={{ width: "12%" }} />
+                  <col style={{ width: "32%" }} />
+                  <col style={{ width: "24%" }} />
+                  <col style={{ width: "12%" }} />
+                </>
+              ) : (
+                <>
+                  <col style={{ width: "24%" }} />
+                  <col style={{ width: "18%" }} />
+                  <col style={{ width: "38%" }} />
+                  <col style={{ width: "20%" }} />
+                </>
+              )}
+            </colgroup>
             <thead>
               <tr>
                 <th style={headerStyle}>Name</th>
                 <th style={headerStyle}>Role</th>
+                <th style={headerStyle}>Photo</th>
                 {isShop && <th style={headerStyle}>Restrictions</th>}
-                <th style={headerStyle}></th>
+                <th style={headerStyle}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -368,26 +476,88 @@ export default function StaffPage() {
                       <option value="office">Office</option>
                     </select>
                   </td>
+                  <td style={cellStyle}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        minHeight: "40px",
+                      }}
+                    >
+                      {member.photo_path && (
+                        <Image
+                          src={getEngineerPhotoUrl(member.photo_path) || "/file.svg"}
+                          alt={member.name}
+                          width={32}
+                          height={32}
+                          unoptimized
+                          style={{
+                            width: "32px",
+                            height: "32px",
+                            borderRadius: "50%",
+                            objectFit: "contain",
+                          }}
+                        />
+                      )}
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <label
+                          style={{
+                            ...smallButtonStyle,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: "#4b5563",
+                          }}
+                        >
+                          {member.photo_path ? "Change photo" : "Add photo"}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: "none" }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              e.target.value = "";
+                              void changePhoto(member, file);
+                            }}
+                          />
+                        </label>
+                        {member.photo_path && (
+                          <button
+                            onClick={() => void removePhoto(member)}
+                            style={{
+                              ...smallButtonStyle,
+                              backgroundColor: "#6b7280",
+                            }}
+                          >
+                            Remove photo
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </td>
                   {isShop && (
                     <td style={cellStyle}>
-                      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                         {Object.entries(RESTRICTION_LABELS).map(([key, label]) => (
                           <label
                             key={key}
                             style={{
                               display: "flex",
-                              alignItems: "center",
-                              gap: "4px",
+                              alignItems: "flex-start",
+                              gap: "6px",
                               fontSize: "12px",
                               cursor: "pointer",
+                              lineHeight: 1.35,
                             }}
                           >
                             <input
                               type="checkbox"
+                              style={{ marginTop: "2px", flexShrink: 0 }}
                               checked={(member.restrictions || []).includes(key)}
                               onChange={() => void toggleRestriction(member, key)}
                             />
-                            {label}
+                            <span>{label}</span>
                           </label>
                         ))}
                       </div>
@@ -397,11 +567,8 @@ export default function StaffPage() {
                     <button
                       onClick={() => void removeMember(member)}
                       style={{
-                        ...buttonStyle,
+                        ...smallButtonStyle,
                         backgroundColor: "#dc2626",
-                        fontSize: "11px",
-                        padding: "4px 10px",
-                        marginTop: 0,
                       }}
                     >
                       Delete
@@ -420,7 +587,6 @@ export default function StaffPage() {
     <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "960px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Staff Management</h1>
-        <Link href="/">← Home</Link>
       </div>
 
       <p style={{ color: "#666", marginTop: "8px" }}>
@@ -440,8 +606,8 @@ export default function StaffPage() {
       >
         <h2>Add team member</h2>
 
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "end" }}>
-          <div style={{ flex: 1, minWidth: "200px" }}>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "end" }}>
+          <div style={{ flex: "0 1 360px", minWidth: "240px" }}>
             <label style={labelStyle}>Name</label>
             <input
               type="text"
@@ -456,7 +622,7 @@ export default function StaffPage() {
               }}
             />
           </div>
-          <div>
+          <div style={{ width: "140px" }}>
             <label style={labelStyle}>Role</label>
             <select
               style={inputStyle}
@@ -496,7 +662,7 @@ export default function StaffPage() {
         </div>
 
         {absencesThisWindow.length > 0 ? (
-          <table style={{ borderCollapse: "collapse", width: "100%", marginTop: "12px", marginBottom: "12px" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed", marginTop: "12px", marginBottom: "12px" }}>
             <thead>
               <tr>
                 <th style={headerStyle}>Engineer</th>
@@ -613,7 +779,7 @@ export default function StaffPage() {
             These absences start after the current 3-week capacity window.
           </p>
 
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
             <thead>
               <tr>
                 <th style={headerStyle}>Engineer</th>

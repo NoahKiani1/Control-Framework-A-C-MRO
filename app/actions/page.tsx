@@ -1,9 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatDate, isStale, latestUpdate } from "@/lib/work-order-rules";
-import { getWorkOrders } from "@/lib/work-orders";
+import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 
 type WorkOrder = {
   work_order_id: string;
@@ -20,7 +19,7 @@ type WorkOrder = {
 
 export default function ActionsPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
-  const [filter, setFilter] = useState<"all" | "open" | "blocked">("all");
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,21 +36,54 @@ export default function ActionsPage() {
     load();
   }, []);
 
+  async function closeAction(order: WorkOrder) {
+    const confirmed = window.confirm(
+      `Close action for ${order.work_order_id}?\n\n` +
+        `This will clear the hold reason and unblock the work order.\n` +
+        `This action cannot be undone.`,
+    );
+
+    if (!confirmed) return;
+
+    const payload: Record<string, unknown> = {
+      action_status: "Done",
+      action_closed: true,
+      hold_reason: null,
+      required_next_action: null,
+      action_owner: null,
+      last_manual_update: new Date().toISOString(),
+    };
+
+    const { error } = await updateWorkOrder(order.work_order_id, payload);
+    if (error) return;
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.work_order_id === order.work_order_id
+          ? {
+              ...o,
+              action_status: "Done",
+              action_closed: true,
+              hold_reason: null,
+              required_next_action: null,
+              action_owner: null,
+            }
+          : o,
+      ),
+    );
+  }
+
   if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
 
-  const filtered = orders.filter((o) => {
-    const hasAction = o.hold_reason || o.required_next_action;
-    if (!hasAction) return false;
-    if (filter === "open") return o.action_status !== "Done";
-    if (filter === "blocked") return !!o.hold_reason;
-    return true;
-  });
+  const filtered = orders.filter((o) => o.hold_reason || o.required_next_action);
 
   const cellStyle: React.CSSProperties = {
     padding: "6px 10px",
     borderBottom: "1px solid #eee",
     fontSize: "13px",
-    whiteSpace: "nowrap",
+    overflowWrap: "anywhere",
+    verticalAlign: "top",
+    textAlign: "left",
   };
 
   const headerStyle: React.CSSProperties = {
@@ -61,16 +93,6 @@ export default function ActionsPage() {
     position: "sticky",
     top: 0,
   };
-
-  const btnStyle = (active: boolean): React.CSSProperties => ({
-    padding: "6px 14px",
-    border: "1px solid #ccc",
-    borderRadius: "4px",
-    backgroundColor: active ? "#0070f3" : "white",
-    color: active ? "white" : "#333",
-    cursor: "pointer",
-    fontWeight: active ? "bold" : "normal",
-  });
 
   function rowColor(order: WorkOrder): string {
     if (order.hold_reason) return "#fff0f0";
@@ -82,20 +104,10 @@ export default function ActionsPage() {
     <main style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Actions / Blockers</h1>
-        <Link href="/">← Home</Link>
-      </div>
-
-      <div style={{ marginTop: "1rem", display: "flex", gap: "8px" }}>
-        <button style={btnStyle(filter === "all")} onClick={() => setFilter("all")}>
-          Alles ({orders.filter((o) => o.hold_reason || o.required_next_action).length})
-        </button>
-        <button style={btnStyle(filter === "open")} onClick={() => setFilter("open")}>
-          Open acties ({orders.filter((o) => (o.hold_reason || o.required_next_action) && o.action_status !== "Done").length})
-        </button>
       </div>
 
       <p style={{ marginTop: "0.5rem", color: "#666" }}>
-        {filtered.length} resultaten
+        {filtered.length} results
       </p>
 
       <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
@@ -108,14 +120,15 @@ export default function ActionsPage() {
               <th style={headerStyle}>Hold Reason</th>
               <th style={headerStyle}>Action Required</th>
               <th style={headerStyle}>Action Owner</th>
-              <th style={headerStyle}>Action Status</th>
-              <th style={headerStyle}>Action Closed</th>
+              <th style={headerStyle}>Status</th>
               <th style={headerStyle}>Last Update</th>
+              <th style={headerStyle}></th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((o) => {
               const lastUpdate = latestUpdate(o.last_system_update, o.last_manual_update);
+              const isDone = o.action_status === "Done";
               return (
                 <tr key={o.work_order_id} style={{ backgroundColor: rowColor(o) }}>
                   <td style={cellStyle}>{o.work_order_id}</td>
@@ -126,12 +139,45 @@ export default function ActionsPage() {
                   </td>
                   <td style={cellStyle}>{o.required_next_action || "–"}</td>
                   <td style={cellStyle}>{o.action_owner || "–"}</td>
-                  <td style={cellStyle}>{o.action_status || "Open"}</td>
-                  <td style={cellStyle}>{o.action_closed ? "Yes" : "No"}</td>
+                  <td style={cellStyle}>
+                    <span
+                      style={{
+                        padding: "3px 8px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        borderRadius: "4px",
+                        backgroundColor: isDone ? "#dcfce7" : "#fef3c7",
+                        color: isDone ? "#16a34a" : "#92400e",
+                        display: "inline-block",
+                      }}
+                    >
+                      {isDone ? "Closed" : "Open"}
+                    </span>
+                  </td>
                   <td style={cellStyle}>
                     {formatDate(lastUpdate)}
                     {isStale(lastUpdate) && (
                       <span className="stale-warning">⚠<span className="stale-tooltip">Not updated in over 2 weeks</span></span>
+                    )}
+                  </td>
+                  <td style={cellStyle}>
+                    {!isDone && (
+                      <button
+                        onClick={() => void closeAction(o)}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          border: "1px solid #dc2626",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          backgroundColor: "white",
+                          color: "#dc2626",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Close action
+                      </button>
                     )}
                   </td>
                 </tr>

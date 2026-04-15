@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   deletePastEngineerAbsences,
@@ -65,7 +64,10 @@ export default function CapacityPage() {
   const [orderDetails, setOrderDetails] = useState<OrderCapacity[]>([]);
   const [overdueOrders, setOverdueOrders] = useState<OrderCapacity[]>([]);
 
-  const [showInfoBanner, setShowInfoBanner] = useState(true);
+  const [showInfoBanner, setShowInfoBanner] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("capacity-info-banner-dismissed") !== "true";
+  });
 
   async function loadData() {
     const today = new Date().toISOString().split("T")[0];
@@ -351,17 +353,20 @@ export default function CapacityPage() {
 
   // --- Styles ---
 
-  const labelStyle: React.CSSProperties = { display: "block", marginTop: "10px", fontWeight: "bold", fontSize: "13px" };
-  const inputStyle: React.CSSProperties = { width: "100%", padding: "8px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "14px", marginTop: "4px" };
-  const buttonStyle: React.CSSProperties = { padding: "8px 16px", backgroundColor: "#0070f3", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold", fontSize: "13px", marginTop: "8px" };
-  const cellStyle: React.CSSProperties = { padding: "6px 10px", borderBottom: "1px solid #eee", fontSize: "13px" };
+  const cellStyle: React.CSSProperties = {
+    padding: "6px 10px",
+    borderBottom: "1px solid #eee",
+    fontSize: "13px",
+    overflowWrap: "anywhere",
+    verticalAlign: "top",
+    textAlign: "left",
+  };
   const headerCellStyle: React.CSSProperties = { ...cellStyle, fontWeight: "bold", backgroundColor: "#f5f5f5" };
 
   return (
     <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "960px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Capacity Management</h1>
-        <Link href="/">← Home</Link>
       </div>
 
       {/* Info banner */}
@@ -380,7 +385,10 @@ export default function CapacityPage() {
           }}
         >
           <button
-            onClick={() => setShowInfoBanner(false)}
+            onClick={() => {
+              setShowInfoBanner(false);
+              localStorage.setItem("capacity-info-banner-dismissed", "true");
+            }}
             style={{
               position: "absolute",
               top: "8px",
@@ -615,7 +623,7 @@ export default function CapacityPage() {
             Only active, non-blocked orders with a due date and not yet at EASA-Form 1.
           </p>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
               <thead>
                 <tr>
                   <th style={headerCellStyle}>WO</th>
@@ -674,7 +682,7 @@ export default function CapacityPage() {
               {ordersBlocked.length + ordersEasa.length} other order{ordersBlocked.length + ordersEasa.length !== 1 ? "s" : ""} excluded from calculation
             </summary>
             <div style={{ overflowX: "auto", marginTop: "8px" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%" }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
                 <thead>
                   <tr>
                     <th style={headerCellStyle}>WO</th>
@@ -726,7 +734,7 @@ export default function CapacityPage() {
         </div>
 
         {absencesThisWindow.length > 0 ? (
-          <table style={{ borderCollapse: "collapse", width: "100%", marginTop: "12px" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed", marginTop: "12px" }}>
             <thead>
               <tr>
                 <th style={headerCellStyle}>Engineer</th>

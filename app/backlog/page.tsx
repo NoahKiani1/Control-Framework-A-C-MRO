@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatDate, latestUpdate, rfqDisplay } from "@/lib/work-order-rules";
 import { getWorkOrders } from "@/lib/work-orders";
@@ -39,7 +38,10 @@ export default function BacklogPage() {
     padding: "6px 10px",
     borderBottom: "1px solid #eee",
     fontSize: "13px",
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
+    verticalAlign: "top",
+    textAlign: "left",
   };
 
   const headerStyle: React.CSSProperties = {
@@ -54,7 +56,6 @@ export default function BacklogPage() {
     <main style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Backlog</h1>
-        <Link href="/">← Home</Link>
       </div>
 
       <p style={{ marginTop: "1rem", color: "#666" }}>
@@ -62,7 +63,7 @@ export default function BacklogPage() {
       </p>
 
       <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
           <thead>
             <tr>
               <th style={headerStyle}>WO</th>

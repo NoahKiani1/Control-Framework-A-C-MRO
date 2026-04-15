@@ -22,6 +22,8 @@ type OrderableQuery = {
   order: (column: string, options: { ascending: boolean }) => unknown;
 };
 
+const STAFF_PHOTOS_BUCKET = "staff-photos";
+
 function applyOrderBy<T>(query: T, orderBy?: OrderBy | OrderBy[]): T {
   const orders = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
 
@@ -70,6 +72,60 @@ export async function insertEngineer(payload: Record<string, unknown>) {
 
 export async function updateEngineer(id: number, payload: Record<string, unknown>) {
   return supabase.from("engineers").update(payload).eq("id", id);
+}
+
+export async function deleteEngineerPhoto(photoPath: string | null | undefined) {
+  if (!photoPath) return { error: null };
+
+  const { error } = await supabase.storage
+    .from(STAFF_PHOTOS_BUCKET)
+    .remove([photoPath]);
+
+  return { error };
+}
+
+export async function uploadEngineerPhoto(
+  engineerId: number,
+  file: File,
+  previousPhotoPath?: string | null,
+) {
+  const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  const safeExtension = extension.replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `${engineerId}/${Date.now()}.${safeExtension}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(STAFF_PHOTOS_BUCKET)
+    .upload(path, file, {
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    return { path: null, error: uploadError };
+  }
+
+  const { error: updateError } = await updateEngineer(engineerId, {
+    photo_path: path,
+  });
+
+  if (updateError) {
+    await deleteEngineerPhoto(path);
+    return { path: null, error: updateError, cleanupError: null };
+  }
+
+  const { error: cleanupError } = await deleteEngineerPhoto(previousPhotoPath);
+
+  return { path, error: null, cleanupError };
+}
+
+export function getEngineerPhotoUrl(photoPath: string | null | undefined): string | null {
+  if (!photoPath) return null;
+
+  const { data } = supabase.storage
+    .from(STAFF_PHOTOS_BUCKET)
+    .getPublicUrl(photoPath);
+
+  return data.publicUrl;
 }
 
 export async function deleteEngineer(id: number) {

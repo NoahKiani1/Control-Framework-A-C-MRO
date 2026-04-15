@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   getCompletableStepsForType,
@@ -9,6 +8,7 @@ import {
   hasOptionalSteps,
 } from "@/lib/process-steps";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
+import { SearchableSelect } from "@/app/components/searchable-select";
 
 type WorkOrder = {
   work_order_id: string;
@@ -163,8 +163,6 @@ export default function ShopUpdatePage() {
       return;
     }
 
-    setSaveStatus("✅ Saved!");
-
     setOrders((prev) =>
       prev.map((o) =>
         o.work_order_id === selectedId
@@ -175,6 +173,16 @@ export default function ShopUpdatePage() {
           : o,
       ),
     );
+
+    // Reset form for the next update
+    const savedId = selectedId;
+    setSelectedId("");
+    setCompletedStep("");
+    setHoldReason("");
+    setRequiredNextAction("");
+    setActionStatus("");
+    setMagneticTestRequired(false);
+    setSaveStatus(`✅ ${savedId} updated! Select the next work order.`);
   }
 
   if (loading) return <div style={{ padding: "24px" }}>Loading...</div>;
@@ -249,31 +257,35 @@ export default function ShopUpdatePage() {
       <h1>📍 Shop Update</h1>
 
       <p>
-        <Link href="/">← Home</Link>
-      </p>
-
-      <p>
         Update the completed shop step or report a blocker. ({orders.length} active
         orders)
       </p>
 
-      <label style={labelStyle}>
-        Select Work Order
-        <select
-          value={selectedId}
-          onChange={(e) => selectOrder(e.target.value)}
-          style={selectStyle}
-        >
-          <option value="">-- Choose a work order --</option>
-          {orders.map((o) => (
-            <option key={o.work_order_id} value={o.work_order_id}>
-              {o.work_order_id} — {"PN: "} {o.part_number || "No PN"} —{" "}
-              {o.customer || "No customer"} — {o.work_order_type || "No type"}
-              {prioLabel(o)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <label style={labelStyle}>Select Work Order</label>
+      <SearchableSelect
+        options={orders.map((o) => ({
+          value: o.work_order_id,
+          label: `${o.work_order_id} — PN: ${o.part_number || "No PN"} — ${o.customer || "No customer"} — ${o.work_order_type || "No type"}${prioLabel(o)}`,
+        }))}
+        value={selectedId}
+        onChange={(v) => selectOrder(v)}
+        placeholder="Type WO number, part number or customer..."
+        style={{ marginTop: "4px" }}
+      />
+      <select
+        value={selectedId}
+        onChange={(e) => selectOrder(e.target.value)}
+        style={{ ...selectStyle, marginTop: "6px" }}
+      >
+        <option value="">-- Or browse the list --</option>
+        {orders.map((o) => (
+          <option key={o.work_order_id} value={o.work_order_id}>
+            {o.work_order_id} — {"PN: "} {o.part_number || "No PN"} —{" "}
+            {o.customer || "No customer"} — {o.work_order_type || "No type"}
+            {prioLabel(o)}
+          </option>
+        ))}
+      </select>
 
       {selectedId && selectedOrder && (
         <>
@@ -348,47 +360,68 @@ export default function ShopUpdatePage() {
             )}
           </label>
 
-          <label style={labelStyle}>
-            Hold Reason (leave empty if not blocked)
-            <input
-              value={holdReason}
-              onChange={(e) => updateHoldReason(e.target.value)}
-              placeholder="E.g. Part damaged, tooling unavailable..."
-              style={inputStyle}
-            />
-          </label>
-
-          {hasHoldReason && (
-            <>
-              <label style={labelStyle}>
-                Required Next Action
-                <input
-                  value={requiredNextAction}
-                  onChange={(e) => setRequiredNextAction(e.target.value)}
-                  placeholder="What needs to happen?"
-                  style={inputStyle}
-                />
-              </label>
-
-              <label style={labelStyle}>
-                Action Status
-                <select
-                  value={actionStatus}
-                  onChange={(e) => handleActionStatusChange(e.target.value)}
-                  style={selectStyle}
-                >
-                  <option value="Open">Open</option>
-                  <option value="Done">Done</option>
-                </select>
-              </label>
-            </>
-          )}
-
-          {holdReason && (
-            <div style={{ ...helperStyle, color: "#b45309" }}>
-              ⚠ This work order will be blocked
+          {/* Blocker / Corrective Action section */}
+          <div
+            style={{
+              marginTop: "16px",
+              padding: "14px 16px",
+              backgroundColor: hasHoldReason ? "#fef2f2" : "#f9fafb",
+              border: hasHoldReason ? "1px solid #fca5a5" : "1px solid #e5e7eb",
+              borderRadius: "8px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "14px",
+                fontWeight: 700,
+                color: hasHoldReason ? "#dc2626" : "#374151",
+                marginBottom: "4px",
+              }}
+            >
+              {hasHoldReason ? "⚠ Work order cannot continue" : "Problem or blocker?"}
             </div>
-          )}
+            <div style={{ fontSize: "12px", color: "#666", marginBottom: "10px" }}>
+              Only fill this in if work on this order cannot continue — e.g. part
+              damaged, tooling unavailable, waiting for customer approval. The order
+              will be blocked until the action is resolved.
+            </div>
+
+            <label style={{ ...labelStyle, marginTop: 0 }}>
+              Reason work cannot continue
+              <input
+                value={holdReason}
+                onChange={(e) => updateHoldReason(e.target.value)}
+                placeholder="E.g. Part damaged, tooling unavailable, waiting for approval..."
+                style={inputStyle}
+              />
+            </label>
+
+            {hasHoldReason && (
+              <>
+                <label style={labelStyle}>
+                  What needs to happen to resolve this?
+                  <input
+                    value={requiredNextAction}
+                    onChange={(e) => setRequiredNextAction(e.target.value)}
+                    placeholder="E.g. Order new part, contact customer..."
+                    style={inputStyle}
+                  />
+                </label>
+
+                <label style={labelStyle}>
+                  Action Status
+                  <select
+                    value={actionStatus}
+                    onChange={(e) => handleActionStatusChange(e.target.value)}
+                    style={selectStyle}
+                  >
+                    <option value="Open">Open — still waiting</option>
+                    <option value="Done">Done — resolved, order can continue</option>
+                  </select>
+                </label>
+              </>
+            )}
+          </div>
 
           <button onClick={() => void saveUpdate()} style={buttonStyle}>
             Save update

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -9,6 +8,7 @@ import {
   normalizeImportedRfqState,
   parseExcelDate,
 } from "@/lib/import-normalize";
+import { getEngineers } from "@/lib/engineers";
 import {
   clearImportRuns,
   createImportRun,
@@ -29,14 +29,55 @@ type ParsedRow = {
   part_number: string | null;
 };
 
+type StaffMember = {
+  id: number;
+  name: string;
+  role: string | null;
+};
+
+type NewOrderSetup = {
+  is_active: boolean;
+  priority: string;
+  due_date: string;
+  assigned_person_team: string;
+};
+
+type ExistingOrderSnapshot = ParsedRow & {
+  is_active: boolean;
+  current_process_step: string | null;
+  assigned_person_team: string | null;
+};
+
+type RfqActivationCandidate = ParsedRow & {
+  previous_rfq_state: string | null;
+  current_process_step: string | null;
+  assigned_person_team: string | null;
+};
+
+function normalizeRfqForComparison(state: string | null | undefined): string {
+  return (state || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function isRfqApprovedState(state: string | null | undefined): boolean {
+  const rfq = normalizeRfqForComparison(state);
+  return (
+    rfq === "rfq send - continue" ||
+    rfq === "rfq approved" ||
+    rfq === "rfq accepted"
+  );
+}
+
 export default function ImportPage() {
   const [status, setStatus] = useState("");
   const [step, setStep] = useState<"upload" | "review" | "done">("upload");
   const [newOrders, setNewOrders] = useState<ParsedRow[]>([]);
   const [existingOrders, setExistingOrders] = useState<ParsedRow[]>([]);
+  const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
+  const [newOrderSetup, setNewOrderSetup] = useState<Record<string, NewOrderSetup>>({});
+  const [rfqActivationCandidates, setRfqActivationCandidates] = useState<RfqActivationCandidate[]>([]);
+  const [rfqActivationSetup, setRfqActivationSetup] = useState<Record<string, boolean>>({});
   const [oldIds, setOldIds] = useState<string[]>([]);
   const [closedIds, setClosedIds] = useState<string[]>([]);
-  const [makeNewActive, setMakeNewActive] = useState(false);
   const [fileName, setFileName] = useState("");
   const [tooOld, setTooOld] = useState(0);
   const [skipped, setSkipped] = useState(0);
@@ -48,6 +89,7 @@ export default function ImportPage() {
     deleted: number;
     closedRemoved: number;
     closedSkipped: number;
+    rfqActivated: number;
     tooOld: number;
     skipped: number;
   } | null>(null);
@@ -117,28 +159,145 @@ export default function ImportPage() {
 
     setStatus("Checking existing orders...");
     const ids = parsed.map((r) => r.work_order_id);
-    const existingIds = new Set(await getExistingWorkOrderIds(ids));
+    const [existingOrderIds, staffData] = await Promise.all([
+      getExistingWorkOrderIds(ids),
+      getEngineers<StaffMember>({
+        select: "id, name, role",
+        isActive: true,
+        orderBy: { column: "name" },
+      }),
+    ]);
+    const existingIds = new Set(existingOrderIds);
 
     const newOnes = parsed.filter((r) => !existingIds.has(r.work_order_id));
     const existingOnes = parsed.filter((r) => existingIds.has(r.work_order_id));
+    const existingSnapshots = existingOnes.length
+      ? await getWorkOrders<ExistingOrderSnapshot>({
+          select:
+            "work_order_id, customer, rfq_state, last_system_update, is_open, work_order_type, part_number, is_active, current_process_step, assigned_person_team",
+          workOrderIds: existingOnes.map((r) => r.work_order_id),
+        })
+      : [];
+    const existingSnapshotMap = new Map(
+      existingSnapshots.map((order) => [order.work_order_id, order]),
+    );
+    const approvedInactiveOrders = existingOnes
+      .map((order) => {
+        const current = existingSnapshotMap.get(order.work_order_id);
+        if (!current || current.is_active) return null;
+        if (!isRfqApprovedState(order.rfq_state)) return null;
+        if (isRfqApprovedState(current.rfq_state)) return null;
 
+        return {
+          ...order,
+          previous_rfq_state: current.rfq_state,
+          current_process_step: current.current_process_step,
+          assigned_person_team: current.assigned_person_team,
+        };
+      })
+      .filter(Boolean) as RfqActivationCandidate[];
+
+    setShopStaff(staffData.filter((s) => s.role === "shop"));
     setNewOrders(newOnes);
+    setNewOrderSetup(
+      Object.fromEntries(
+        newOnes.map((order) => [
+          order.work_order_id,
+          {
+            is_active: false,
+            priority: "No",
+            due_date: "",
+            assigned_person_team: "",
+          },
+        ]),
+      ),
+    );
+    setRfqActivationCandidates(approvedInactiveOrders);
+    setRfqActivationSetup(
+      Object.fromEntries(
+        approvedInactiveOrders.map((order) => [order.work_order_id, true]),
+      ),
+    );
     setExistingOrders(existingOnes);
     setStep("review");
     setStatus("");
   }
 
+  function updateNewOrderSetup(
+    workOrderId: string,
+    patch: Partial<NewOrderSetup>,
+  ) {
+    const defaultSetup: NewOrderSetup = {
+      is_active: false,
+      priority: "No",
+      due_date: "",
+      assigned_person_team: "",
+    };
+
+    setNewOrderSetup((prev) => ({
+      ...prev,
+      [workOrderId]: {
+        ...defaultSetup,
+        ...prev[workOrderId],
+        ...patch,
+      },
+    }));
+  }
+
+  function setAllNewOrdersActive(isActive: boolean) {
+    setNewOrderSetup((prev) =>
+      Object.fromEntries(
+        newOrders.map((order) => [
+          order.work_order_id,
+          {
+            is_active: isActive,
+            priority: prev[order.work_order_id]?.priority || "No",
+            due_date: prev[order.work_order_id]?.due_date || "",
+            assigned_person_team:
+              prev[order.work_order_id]?.assigned_person_team || "",
+          },
+        ]),
+      ),
+    );
+  }
+
+  function setAllRfqApprovedOrdersActive(isActive: boolean) {
+    setRfqActivationSetup(
+      Object.fromEntries(
+        rfqActivationCandidates.map((order) => [order.work_order_id, isActive]),
+      ),
+    );
+  }
+
   async function doImport() {
+    const missingDueDate = newOrders.find((order) => {
+      const setup = newOrderSetup[order.work_order_id];
+      return (
+        setup?.is_active &&
+        (setup.priority === "Yes" || setup.priority === "AOG") &&
+        !setup.due_date
+      );
+    });
+
+    if (missingDueDate) {
+      setStatus(
+        `Error: Due Date is required for priority work order ${missingDueDate.work_order_id}.`,
+      );
+      return;
+    }
+
     setStatus("Importing...");
 
     const batchSize = 500;
     const importTimestamp = new Date().toISOString();
     let updated = 0;
+    let rfqActivated = 0;
 
     // 1. Update existing orders — only bump last_system_update when data changed
     const existingIds = existingOrders.map((r) => r.work_order_id);
-    const currentData = await getWorkOrders<ParsedRow>({
-      select: "work_order_id, customer, rfq_state, work_order_type, part_number",
+    const currentData = await getWorkOrders<ExistingOrderSnapshot>({
+      select:
+        "work_order_id, customer, rfq_state, last_system_update, is_open, work_order_type, part_number, is_active, current_process_step, assigned_person_team",
       workOrderIds: existingIds,
     });
 
@@ -149,15 +308,31 @@ export default function ImportPage() {
     for (let i = 0; i < existingOrders.length; i += batchSize) {
       const batch = existingOrders.slice(i, i + batchSize).map((r) => {
         const current = currentMap.get(r.work_order_id);
+        const shouldActivateFromRfq =
+          Boolean(rfqActivationSetup[r.work_order_id]) &&
+          Boolean(current) &&
+          !current?.is_active;
         const changed =
           !current ||
           current.customer !== r.customer ||
           current.rfq_state !== r.rfq_state ||
           current.work_order_type !== r.work_order_type ||
-          current.part_number !== r.part_number;
+          current.part_number !== r.part_number ||
+          shouldActivateFromRfq;
+
+        if (shouldActivateFromRfq) {
+          rfqActivated += 1;
+        }
 
         return {
           ...r,
+          ...(shouldActivateFromRfq
+            ? {
+                is_active: true,
+                current_process_step: current?.current_process_step || "Intake",
+                assigned_person_team: current?.assigned_person_team || "Shop",
+              }
+            : {}),
           last_system_update: changed ? importTimestamp : r.last_system_update,
         };
       });
@@ -175,8 +350,15 @@ export default function ImportPage() {
     for (let i = 0; i < newOrders.length; i += batchSize) {
       const batch = newOrders.slice(i, i + batchSize).map((r) => ({
         ...r,
-        is_active: makeNewActive,
-        current_process_step: makeNewActive ? "Intake" : null,
+        is_active: newOrderSetup[r.work_order_id]?.is_active || false,
+        priority: newOrderSetup[r.work_order_id]?.priority || "No",
+        due_date: newOrderSetup[r.work_order_id]?.due_date || null,
+        assigned_person_team:
+          (newOrderSetup[r.work_order_id]?.assigned_person_team || "").trim() ||
+          (newOrderSetup[r.work_order_id]?.is_active ? "Shop" : null),
+        current_process_step: newOrderSetup[r.work_order_id]?.is_active
+          ? "Intake"
+          : null,
         last_system_update: importTimestamp,
       }));
 
@@ -225,6 +407,7 @@ export default function ImportPage() {
       deleted,
       closedRemoved,
       closedSkipped,
+      rfqActivated,
       tooOld,
       skipped,
     });
@@ -241,6 +424,39 @@ export default function ImportPage() {
     cursor: "pointer",
     fontWeight: "bold",
     fontSize: "14px",
+  };
+
+  const secondaryButtonStyle: React.CSSProperties = {
+    ...buttonStyle,
+    backgroundColor: "#4b5563",
+    padding: "8px 12px",
+    fontSize: "12px",
+  };
+
+  const cellStyle: React.CSSProperties = {
+    padding: "8px 10px",
+    borderBottom: "1px solid #eee",
+    fontSize: "13px",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
+    verticalAlign: "top",
+    textAlign: "left",
+  };
+
+  const headerStyle: React.CSSProperties = {
+    ...cellStyle,
+    fontWeight: "bold",
+    backgroundColor: "#f5f5f5",
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    minWidth: "120px",
+    padding: "6px",
+    border: "1px solid #ccc",
+    borderRadius: "4px",
+    fontSize: "13px",
+    boxSizing: "border-box",
   };
 
   return (
@@ -293,6 +509,15 @@ export default function ImportPage() {
             <br />
             <strong>{newOrders.length} new open orders found</strong>
             <br />
+            {rfqActivationCandidates.length > 0 && (
+              <>
+                <strong>
+                  {rfqActivationCandidates.length} inactive work order
+                  {rfqActivationCandidates.length !== 1 ? "s" : ""} now have RFQ approved
+                </strong>
+                <br />
+              </>
+            )}
             {closedSkipped > 0 && (
               <>
                 {closedSkipped} closed orders (will be skipped + removed from database)
@@ -313,6 +538,81 @@ export default function ImportPage() {
             )}
           </div>
 
+          {rfqActivationCandidates.length > 0 && (
+            <div
+              style={{
+                marginBottom: "1rem",
+                padding: "12px 16px",
+                backgroundColor: "#ecfdf5",
+                border: "1px solid #86efac",
+                borderRadius: "6px",
+              }}
+            >
+              <strong>RFQ approved on inactive work orders</strong>
+              <p style={{ margin: "8px 0 4px" }}>
+                These inactive work orders now have an approved RFQ. Do you want to
+                activate them during this import? Activated orders keep their current
+                process step, or start at <strong>Intake</strong> if no step is set.
+              </p>
+              <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+                <button
+                  type="button"
+                  style={secondaryButtonStyle}
+                  onClick={() => setAllRfqApprovedOrdersActive(true)}
+                >
+                  Activate all
+                </button>
+                <button
+                  type="button"
+                  style={secondaryButtonStyle}
+                  onClick={() => setAllRfqApprovedOrdersActive(false)}
+                >
+                  Keep all inactive
+                </button>
+              </div>
+              <div style={{ overflowX: "auto", marginTop: "12px" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+                  <thead>
+                    <tr>
+                      <th style={headerStyle}>WO</th>
+                      <th style={headerStyle}>Customer</th>
+                      <th style={headerStyle}>Previous RFQ</th>
+                      <th style={headerStyle}>New RFQ</th>
+                      <th style={headerStyle}>Activate?</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rfqActivationCandidates.map((order) => (
+                      <tr key={order.work_order_id}>
+                        <td style={{ ...cellStyle, fontWeight: 700 }}>
+                          {order.work_order_id}
+                        </td>
+                        <td style={cellStyle}>{order.customer || "-"}</td>
+                        <td style={cellStyle}>{order.previous_rfq_state || "-"}</td>
+                        <td style={cellStyle}>{order.rfq_state || "-"}</td>
+                        <td style={cellStyle}>
+                          <select
+                            style={inputStyle}
+                            value={rfqActivationSetup[order.work_order_id] ? "yes" : "no"}
+                            onChange={(e) =>
+                              setRfqActivationSetup((prev) => ({
+                                ...prev,
+                                [order.work_order_id]: e.target.value === "yes",
+                              }))
+                            }
+                          >
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {newOrders.length > 0 && (
             <div
               style={{
@@ -323,28 +623,133 @@ export default function ImportPage() {
                 borderRadius: "6px",
               }}
             >
-              <strong>Make new work orders active immediately?</strong>
+              <strong>Set up new work orders</strong>
               <p style={{ margin: "8px 0 4px" }}>
-                If you make them active, they will appear in the Dashboard,
-                Planning and Shop right away. New active orders automatically start at
-                <strong> Intake</strong>. Otherwise, they will go to the Backlog.
+                Choose which new orders should become active right away. Active
+                orders start at <strong>Intake</strong> and can be assigned here,
+                so you do not need to open Office Update after importing.
               </p>
-              <label
-                style={{
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={makeNewActive}
-                  onChange={(e) => setMakeNewActive(e.target.checked)}
-                  style={{ width: "18px", height: "18px" }}
-                />
-                <span>Yes, make the {newOrders.length} new orders active immediately</span>
-              </label>
+              <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+                <button
+                  type="button"
+                  style={secondaryButtonStyle}
+                  onClick={() => setAllNewOrdersActive(true)}
+                >
+                  Mark all active
+                </button>
+                <button
+                  type="button"
+                  style={secondaryButtonStyle}
+                  onClick={() => setAllNewOrdersActive(false)}
+                >
+                  Mark all inactive
+                </button>
+              </div>
+              <div style={{ overflowX: "auto", marginTop: "12px" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+                  <thead>
+                    <tr>
+                      <th style={headerStyle}>WO</th>
+                      <th style={headerStyle}>Customer</th>
+                      <th style={headerStyle}>Part Number</th>
+                      <th style={headerStyle}>Active</th>
+                      <th style={headerStyle}>Priority</th>
+                      <th style={headerStyle}>Due Date</th>
+                      <th style={headerStyle}>Assigned</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {newOrders.map((order) => {
+                      const setup = newOrderSetup[order.work_order_id] || {
+                        is_active: false,
+                        priority: "No",
+                        due_date: "",
+                        assigned_person_team: "",
+                      };
+                      const dueRequired =
+                        setup.is_active &&
+                        (setup.priority === "Yes" || setup.priority === "AOG");
+
+                      return (
+                        <tr key={order.work_order_id}>
+                          <td style={{ ...cellStyle, fontWeight: 700 }}>
+                            {order.work_order_id}
+                          </td>
+                          <td style={cellStyle}>{order.customer || "-"}</td>
+                          <td style={cellStyle}>{order.part_number || "-"}</td>
+                          <td style={cellStyle}>
+                            <select
+                              style={inputStyle}
+                              value={setup.is_active ? "yes" : "no"}
+                              onChange={(e) =>
+                                updateNewOrderSetup(order.work_order_id, {
+                                  is_active: e.target.value === "yes",
+                                })
+                              }
+                            >
+                              <option value="no">No</option>
+                              <option value="yes">Yes</option>
+                            </select>
+                          </td>
+                          <td style={cellStyle}>
+                            <select
+                              style={inputStyle}
+                              value={setup.priority}
+                              disabled={!setup.is_active}
+                              onChange={(e) =>
+                                updateNewOrderSetup(order.work_order_id, {
+                                  priority: e.target.value,
+                                })
+                              }
+                            >
+                              <option value="No">No</option>
+                              <option value="Yes">Yes</option>
+                              <option value="AOG">AOG</option>
+                            </select>
+                          </td>
+                          <td style={cellStyle}>
+                            <input
+                              type="date"
+                              style={{
+                                ...inputStyle,
+                                borderColor: dueRequired && !setup.due_date
+                                  ? "#dc2626"
+                                  : "#ccc",
+                              }}
+                              value={setup.due_date}
+                              disabled={!setup.is_active}
+                              onChange={(e) =>
+                                updateNewOrderSetup(order.work_order_id, {
+                                  due_date: e.target.value,
+                                })
+                              }
+                            />
+                          </td>
+                          <td style={cellStyle}>
+                            <select
+                              style={inputStyle}
+                              value={setup.assigned_person_team}
+                              disabled={!setup.is_active}
+                              onChange={(e) =>
+                                updateNewOrderSetup(order.work_order_id, {
+                                  assigned_person_team: e.target.value,
+                                })
+                              }
+                            >
+                              <option value="">Shop</option>
+                              {shopStaff.map((staff) => (
+                                <option key={staff.id} value={staff.name}>
+                                  {staff.name}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -369,6 +774,12 @@ export default function ImportPage() {
               <tr>
                 <td style={{ padding: "4px 12px" }}>Updated</td>
                 <td>{results.updated}</td>
+              </tr>
+              <tr>
+                <td style={{ padding: "4px 12px" }}>
+                  Activated after RFQ approval
+                </td>
+                <td>{results.rfqActivated}</td>
               </tr>
               <tr>
                 <td style={{ padding: "4px 12px" }}>Closed orders skipped</td>
@@ -397,6 +808,13 @@ export default function ImportPage() {
               setStep("upload");
               setResults(null);
               setStatus("");
+              setNewOrders([]);
+              setExistingOrders([]);
+              setNewOrderSetup({});
+              setRfqActivationCandidates([]);
+              setRfqActivationSetup({});
+              setOldIds([]);
+              setClosedIds([]);
             }}
           >
             Start new import
@@ -410,9 +828,6 @@ export default function ImportPage() {
         </p>
       )}
 
-      <p style={{ marginTop: "2rem" }}>
-        <Link href="/">← Back to home</Link>
-      </p>
     </main>
   );
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getEngineers } from "@/lib/engineers";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
+import { SearchableSelect } from "@/app/components/searchable-select";
 
 type WorkOrder = {
   work_order_id: string;
@@ -82,6 +82,27 @@ export default function OfficeUpdatePage() {
 
       setOrders(wo);
       setLoading(false);
+
+      // Auto-select work order from URL query parameter
+      const woParam = new URLSearchParams(window.location.search).get("wo");
+      if (woParam) {
+        const order = wo.find((o) => o.work_order_id === woParam);
+        if (order && order.is_active) {
+          const orderHasHoldReason = Boolean(order.hold_reason?.trim());
+          setSelectedId(woParam);
+          setForm({
+            due_date: order.due_date || "",
+            priority: order.priority || "No",
+            assigned_person_team: order.assigned_person_team || "",
+            hold_reason: order.hold_reason || "",
+            required_next_action: orderHasHoldReason ? order.required_next_action || "" : "",
+            action_owner: orderHasHoldReason ? order.action_owner || "" : "",
+            action_status: orderHasHoldReason ? order.action_status || "Open" : "",
+            action_closed: orderHasHoldReason ? Boolean(order.action_closed) : false,
+            is_active: order.is_active,
+          });
+        }
+      }
     }
 
     load();
@@ -335,9 +356,6 @@ export default function OfficeUpdatePage() {
   return (
     <div style={pageStyle}>
       <h1 style={{ marginBottom: "8px" }}>Office Update</h1>
-      <Link href="/" style={{ color: "#0070f3", textDecoration: "none" }}>
-        ← Home
-      </Link>
 
       <div style={sectionStyle}>
         <h2 style={{ marginTop: 0 }}>Activate Work Order</h2>
@@ -346,12 +364,21 @@ export default function OfficeUpdatePage() {
         </p>
 
         <label style={labelStyle}>Select Work Order</label>
+        <SearchableSelect
+          options={inactiveOrders.map((o) => ({
+            value: o.work_order_id,
+            label: `${o.work_order_id} — ${o.customer || "No customer"} — ${o.work_order_type || "Unknown type"}`,
+          }))}
+          value={activateId}
+          onChange={(v) => setActivateId(v)}
+          placeholder="Type WO number or customer name..."
+        />
         <select
-          style={selectStyle}
+          style={{ ...selectStyle, marginTop: "6px" }}
           value={activateId}
           onChange={(e) => setActivateId(e.target.value)}
         >
-          <option value="">-- Choose an inactive work order --</option>
+          <option value="">-- Or browse the list --</option>
           {inactiveOrders.map((o) => (
             <option key={o.work_order_id} value={o.work_order_id}>
               {o.work_order_id} — {o.customer || "No customer"} — {o.work_order_type || "Unknown type"}
@@ -378,12 +405,21 @@ export default function OfficeUpdatePage() {
         <p>{activeOrders.length} active work orders</p>
 
         <label style={labelStyle}>Select Work Order</label>
+        <SearchableSelect
+          options={activeOrders.map((o) => ({
+            value: o.work_order_id,
+            label: `${o.work_order_id} — ${o.customer || "No customer"} — ${o.work_order_type || "Unknown type"}`,
+          }))}
+          value={selectedId}
+          onChange={(v) => selectOrder(v)}
+          placeholder="Type WO number or customer name..."
+        />
         <select
-          style={selectStyle}
+          style={{ ...selectStyle, marginTop: "6px" }}
           value={selectedId}
           onChange={(e) => selectOrder(e.target.value)}
         >
-          <option value="">-- Choose an active work order --</option>
+          <option value="">-- Or browse the list --</option>
           {activeOrders.map((o) => (
             <option key={o.work_order_id} value={o.work_order_id}>
               {o.work_order_id} — {o.customer || "No customer"} — {o.work_order_type || "Unknown type"}

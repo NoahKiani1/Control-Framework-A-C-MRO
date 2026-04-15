@@ -8,7 +8,6 @@ import {
   isBlocked,
   latestUpdate,
   isStale,
-  rfqDisplay,
   sortOrders,
 } from "@/lib/work-order-rules";
 import { getWorkOrders } from "@/lib/work-orders";
@@ -93,7 +92,6 @@ export default function PlanningPage() {
               <th style={headerStyle}>Prio</th>
               <th style={headerStyle}>Assigned</th>
               <th style={headerStyle}>Next Process Step</th>
-              <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
@@ -116,14 +114,6 @@ export default function PlanningPage() {
                   <td style={cellStyle}>{o.priority || "No"}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                  <td
-                    style={{
-                      ...cellStyle,
-                      color: rfqDisplay(o.rfq_state).color,
-                    }}
-                  >
-                    {rfqDisplay(o.rfq_state).label}
-                  </td>
                   <td style={cellStyle}>
                     {formatDate(lastUpdate)}
                     {isStale(lastUpdate) && (
@@ -158,7 +148,6 @@ export default function PlanningPage() {
               <th style={headerStyle}>Assigned</th>
               <th style={headerStyle}>Next Process Step</th>
               <th style={headerStyle}>Hold Reason</th>
-              <th style={headerStyle}>RFQ</th>
               <th style={headerStyle}>Last Update</th>
             </tr>
           </thead>
@@ -181,14 +170,8 @@ export default function PlanningPage() {
                   <td style={cellStyle}>{o.priority || "No"}</td>
                   <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                  <td style={cellStyle}>{blockReason(o)}</td>
-                  <td
-                    style={{
-                      ...cellStyle,
-                      color: rfqDisplay(o.rfq_state).color,
-                    }}
-                  >
-                    {rfqDisplay(o.rfq_state).label}
+                  <td style={cellStyle}>
+                    {blockReason(o, { rfqSentLabel: "Waiting for RFQ Approval" })}
                   </td>
                   <td style={cellStyle}>
                     {formatDate(lastUpdate)}
