@@ -18,11 +18,10 @@ import {
 } from "@/lib/engineers";
 import { calculateWeekCapacity } from "@/lib/capacity";
 import { RESTRICTION_BLOCKED_STEPS } from "@/lib/restrictions";
-import { getProcessStepsForType, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import {
+  getProcessStepsForType,
+  READY_TO_CLOSE_STEP,
+} from "@/lib/process-steps";
 
 type WorkOrder = {
   work_order_id: string;
@@ -58,9 +57,70 @@ type Absence = {
   absence_date: string;
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+type CardProps = {
+  label: string;
+  value: number;
+  color: string;
+  active: boolean;
+  onClick?: () => void;
+};
+
+type AbsenceDayImpact = {
+  dateLabel: string;
+  date: Date;
+  absentEngineers: { name: string; restrictions: string[] | null }[];
+  unavailableSteps: string[];
+  affectedOrders: {
+    work_order_id: string;
+    customer: string | null;
+    current_step: string;
+    blocked_remaining_steps: string[];
+  }[];
+};
+
+type DetailPanel =
+  | "due"
+  | "overdue"
+  | "actions"
+  | "ready"
+  | "aog"
+  | "stale"
+  | null;
+
+// Refined palette — modern, clean, professional
+const COLORS = {
+  // Surfaces
+  pageBg: "#f8fafc",
+  surface: "#ffffff",
+  surfaceSubtle: "#f9fafb",
+
+  // Borders
+  border: "#e5e7eb",
+  borderStrong: "#d1d5db",
+
+  // Text
+  heading: "#0f172a",
+  text: "#1e293b",
+  textSoft: "#475569",
+  textMuted: "#94a3b8",
+
+  // Accents
+  blue: "#2563eb",
+  blueSoft: "#eff6ff",
+  red: "#dc2626",
+  redSoft: "#fef2f2",
+  amber: "#d97706",
+  amberSoft: "#fffbeb",
+  green: "#059669",
+  greenSoft: "#ecfdf5",
+  purple: "#7c3aed",
+  purpleSoft: "#f5f3ff",
+  gold: "#b45309",
+  goldSoft: "#fef3c7",
+};
+
+const FONT_STACK =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
 function isDueThisWeek(dateStr: string | null): boolean {
   if (!dateStr) return false;
@@ -102,45 +162,8 @@ function blockedReason(order: WorkOrder): string {
   return "Blocked";
 }
 
-// ---------------------------------------------------------------------------
-// Shared styles
-// ---------------------------------------------------------------------------
-
-const cellStyle: React.CSSProperties = {
-  padding: "6px 10px",
-  borderBottom: "1px solid #eee",
-  fontSize: "13px",
-  whiteSpace: "normal",
-  overflowWrap: "anywhere",
-  verticalAlign: "top",
-  textAlign: "left",
-};
-
-const headerStyle: React.CSSProperties = {
-  ...cellStyle,
-  fontWeight: "bold",
-  backgroundColor: "#f5f5f5",
-  position: "sticky" as const,
-  top: 0,
-};
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-type CardProps = {
-  label: string;
-  value: number;
-  color: string;
-  bgColor: string;
-  active: boolean;
-  onClick?: () => void;
-  subtitle?: string;
-};
-
 function formatAnimatedNumber(value: number, decimals: number): string {
   if (decimals === 0) return String(Math.round(value));
-
   const rounded = Number(value.toFixed(decimals));
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(decimals);
 }
@@ -183,7 +206,6 @@ function AnimatedNumber({
     }
 
     animationFrame = requestAnimationFrame(tick);
-
     return () => cancelAnimationFrame(animationFrame);
   }, [animationKey]);
 
@@ -225,7 +247,6 @@ function AnimatedProgressBar({
     }
 
     animationFrame = requestAnimationFrame(tick);
-
     return () => cancelAnimationFrame(animationFrame);
   }, [animationKey]);
 
@@ -235,7 +256,8 @@ function AnimatedProgressBar({
         height: "100%",
         width: `${Math.min(displayValue, 100)}%`,
         backgroundColor: color,
-        borderRadius: "3px",
+        borderRadius: "999px",
+        transition: "background-color 0.2s ease",
       }}
     />
   );
@@ -249,17 +271,15 @@ function ProcessStepDisplay({ order }: { order: WorkOrder }) {
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: "5px",
-          color: "#dc2626",
-          fontWeight: 700,
+          gap: "6px",
+          color: COLORS.red,
+          fontWeight: 600,
           cursor: "help",
         }}
       >
         <span aria-hidden="true">▲</span>
         <span>Blocked</span>
-        <span className="blocked-step-tooltip-text">
-          {blockedReason(order)}
-        </span>
+        <span className="blocked-step-tooltip-text">{blockedReason(order)}</span>
       </span>
     );
   }
@@ -267,83 +287,128 @@ function ProcessStepDisplay({ order }: { order: WorkOrder }) {
   return <>{order.current_process_step || "–"}</>;
 }
 
-function KpiCard({ label, value, color, bgColor, active, onClick, subtitle }: CardProps) {
+function KpiCard({ label, value, color, active, onClick }: CardProps) {
   return (
     <button
       onClick={onClick}
       style={{
-        flex: "1 1 0",
-        minWidth: "140px",
-        padding: "16px 18px",
-        backgroundColor: active ? color : bgColor,
-        border: active ? `2px solid ${color}` : "1px solid #e5e7eb",
-        borderRadius: "10px",
+        position: "relative",
+        width: "100%",
+        padding: "20px 22px",
+        backgroundColor: active ? color : COLORS.surface,
+        border: `1px solid ${active ? color : COLORS.border}`,
+        borderRadius: "12px",
         cursor: onClick ? "pointer" : "default",
         textAlign: "left",
-        transition: "all 0.15s ease",
-        boxShadow: active ? `0 2px 8px ${color}33` : "0 1px 3px rgba(0,0,0,0.06)",
+        transition: "transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease",
+        boxShadow: active
+          ? `0 10px 24px -8px ${color}66`
+          : "0 1px 2px rgba(15, 23, 42, 0.04)",
+        overflow: "hidden",
+        fontFamily: FONT_STACK,
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          e.currentTarget.style.transform = "translateY(-1px)";
+          e.currentTarget.style.boxShadow = "0 4px 12px rgba(15, 23, 42, 0.06)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active) {
+          e.currentTarget.style.transform = "translateY(0)";
+          e.currentTarget.style.boxShadow = "0 1px 2px rgba(15, 23, 42, 0.04)";
+        }
       }}
     >
+      {/* Left accent stripe */}
       <div
         style={{
-          fontSize: "28px",
-          fontWeight: "700",
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "3px",
+          height: "100%",
+          backgroundColor: active ? "rgba(255,255,255,0.4)" : color,
+        }}
+      />
+
+      <div
+        style={{
+          fontSize: "32px",
+          fontWeight: 700,
           color: active ? "white" : color,
           lineHeight: 1,
+          letterSpacing: "-0.03em",
+          fontVariantNumeric: "tabular-nums",
         }}
       >
         <AnimatedNumber value={value} />
       </div>
+
       <div
         style={{
           fontSize: "13px",
-          color: active ? "rgba(255,255,255,0.85)" : "#555",
-          marginTop: "6px",
+          color: active ? "rgba(255,255,255,0.95)" : COLORS.textSoft,
+          marginTop: "10px",
           fontWeight: 500,
         }}
       >
         {label}
       </div>
-      {subtitle && (
-        <div
-          style={{
-            fontSize: "11px",
-            color: active ? "rgba(255,255,255,0.7)" : "#999",
-            marginTop: "2px",
-          }}
-        >
-          {subtitle}
-        </div>
-      )}
     </button>
   );
 }
 
-type AbsenceDayImpact = {
-  dateLabel: string;
-  date: Date;
-  absentEngineers: { name: string; restrictions: string[] | null }[];
-  unavailableSteps: string[];
-  affectedOrders: {
-    work_order_id: string;
-    customer: string | null;
-    current_step: string;
-    blocked_remaining_steps: string[];
-  }[];
-};
+function StatTile({
+  label,
+  children,
+  tone = "default",
+}: {
+  label: string;
+  children: React.ReactNode;
+  tone?: "default" | "success" | "warn" | "danger";
+}) {
+  const toneStyles: Record<string, { color: string; bg: string; border: string }> = {
+    default: { color: COLORS.heading, bg: COLORS.surface, border: COLORS.border },
+    success: { color: COLORS.green, bg: COLORS.surface, border: COLORS.border },
+    warn: { color: COLORS.amber, bg: COLORS.surface, border: COLORS.border },
+    danger: { color: COLORS.red, bg: COLORS.surface, border: COLORS.border },
+  };
+  const t = toneStyles[tone];
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
-
-type DetailPanel = "due" | "overdue" | "actions" | "ready" | "aog" | "stale" | null;
+  return (
+    <div
+      style={{
+        padding: "18px 20px",
+        backgroundColor: t.bg,
+        border: `1px solid ${t.border}`,
+        borderRadius: "12px",
+        boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "11px",
+          fontWeight: 600,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: COLORS.textMuted,
+          marginBottom: "10px",
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ color: t.color }}>{children}</div>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activePanel, setActivePanel] = useState<DetailPanel>(null);
+  const [activePanel, setActivePanel] = useState<DetailPanel>("due");
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -377,14 +442,24 @@ export default function DashboardPage() {
       setLoading(false);
     }
 
-    load();
+    void load();
   }, []);
 
-  if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
-
-  // -----------------------------------------------------------------------
-  // Derived data
-  // -----------------------------------------------------------------------
+  if (loading) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          backgroundColor: COLORS.pageBg,
+          padding: "32px",
+          color: COLORS.textSoft,
+          fontFamily: FONT_STACK,
+        }}
+      >
+        Loading...
+      </main>
+    );
+  }
 
   const activeOrders = orders.filter(
     (o) => o.current_process_step !== READY_TO_CLOSE_STEP,
@@ -393,9 +468,7 @@ export default function DashboardPage() {
     (o) => o.current_process_step === READY_TO_CLOSE_STEP,
   );
 
-  const dueThisWeek = activeOrders.filter(
-    (o) => isDueThisWeek(o.due_date),
-  );
+  const dueThisWeek = activeOrders.filter((o) => isDueThisWeek(o.due_date));
   const overdueOrders = activeOrders.filter(
     (o) => isOverdue(o.due_date) && !isBlocked(o),
   );
@@ -408,7 +481,6 @@ export default function DashboardPage() {
     return isStale(last);
   });
 
-  // Capacity this week
   const todayStr = new Date().toISOString().split("T")[0];
   const absenceDates = absences
     .filter((a) => a.absence_date >= todayStr)
@@ -436,15 +508,19 @@ export default function DashboardPage() {
   const thisWeek = weeks[0];
   const capacityColor =
     thisWeek?.status === "red"
-      ? "#dc2626"
+      ? COLORS.red
       : thisWeek?.status === "orange"
-        ? "#ea580c"
-        : "#16a34a";
+        ? COLORS.amber
+        : COLORS.green;
+  const capacityBgTint =
+    thisWeek?.status === "red"
+      ? COLORS.redSoft
+      : thisWeek?.status === "orange"
+        ? COLORS.amberSoft
+        : COLORS.greenSoft;
 
-  // Absence impact this week
   const engineerMap = new Map(engineers.map((e) => [e.id, e]));
 
-  // Get remaining work days this week (today through Friday)
   const todayDate = new Date();
   todayDate.setHours(0, 0, 0, 0);
   const dayOfWeek = todayDate.getDay();
@@ -459,14 +535,12 @@ export default function DashboardPage() {
     }
   }
 
-  // Helper: get the remaining steps for a specific order (current step + all after)
-  // based on the order's type and its position in the step sequence
   function getRemainingStepsForOrder(order: WorkOrder): string[] {
     if (!order.work_order_type || !order.current_process_step) return [];
     const steps = getProcessStepsForType(order.work_order_type);
     const currentIdx = steps.indexOf(order.current_process_step);
     if (currentIdx === -1) return [];
-    return steps.slice(currentIdx); // current step + everything after
+    return steps.slice(currentIdx);
   }
 
   const allRestrictedSteps = Object.entries(RESTRICTION_BLOCKED_STEPS);
@@ -476,7 +550,6 @@ export default function DashboardPage() {
     .map((day) => {
       const dayStr = day.toISOString().split("T")[0];
 
-      // Engineers absent this day
       const absentIds = new Set(
         absences
           .filter((a) => a.absence_date === dayStr)
@@ -490,7 +563,6 @@ export default function DashboardPage() {
         .filter(Boolean)
         .map((e) => ({ name: e!.name, restrictions: e!.restrictions }));
 
-      // For each restriction type, check if all qualified engineers are absent
       const unavailableSteps: string[] = [];
       for (const [restriction, steps] of allRestrictedSteps) {
         const qualifiedEngineers = engineers.filter((e) =>
@@ -504,10 +576,9 @@ export default function DashboardPage() {
         }
       }
 
-      // Per order: check which REMAINING steps (based on type + position) are blocked
       const affectedOrders =
         unavailableSteps.length > 0
-          ? nonBlockedActive
+          ? (nonBlockedActive
               .map((o) => {
                 const remaining = getRemainingStepsForOrder(o);
                 const blockedRemaining = remaining.filter((s) =>
@@ -521,7 +592,7 @@ export default function DashboardPage() {
                   blocked_remaining_steps: blockedRemaining,
                 };
               })
-              .filter(Boolean) as AbsenceDayImpact["affectedOrders"]
+              .filter(Boolean) as AbsenceDayImpact["affectedOrders"])
           : [];
 
       return {
@@ -545,13 +616,21 @@ export default function DashboardPage() {
   ).size;
   const hasAbsences = absenceDayImpacts.length > 0;
 
-  // -----------------------------------------------------------------------
-  // Panel toggle
-  // -----------------------------------------------------------------------
-
   function togglePanel(panel: DetailPanel) {
     setActivePanel((prev) => (prev === panel ? null : panel));
   }
+
+  function getHealthStatus(): { label: string; color: string; bg: string } {
+    if (overdueOrders.length > 0)
+      return { label: "Attention needed", color: COLORS.red, bg: COLORS.redSoft };
+    if (openActions.length > 0)
+      return { label: "Blockers active", color: COLORS.amber, bg: COLORS.amberSoft };
+    if ((thisWeek?.percentage ?? 0) >= 85)
+      return { label: "High load", color: COLORS.amber, bg: COLORS.amberSoft };
+    return { label: "Flow stable", color: COLORS.green, bg: COLORS.greenSoft };
+  }
+
+  const health = getHealthStatus();
 
   async function closeAction(order: WorkOrder) {
     const confirmed = window.confirm(
@@ -590,22 +669,59 @@ export default function DashboardPage() {
     );
   }
 
-  // -----------------------------------------------------------------------
-  // Detail table renderers
-  // -----------------------------------------------------------------------
+  const headerStyle: React.CSSProperties = {
+    padding: "12px 14px",
+    textAlign: "left",
+    fontSize: "11px",
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    color: COLORS.textMuted,
+    borderBottom: `1px solid ${COLORS.border}`,
+    backgroundColor: COLORS.surfaceSubtle,
+    whiteSpace: "nowrap",
+  };
+
+  const cellStyle: React.CSSProperties = {
+    padding: "12px 14px",
+    fontSize: "13px",
+    color: COLORS.text,
+    borderBottom: `1px solid ${COLORS.border}`,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  };
 
   const woLinkStyle: React.CSSProperties = {
-    color: "#2563eb",
+    color: COLORS.blue,
     textDecoration: "none",
     fontWeight: 600,
+    fontVariantNumeric: "tabular-nums",
+  };
+
+  const sectionCard: React.CSSProperties = {
+    backgroundColor: COLORS.surface,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: "14px",
+    padding: "20px",
+    boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+  };
+
+  const tableWrapperStyle: React.CSSProperties = {
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: "10px",
+    overflow: "hidden",
+    overflowX: "auto",
+    backgroundColor: COLORS.surface,
   };
 
   function renderDueTable(list: WorkOrder[]) {
     const sorted = [...list].sort((a, b) =>
       (a.due_date || "").localeCompare(b.due_date || ""),
     );
+
     return (
-      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "auto" }}>
         <thead>
           <tr>
             <th style={headerStyle}>WO</th>
@@ -614,20 +730,22 @@ export default function DashboardPage() {
             <th style={headerStyle}>Due Date</th>
             <th style={headerStyle}>Prio</th>
             <th style={headerStyle}>Assigned</th>
-            <th style={headerStyle}>Next Process Step</th>
+            <th style={headerStyle}>Next Step</th>
           </tr>
         </thead>
         <tbody>
-          {sorted.map((o) => (
+          {sorted.map((o, idx) => (
             <tr
               key={o.work_order_id}
               style={{
                 backgroundColor:
                   o.priority === "AOG"
-                    ? "#fff0f0"
+                    ? COLORS.redSoft
                     : o.priority === "Yes"
-                      ? "#fff8e0"
-                      : "white",
+                      ? COLORS.amberSoft
+                      : idx % 2 === 0
+                        ? COLORS.surface
+                        : COLORS.surfaceSubtle,
               }}
             >
               <td style={{ ...cellStyle, fontWeight: 600 }}>
@@ -638,7 +756,26 @@ export default function DashboardPage() {
               <td style={cellStyle}>{o.customer || "–"}</td>
               <td style={cellStyle}>{o.work_order_type || "–"}</td>
               <td style={cellStyle}>{formatDate(o.due_date)}</td>
-              <td style={cellStyle}>{o.priority || "No"}</td>
+              <td style={cellStyle}>
+                {o.priority && o.priority !== "No" ? (
+                  <span
+                    style={{
+                      padding: "3px 8px",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      borderRadius: "999px",
+                      backgroundColor:
+                        o.priority === "AOG" ? COLORS.red : COLORS.amber,
+                      color: "white",
+                      letterSpacing: "0.03em",
+                    }}
+                  >
+                    {o.priority}
+                  </span>
+                ) : (
+                  <span style={{ color: COLORS.textMuted }}>–</span>
+                )}
+              </td>
               <td style={cellStyle}>
                 {normalizeAssignedPersonTeam(o.assigned_person_team)}
               </td>
@@ -647,11 +784,12 @@ export default function DashboardPage() {
               </td>
             </tr>
           ))}
+
           {sorted.length === 0 && (
             <tr>
               <td
                 colSpan={7}
-                style={{ ...cellStyle, textAlign: "center", color: "#999" }}
+                style={{ ...cellStyle, textAlign: "center", color: COLORS.textMuted, padding: "32px" }}
               >
                 No orders found
               </td>
@@ -664,26 +802,32 @@ export default function DashboardPage() {
 
   function renderActionsTable(list: WorkOrder[]) {
     return (
-      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "auto" }}>
         <thead>
           <tr>
             <th style={headerStyle}>WO</th>
             <th style={headerStyle}>Customer</th>
             <th style={headerStyle}>Hold Reason</th>
             <th style={headerStyle}>Action Required</th>
-            <th style={headerStyle}>Action Owner</th>
-            <th style={headerStyle}>Action Status</th>
-            <th style={headerStyle}>Actions</th>
+            <th style={headerStyle}>Owner</th>
+            <th style={headerStyle}>Status</th>
+            <th style={headerStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {list.map((o) => {
+          {list.map((o, idx) => {
             const isDone = o.action_status === "Done";
 
             return (
               <tr
                 key={o.work_order_id}
-                style={{ backgroundColor: o.hold_reason ? "#fff0f0" : "white" }}
+                style={{
+                  backgroundColor: o.hold_reason
+                    ? COLORS.amberSoft
+                    : idx % 2 === 0
+                      ? COLORS.surface
+                      : COLORS.surfaceSubtle,
+                }}
               >
                 <td style={{ ...cellStyle, fontWeight: 600 }}>
                   <Link href={`/office-update?wo=${o.work_order_id}`} style={woLinkStyle}>
@@ -691,12 +835,7 @@ export default function DashboardPage() {
                   </Link>
                 </td>
                 <td style={cellStyle}>{o.customer || "–"}</td>
-                <td
-                  style={{
-                    ...cellStyle,
-                    fontWeight: o.hold_reason ? "bold" : "normal",
-                  }}
-                >
+                <td style={{ ...cellStyle, fontWeight: o.hold_reason ? 600 : 400 }}>
                   {o.hold_reason || "–"}
                 </td>
                 <td style={cellStyle}>{o.required_next_action || "–"}</td>
@@ -704,13 +843,14 @@ export default function DashboardPage() {
                 <td style={cellStyle}>
                   <span
                     style={{
-                      padding: "3px 8px",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      borderRadius: "4px",
-                      backgroundColor: isDone ? "#dcfce7" : "#fef3c7",
-                      color: isDone ? "#16a34a" : "#92400e",
+                      padding: "3px 10px",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      borderRadius: "999px",
+                      backgroundColor: isDone ? COLORS.greenSoft : COLORS.amberSoft,
+                      color: isDone ? COLORS.green : COLORS.amber,
                       display: "inline-block",
+                      border: `1px solid ${isDone ? COLORS.green : COLORS.amber}22`,
                     }}
                   >
                     {isDone ? "Closed" : "Open"}
@@ -721,15 +861,24 @@ export default function DashboardPage() {
                     <button
                       onClick={() => void closeAction(o)}
                       style={{
-                        padding: "4px 10px",
+                        padding: "6px 12px",
                         fontSize: "12px",
                         fontWeight: 600,
-                        border: "1px solid #dc2626",
-                        borderRadius: "4px",
+                        border: `1px solid ${COLORS.border}`,
+                        borderRadius: "8px",
                         cursor: "pointer",
-                        backgroundColor: "white",
-                        color: "#dc2626",
+                        backgroundColor: COLORS.surface,
+                        color: COLORS.red,
                         whiteSpace: "nowrap",
+                        transition: "all 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = COLORS.redSoft;
+                        e.currentTarget.style.borderColor = COLORS.red;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = COLORS.surface;
+                        e.currentTarget.style.borderColor = COLORS.border;
                       }}
                     >
                       Close action
@@ -739,11 +888,12 @@ export default function DashboardPage() {
               </tr>
             );
           })}
+
           {list.length === 0 && (
             <tr>
               <td
                 colSpan={7}
-                style={{ ...cellStyle, textAlign: "center", color: "#999" }}
+                style={{ ...cellStyle, textAlign: "center", color: COLORS.textMuted, padding: "32px" }}
               >
                 No open actions
               </td>
@@ -756,7 +906,7 @@ export default function DashboardPage() {
 
   function renderReadyTable(list: WorkOrder[]) {
     return (
-      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "auto" }}>
         <thead>
           <tr>
             <th style={headerStyle}>WO</th>
@@ -765,8 +915,13 @@ export default function DashboardPage() {
           </tr>
         </thead>
         <tbody>
-          {list.map((o) => (
-            <tr key={o.work_order_id} style={{ backgroundColor: "#f0fdf4" }}>
+          {list.map((o, idx) => (
+            <tr
+              key={o.work_order_id}
+              style={{
+                backgroundColor: idx % 2 === 0 ? COLORS.surface : COLORS.surfaceSubtle,
+              }}
+            >
               <td style={{ ...cellStyle, fontWeight: 600 }}>
                 <Link href={`/office-update?wo=${o.work_order_id}`} style={woLinkStyle}>
                   {o.work_order_id}
@@ -776,11 +931,12 @@ export default function DashboardPage() {
               <td style={cellStyle}>{o.work_order_type || "–"}</td>
             </tr>
           ))}
+
           {list.length === 0 && (
             <tr>
               <td
                 colSpan={3}
-                style={{ ...cellStyle, textAlign: "center", color: "#999" }}
+                style={{ ...cellStyle, textAlign: "center", color: COLORS.textMuted, padding: "32px" }}
               >
                 No orders ready to close
               </td>
@@ -793,26 +949,25 @@ export default function DashboardPage() {
 
   function renderStaleTable(list: WorkOrder[]) {
     return (
-      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "auto" }}>
         <thead>
           <tr>
             <th style={headerStyle}>WO</th>
             <th style={headerStyle}>Customer</th>
             <th style={headerStyle}>Assigned</th>
-            <th style={headerStyle}>Next Process Step</th>
+            <th style={headerStyle}>Next Step</th>
             <th style={headerStyle}>Last Update</th>
           </tr>
         </thead>
         <tbody>
-          {list.map((o) => {
-            const last = latestUpdate(
-              o.last_system_update,
-              o.last_manual_update,
-            );
+          {list.map((o, idx) => {
+            const last = latestUpdate(o.last_system_update, o.last_manual_update);
             return (
               <tr
                 key={o.work_order_id}
-                style={{ backgroundColor: "#fffbeb" }}
+                style={{
+                  backgroundColor: idx % 2 === 0 ? COLORS.surface : COLORS.surfaceSubtle,
+                }}
               >
                 <td style={{ ...cellStyle, fontWeight: 600 }}>
                   <Link href={`/office-update?wo=${o.work_order_id}`} style={woLinkStyle}>
@@ -828,11 +983,12 @@ export default function DashboardPage() {
               </tr>
             );
           })}
+
           {list.length === 0 && (
             <tr>
               <td
                 colSpan={5}
-                style={{ ...cellStyle, textAlign: "center", color: "#999" }}
+                style={{ ...cellStyle, textAlign: "center", color: COLORS.textMuted, padding: "32px" }}
               >
                 All orders recently updated
               </td>
@@ -843,320 +999,252 @@ export default function DashboardPage() {
     );
   }
 
-  // -----------------------------------------------------------------------
-  // Panel config
-  // -----------------------------------------------------------------------
-
   const panelConfig: Record<
     Exclude<DetailPanel, null>,
     {
       title: string;
-      data: WorkOrder[];
+      count: number;
+      accent: string;
       render: (list: WorkOrder[]) => React.ReactNode;
+      data: WorkOrder[];
     }
   > = {
     due: {
-      title: `Due this week (${dueThisWeek.length})`,
+      title: "Due this week",
+      count: dueThisWeek.length,
+      accent: COLORS.blue,
       data: dueThisWeek,
       render: renderDueTable,
     },
     overdue: {
-      title: `Overdue (${overdueOrders.length})`,
+      title: "Overdue",
+      count: overdueOrders.length,
+      accent: COLORS.red,
       data: overdueOrders,
       render: renderDueTable,
     },
     actions: {
-      title: `Open actions (${openActions.length})`,
+      title: "Open actions",
+      count: openActions.length,
+      accent: COLORS.amber,
       data: openActions,
       render: renderActionsTable,
     },
     ready: {
-      title: `Ready to close in AcMP (${readyToClose.length})`,
+      title: "Ready to close in AcMP",
+      count: readyToClose.length,
+      accent: COLORS.green,
       data: readyToClose,
       render: renderReadyTable,
     },
     aog: {
-      title: `AOG / Priority (${aogOrders.length})`,
+      title: "AOG / Priority",
+      count: aogOrders.length,
+      accent: COLORS.purple,
       data: aogOrders,
       render: renderDueTable,
     },
     stale: {
-      title: `No update in 2+ weeks (${staleOrders.length})`,
+      title: "No update in 2+ weeks",
+      count: staleOrders.length,
+      accent: COLORS.gold,
       data: staleOrders,
       render: renderStaleTable,
     },
   };
 
-  // -----------------------------------------------------------------------
-  // Render
-  // -----------------------------------------------------------------------
-
   return (
     <main
       style={{
-        padding: "1.5rem",
-        fontFamily: "sans-serif",
-        maxWidth: "1200px",
-        margin: "0 auto",
+        minHeight: "100vh",
+        backgroundColor: COLORS.pageBg,
+        padding: "28px 32px 48px",
+        fontFamily: FONT_STACK,
+        color: COLORS.text,
       }}
     >
-      <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
-      {/* Header */}
-      <section
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <div>
-          <div
-            style={{
-              display: "none",
-              fontSize: "11px",
-              fontWeight: 800,
-              letterSpacing: 0,
-              color: "#68747b",
-              textTransform: "uppercase",
-              marginBottom: "6px",
-            }}
-          >
-            AcMP Control Board
-          </div>
-          <h1 style={{ margin: 0, fontSize: "22px" }}>
-            Office Dashboard
-          </h1>
-          <p style={{ display: "none" }}>
-            <AnimatedNumber value={activeOrders.length} /> active work orders ·{" "}
-            <AnimatedNumber value={engineers.length} /> shop engineers
-          </p>
-          <p style={{ margin: "4px 0 0", color: "#888", fontSize: "13px" }}>
-            <AnimatedNumber value={activeOrders.length} /> active work orders |{" "}
-            <AnimatedNumber value={engineers.length} /> shop engineers
-          </p>
-        </div>
-        <div
+      <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
+        {/* HEADER */}
+        <header
           style={{
-            display: "none",
-            flexWrap: "wrap",
-            gap: "8px",
-            justifyContent: "flex-end",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: "20px",
+            marginBottom: "24px",
           }}
         >
-          <span
-            style={{
-              padding: "7px 10px",
-              borderRadius: "999px",
-              backgroundColor: `${capacityColor}14`,
-              color: capacityColor,
-              border: `1px solid ${capacityColor}33`,
-              fontSize: "12px",
-              fontWeight: 800,
-            }}
-          >
-            Capacity <AnimatedNumber value={thisWeek?.percentage ?? 0} />%
-          </span>
-          <span
-            style={{
-              padding: "7px 10px",
-              borderRadius: "999px",
-              backgroundColor: "#fff7ed",
-              color: "#9a3412",
-              border: "1px solid #fed7aa",
-              fontSize: "12px",
-              fontWeight: 800,
-            }}
-          >
-            <AnimatedNumber value={openActions.length} /> open actions
-          </span>
-          <span
-            style={{
-              padding: "7px 10px",
-              borderRadius: "999px",
-              backgroundColor: "#ecfdf5",
-              color: "#047857",
-              border: "1px solid #a7f3d0",
-              fontSize: "12px",
-              fontWeight: 800,
-            }}
-          >
-            <AnimatedNumber value={readyToClose.length} /> ready to close
-          </span>
-        </div>
-      </section>
-
-      {/* Row 1: KPI Cards */}
-      <section
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "12px",
-          marginTop: "20px",
-        }}
-      >
-        <KpiCard
-          label="Due this week"
-          value={dueThisWeek.length}
-          color="#2563eb"
-          bgColor="#eff6ff"
-          active={activePanel === "due"}
-          onClick={() => togglePanel("due")}
-        />
-        <KpiCard
-          label="Overdue"
-          value={overdueOrders.length}
-          color="#dc2626"
-          bgColor="#fef2f2"
-          active={activePanel === "overdue"}
-          onClick={() => togglePanel("overdue")}
-        />
-        <KpiCard
-          label="Open actions"
-          value={openActions.length}
-          color="#ea580c"
-          bgColor="#fff7ed"
-          active={activePanel === "actions"}
-          onClick={() => togglePanel("actions")}
-        />
-        <KpiCard
-          label="Ready to close"
-          value={readyToClose.length}
-          color="#16a34a"
-          bgColor="#f0fdf4"
-          active={activePanel === "ready"}
-          onClick={() => togglePanel("ready")}
-        />
-        <KpiCard
-          label="AOG / Priority"
-          value={aogOrders.length}
-          color="#7c3aed"
-          bgColor="#f5f3ff"
-          active={activePanel === "aog"}
-          onClick={() => togglePanel("aog")}
-        />
-        <KpiCard
-          label="No update in 2+ weeks"
-          value={staleOrders.length}
-          color="#b45309"
-          bgColor="#fffbeb"
-          active={activePanel === "stale"}
-          onClick={() => togglePanel("stale")}
-        />
-      </section>
-
-      {/* Detail panel */}
-      {activePanel && panelConfig[activePanel] && (
-        <div
-          style={{
-            marginTop: "16px",
-            padding: "16px",
-            backgroundColor: "white",
-            border: "1px solid #e5e7eb",
-            borderRadius: "10px",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "12px",
-            }}
-          >
-            <h3 style={{ margin: 0, fontSize: "15px" }}>
-              {panelConfig[activePanel].title}
-            </h3>
-            <button
-              onClick={() => setActivePanel(null)}
-              style={{
-                background: "none",
-                border: "none",
-                fontSize: "18px",
-                cursor: "pointer",
-                color: "#999",
-                padding: "2px 6px",
-              }}
-            >
-              ✕
-            </button>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            {panelConfig[activePanel].render(panelConfig[activePanel].data)}
-          </div>
-        </div>
-      )}
-
-      {/* Row 2: Capacity & Absences */}
-      <section style={{ marginTop: "24px" }}>
-        <h2 style={{ fontSize: "16px", margin: "0 0 12px", color: "#333" }}>
-          Capacity &amp; Absence Impact
-        </h2>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "flex-start" }}>
-          {/* Capacity this week */}
-          <div
-            style={{
-              flex: "1 1 280px",
-              padding: "16px 18px",
-              backgroundColor:
-                thisWeek?.status === "red"
-                  ? "#fef2f2"
-                  : thisWeek?.status === "orange"
-                    ? "#fff7ed"
-                    : "#f0fdf4",
-              border: `1px solid ${capacityColor}33`,
-              borderRadius: "10px",
-              borderLeft: `4px solid ${capacityColor}`,
-            }}
-          >
+          <div>
             <div
               style={{
-                fontSize: "13px",
+                fontSize: "11px",
                 fontWeight: 600,
-                color: "#333",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: COLORS.textMuted,
                 marginBottom: "8px",
               }}
             >
-              Week Capacity
+              A.C. MRO Operations
             </div>
+
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "32px",
+                lineHeight: 1.1,
+                fontWeight: 700,
+                color: COLORS.heading,
+                letterSpacing: "-0.025em",
+              }}
+            >
+              MRO Control Tower
+            </h1>
+
+            <p
+              style={{
+                margin: "8px 0 0",
+                fontSize: "14px",
+                color: COLORS.textSoft,
+                lineHeight: 1.5,
+              }}
+            >
+              Live control of work order flow, blockers, readiness, and capacity.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 14px",
+              borderRadius: "999px",
+              backgroundColor: health.bg,
+              color: health.color,
+              border: `1px solid ${health.color}33`,
+              fontSize: "13px",
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            <span
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor: health.color,
+                display: "inline-block",
+              }}
+            />
+            {health.label}
+          </div>
+        </header>
+
+        {/* TOP STATS STRIP — capacity (prominent), active, engineers */}
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 1fr 1fr",
+            gap: "14px",
+            marginBottom: "20px",
+          }}
+        >
+          {/* Capacity — single source of truth */}
+          <div
+            style={{
+              padding: "20px 22px",
+              backgroundColor: COLORS.surface,
+              border: `1px solid ${COLORS.border}`,
+              borderLeft: `3px solid ${capacityColor}`,
+              borderRadius: "12px",
+              boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+            }}
+          >
             <div
               style={{
                 display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
                 gap: "16px",
-                fontSize: "12px",
-                color: "#555",
+                marginBottom: "14px",
               }}
             >
               <div>
                 <div
                   style={{
-                    fontSize: "20px",
-                    fontWeight: 700,
-                    color: capacityColor,
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: COLORS.textMuted,
+                    marginBottom: "8px",
                   }}
                 >
-                  <AnimatedNumber value={thisWeek?.percentage ?? 0} />%
+                  Week Capacity
                 </div>
-                <div>utilization</div>
-              </div>
-              <div>
-                <div style={{ fontSize: "20px", fontWeight: 700, color: "#333" }}>
-                  <AnimatedNumber value={thisWeek?.requiredHours ?? 0} decimals={1} />
-                  <span
-                    style={{ fontSize: "13px", fontWeight: 400, color: "#999" }}
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    gap: "10px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "34px",
+                      fontWeight: 700,
+                      color: capacityColor,
+                      letterSpacing: "-0.03em",
+                      lineHeight: 1,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
                   >
-                    /<AnimatedNumber value={thisWeek?.availableHours ?? 0} decimals={1} />
-                  </span>
+                    <AnimatedNumber value={thisWeek?.percentage ?? 0} />%
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      color: COLORS.textSoft,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    <AnimatedNumber value={thisWeek?.requiredHours ?? 0} decimals={1} />
+                    {" / "}
+                    <AnimatedNumber value={thisWeek?.availableHours ?? 0} decimals={1} />
+                    {" hrs"}
+                  </div>
                 </div>
-                <div>hours</div>
+              </div>
+
+              <div
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "999px",
+                  backgroundColor: capacityBgTint,
+                  color: capacityColor,
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  letterSpacing: "0.03em",
+                  border: `1px solid ${capacityColor}22`,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {thisWeek?.status === "red"
+                  ? "HIGH LOAD"
+                  : thisWeek?.status === "orange"
+                    ? "WATCH"
+                    : "HEALTHY"}
               </div>
             </div>
+
             <div
               style={{
-                marginTop: "8px",
                 height: "6px",
-                backgroundColor: `${capacityColor}22`,
-                borderRadius: "3px",
+                backgroundColor: `${capacityColor}15`,
+                borderRadius: "999px",
                 overflow: "hidden",
               }}
             >
@@ -1167,53 +1255,293 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Absence impact */}
-          <div
-            style={{
-              flex: "2 1 400px",
-              padding: "16px 18px",
-              backgroundColor: hasAbsences
-                ? totalAffectedOrders > 0
-                  ? "#fef2f2"
-                  : "#fffbeb"
-                : "#f9fafb",
-              border: `1px solid ${hasAbsences ? (totalAffectedOrders > 0 ? "#dc262633" : "#b4530933") : "#e5e7eb"}`,
-              borderRadius: "10px",
-              borderLeft: `4px solid ${hasAbsences ? (totalAffectedOrders > 0 ? "#dc2626" : "#b45309") : "#6b7280"}`,
-            }}
-          >
+          <StatTile label="Active Work Orders">
             <div
               style={{
-                fontSize: "13px",
-                fontWeight: 600,
-                color: "#333",
-                marginBottom: "10px",
+                fontSize: "30px",
+                fontWeight: 700,
+                letterSpacing: "-0.03em",
+                lineHeight: 1,
+                fontVariantNumeric: "tabular-nums",
               }}
             >
-              Absences This Week
-              {totalAffectedOrders > 0 && (
-                <span
+              <AnimatedNumber value={activeOrders.length} />
+            </div>
+          </StatTile>
+
+          <StatTile label="Shop Engineers">
+            <div
+              style={{
+                fontSize: "30px",
+                fontWeight: 700,
+                letterSpacing: "-0.03em",
+                lineHeight: 1,
+                fontVariantNumeric: "tabular-nums",
+                color: COLORS.blue,
+              }}
+            >
+              <AnimatedNumber value={engineers.length} />
+            </div>
+          </StatTile>
+        </section>
+
+        {/* KPI GRID — 6 clickable cards */}
+        <section style={{ marginBottom: "20px" }}>
+          <div
+            style={{
+              fontSize: "11px",
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: COLORS.textMuted,
+              marginBottom: "10px",
+              paddingLeft: "4px",
+            }}
+          >
+            Overview
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gap: "12px",
+            }}
+          >
+            <KpiCard
+              label="Due this week"
+              value={dueThisWeek.length}
+              color={COLORS.blue}
+              active={activePanel === "due"}
+              onClick={() => togglePanel("due")}
+            />
+            <KpiCard
+              label="Overdue"
+              value={overdueOrders.length}
+              color={COLORS.red}
+              active={activePanel === "overdue"}
+              onClick={() => togglePanel("overdue")}
+            />
+            <KpiCard
+              label="Open actions"
+              value={openActions.length}
+              color={COLORS.amber}
+              active={activePanel === "actions"}
+              onClick={() => togglePanel("actions")}
+            />
+            <KpiCard
+              label="Ready to close"
+              value={readyToClose.length}
+              color={COLORS.green}
+              active={activePanel === "ready"}
+              onClick={() => togglePanel("ready")}
+            />
+            <KpiCard
+              label="AOG / Priority"
+              value={aogOrders.length}
+              color={COLORS.purple}
+              active={activePanel === "aog"}
+              onClick={() => togglePanel("aog")}
+            />
+            <KpiCard
+              label="No update in 2+ weeks"
+              value={staleOrders.length}
+              color={COLORS.gold}
+              active={activePanel === "stale"}
+              onClick={() => togglePanel("stale")}
+            />
+          </div>
+        </section>
+
+        {/* MAIN AREA — detail view + absences */}
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 2.2fr) minmax(280px, 1fr)",
+            gap: "16px",
+            alignItems: "start",
+          }}
+        >
+          {/* LEFT: Detail panel */}
+          <div style={sectionCard}>
+            {activePanel && panelConfig[activePanel] && (
+              <>
+                <div
                   style={{
-                    marginLeft: "8px",
-                    fontSize: "11px",
-                    color: "#dc2626",
-                    fontWeight: 600,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "16px",
+                    paddingBottom: "4px",
                   }}
                 >
-                  — <AnimatedNumber value={totalAffectedOrders} />{" "}
-                  {totalAffectedOrders === 1 ? "order" : "orders"} affected
-                </span>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "3px",
+                        height: "22px",
+                        backgroundColor: panelConfig[activePanel].accent,
+                        borderRadius: "2px",
+                      }}
+                    />
+                    <h3
+                      style={{
+                        margin: 0,
+                        fontSize: "18px",
+                        fontWeight: 700,
+                        color: COLORS.heading,
+                        letterSpacing: "-0.01em",
+                      }}
+                    >
+                      {panelConfig[activePanel].title}
+                    </h3>
+                    <span
+                      style={{
+                        padding: "2px 10px",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        borderRadius: "999px",
+                        backgroundColor: `${panelConfig[activePanel].accent}15`,
+                        color: panelConfig[activePanel].accent,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      <AnimatedNumber value={panelConfig[activePanel].count} />
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => setActivePanel(null)}
+                    style={{
+                      backgroundColor: COLORS.surface,
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: "8px",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      color: COLORS.textSoft,
+                      padding: "6px 12px",
+                      fontWeight: 500,
+                      transition: "all 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = COLORS.surfaceSubtle;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = COLORS.surface;
+                    }}
+                  >
+                    Hide
+                  </button>
+                </div>
+
+                <div style={tableWrapperStyle}>
+                  {panelConfig[activePanel].render(panelConfig[activePanel].data)}
+                </div>
+              </>
+            )}
+
+            {!activePanel && (
+              <div
+                style={{
+                  padding: "48px 24px",
+                  textAlign: "center",
+                  color: COLORS.textMuted,
+                  fontSize: "14px",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "16px",
+                    fontWeight: 600,
+                    color: COLORS.textSoft,
+                    marginBottom: "6px",
+                  }}
+                >
+                  Select a card above
+                </div>
+                <div>Click any KPI to see the underlying work orders.</div>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: Absences */}
+          <div style={sectionCard}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: "12px",
+                marginBottom: "14px",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: COLORS.textMuted,
+                    marginBottom: "6px",
+                  }}
+                >
+                  Staff Availability
+                </div>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: "18px",
+                    fontWeight: 700,
+                    color: COLORS.heading,
+                    letterSpacing: "-0.01em",
+                  }}
+                >
+                  Absences this week
+                </h3>
+              </div>
+
+              {totalAffectedOrders > 0 && (
+                <div
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "999px",
+                    backgroundColor: COLORS.redSoft,
+                    color: COLORS.red,
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    border: `1px solid ${COLORS.red}22`,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <AnimatedNumber value={totalAffectedOrders} /> at risk
+                </div>
               )}
             </div>
 
             {!hasAbsences && (
-              <div style={{ fontSize: "13px", color: "#999" }}>
-                No absences scheduled this week
+              <div
+                style={{
+                  padding: "24px 16px",
+                  textAlign: "center",
+                  color: COLORS.textMuted,
+                  fontSize: "13px",
+                  backgroundColor: COLORS.surfaceSubtle,
+                  borderRadius: "10px",
+                  border: `1px dashed ${COLORS.border}`,
+                }}
+              >
+                No absences scheduled.
               </div>
             )}
 
             {hasAbsences && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {absenceDayImpacts.map((day) => {
                   const isExpanded = expandedDays.has(day.dateLabel);
                   const hasImpact = day.affectedOrders.length > 0;
@@ -1222,40 +1550,59 @@ export default function DashboardPage() {
                     <div
                       key={day.dateLabel}
                       style={{
-                        padding: "10px 12px",
-                        backgroundColor: hasImpact ? "#fff0f0" : "white",
-                        borderRadius: "6px",
+                        padding: "12px 14px",
+                        backgroundColor: hasImpact ? COLORS.redSoft : COLORS.surfaceSubtle,
+                        borderRadius: "10px",
                         border: hasImpact
-                          ? "1px solid #fecaca"
-                          : "1px solid #e5e7eb",
+                          ? `1px solid ${COLORS.red}22`
+                          : `1px solid ${COLORS.border}`,
                       }}
                     >
                       <div
                         style={{
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          color: "#333",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
                           marginBottom: "4px",
                         }}
                       >
-                        {day.dateLabel}
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            fontWeight: 700,
+                            color: COLORS.heading,
+                          }}
+                        >
+                          {day.dateLabel}
+                        </div>
+                        {hasImpact && (
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              fontWeight: 700,
+                              color: COLORS.red,
+                              letterSpacing: "0.03em",
+                            }}
+                          >
+                            IMPACT
+                          </span>
+                        )}
                       </div>
-                      <div style={{ fontSize: "12px", color: "#666" }}>
-                        Absent:{" "}
-                        {day.absentEngineers.map((e) => e.name).join(", ")}
+
+                      <div style={{ fontSize: "12px", color: COLORS.textSoft }}>
+                        Absent: {day.absentEngineers.map((e) => e.name).join(", ")}
                       </div>
 
                       {day.unavailableSteps.length > 0 && (
                         <div
                           style={{
-                            marginTop: "6px",
+                            marginTop: "8px",
                             fontSize: "12px",
-                            color: "#dc2626",
-                            fontWeight: 500,
+                            color: COLORS.red,
+                            fontWeight: 600,
                           }}
                         >
-                          ⚠ No qualified engineers available for:{" "}
-                          {day.unavailableSteps.join(", ")}
+                          No qualified engineer for: {day.unavailableSteps.join(", ")}
                         </div>
                       )}
 
@@ -1278,45 +1625,58 @@ export default function DashboardPage() {
                             border: "none",
                             cursor: "pointer",
                             fontSize: "12px",
-                            color: "#dc2626",
-                            fontWeight: 500,
+                            color: COLORS.red,
+                            fontWeight: 600,
                             padding: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px",
                           }}
                         >
-                          {isExpanded ? "▾" : "▸"}{" "}
+                          <span style={{ fontSize: "10px" }}>{isExpanded ? "▾" : "▸"}</span>
                           <AnimatedNumber value={day.affectedOrders.length} />{" "}
-                          {day.affectedOrders.length === 1 ? "order" : "orders"}{" "}
-                          at risk
+                          {day.affectedOrders.length === 1 ? "order" : "orders"} at risk
                         </button>
                       )}
 
                       {hasImpact && isExpanded && (
-                        <div style={{ marginTop: "8px" }}>
+                        <div style={{ marginTop: "10px" }}>
                           {day.affectedOrders.map((o) => (
                             <div
                               key={o.work_order_id}
                               style={{
                                 fontSize: "12px",
-                                color: "#333",
-                                padding: "4px 0",
-                                borderTop: "1px solid #f3f3f3",
+                                color: COLORS.text,
+                                padding: "8px 0",
+                                borderTop: `1px solid ${COLORS.red}22`,
                               }}
                             >
-                              <strong>{o.work_order_id}</strong>
-                              {o.customer ? ` — ${o.customer}` : ""}
-                              <span style={{ color: "#999" }}>
-                                {" "}
-                                · now at {o.current_step}
-                              </span>
+                              <div style={{ fontWeight: 600 }}>
+                                {o.work_order_id}
+                                {o.customer ? (
+                                  <span style={{ fontWeight: 400, color: COLORS.textSoft }}>
+                                    {" "} — {o.customer}
+                                  </span>
+                                ) : null}
+                              </div>
                               <div
                                 style={{
                                   fontSize: "11px",
-                                  color: "#dc2626",
+                                  color: COLORS.textMuted,
                                   marginTop: "2px",
                                 }}
                               >
-                                Can&apos;t do:{" "}
-                                {o.blocked_remaining_steps.join(", ")}
+                                Now at: {o.current_step}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: "11px",
+                                  color: COLORS.red,
+                                  marginTop: "3px",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Can&apos;t do: {o.blocked_remaining_steps.join(", ")}
                               </div>
                             </div>
                           ))}
@@ -1326,9 +1686,10 @@ export default function DashboardPage() {
                       {day.unavailableSteps.length === 0 && (
                         <div
                           style={{
-                            marginTop: "4px",
-                            fontSize: "11px",
-                            color: "#16a34a",
+                            marginTop: "6px",
+                            fontSize: "12px",
+                            color: COLORS.green,
+                            fontWeight: 600,
                           }}
                         >
                           ✓ No impact on current orders
@@ -1340,10 +1701,8 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-        </div>
-      </section>
+        </section>
       </div>
     </main>
   );
 }
-

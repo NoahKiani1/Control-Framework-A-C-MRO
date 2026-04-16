@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { READY_TO_CLOSE_STEP } from "@/lib/process-steps";
+import { canPerformStep } from "@/lib/restrictions";
 import {
   formatDate,
   isBlocked,
@@ -10,7 +11,11 @@ import {
   normalizeRfqState,
   sortOrders,
 } from "@/lib/work-order-rules";
-import { getEngineerPhotoUrl, getEngineers } from "@/lib/engineers";
+import {
+  getEngineerAbsences,
+  getEngineerPhotoUrl,
+  getEngineers,
+} from "@/lib/engineers";
 import { getWorkOrders } from "@/lib/work-orders";
 
 type WorkOrder = {
@@ -33,7 +38,54 @@ type Engineer = {
   id: number;
   name: string;
   photo_path: string | null;
+  restrictions: string[] | null;
 };
+
+type Absence = {
+  engineer_id: number;
+  absence_date: string;
+};
+
+const NO_QUALIFIED_ENGINEER_REASON = "No Qualified Engineer Present";
+
+function localDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function applyTodayQualificationBlocks(
+  orders: WorkOrder[],
+  engineers: Engineer[],
+  absences: Absence[],
+  today: string,
+): WorkOrder[] {
+  const absentEngineerIds = new Set(
+    absences
+      .filter((absence) => absence.absence_date === today)
+      .map((absence) => absence.engineer_id),
+  );
+  const presentEngineers = engineers.filter(
+    (engineer) => !absentEngineerIds.has(engineer.id),
+  );
+
+  return orders.map((order) => {
+    if (isBlocked(order) || !order.current_process_step) return order;
+
+    const hasQualifiedEngineer = presentEngineers.some((engineer) =>
+      canPerformStep(engineer.restrictions, order.current_process_step!),
+    );
+
+    if (hasQualifiedEngineer) return order;
+
+    return {
+      ...order,
+      hold_reason: NO_QUALIFIED_ENGINEER_REASON,
+    };
+  });
+}
 
 function AssignedPerson({
   name,
@@ -77,7 +129,8 @@ export default function ShopPage() {
 
   useEffect(() => {
     async function load() {
-      const [data, engineerData] = await Promise.all([
+      const today = localDateKey();
+      const [data, engineerData, absenceData] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select:
             "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, last_manual_update, last_system_update",
@@ -85,17 +138,27 @@ export default function ShopPage() {
           isActive: true,
         }),
         getEngineers<Engineer>({
-          select: "id, name, photo_path",
+          select: "id, name, photo_path, restrictions",
           isActive: true,
           role: "shop",
+        }),
+        getEngineerAbsences<Absence>({
+          select: "engineer_id, absence_date",
+          fromDate: today,
         }),
       ]);
 
       const filtered = data.filter(
         (o) => o.current_process_step !== READY_TO_CLOSE_STEP,
       );
+      const qualifiedFiltered = applyTodayQualificationBlocks(
+        filtered,
+        engineerData,
+        absenceData,
+        today,
+      );
 
-      setOrders(sortOrders(filtered));
+      setOrders(sortOrders(qualifiedFiltered));
       setEngineers(engineerData);
       setLoading(false);
     }
