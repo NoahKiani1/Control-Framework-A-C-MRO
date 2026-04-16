@@ -6,7 +6,11 @@ import {
   getLastCompletedStep,
   getNextProcessStepAfterCompleted,
   hasOptionalSteps,
+  READY_TO_CLOSE_STEP,
 } from "@/lib/process-steps";
+import { autoAssignForStep } from "@/lib/auto-assign";
+import { getEngineers } from "@/lib/engineers";
+import { normalizeAssignedPersonTeam } from "@/lib/work-order-rules";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 import { SearchableSelect } from "@/app/components/searchable-select";
 
@@ -24,6 +28,12 @@ type WorkOrder = {
   priority: string | null;
   assigned_person_team: string | null;
   magnetic_test_required: boolean | null;
+};
+
+type StaffMember = {
+  id: number;
+  name: string;
+  restrictions: string[] | null;
 };
 
 const COLORS = {
@@ -49,6 +59,7 @@ const COLORS = {
 
 export default function ShopUpdatePage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
+  const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [completedStep, setCompletedStep] = useState("");
   const [stepTouched, setStepTouched] = useState(false);
@@ -61,15 +72,24 @@ export default function ShopUpdatePage() {
 
   useEffect(() => {
     async function load() {
-      const data = await getWorkOrders<WorkOrder>({
-        select:
-          "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, magnetic_test_required",
-        isOpen: true,
-        isActive: true,
-        orderBy: { column: "work_order_id", ascending: false },
-      });
+      const [data, staffData] = await Promise.all([
+        getWorkOrders<WorkOrder>({
+          select:
+            "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, magnetic_test_required",
+          isOpen: true,
+          isActive: true,
+          orderBy: { column: "work_order_id", ascending: false },
+        }),
+        getEngineers<StaffMember>({
+          select: "id, name, restrictions",
+          isActive: true,
+          role: "shop",
+          orderBy: { column: "name" },
+        }),
+      ]);
 
-      setOrders(data);
+      setOrders(data.filter((order) => order.current_process_step !== READY_TO_CLOSE_STEP));
+      setShopStaff(staffData);
       setLoading(false);
     }
 
@@ -98,10 +118,8 @@ export default function ShopUpdatePage() {
       )
       : null;
 
-  function priorityLabel(order: WorkOrder): string {
-    if (order.priority === "AOG") return "AOG";
-    if (order.priority === "Yes") return "Priority";
-    return "Normal";
+  function aogPrioritySuffix(order: WorkOrder): string {
+    return order.priority === "AOG" ? " — AOG" : "";
   }
 
   function selectOrder(id: string) {
@@ -178,11 +196,17 @@ export default function ShopUpdatePage() {
 
     const normalizedHoldReason = holdReason.trim();
     const normalizedRequiredNextAction = requiredNextAction.trim();
+    const assignedPersonTeam = autoAssignForStep(
+      selectedOrder.assigned_person_team,
+      nextProcessStep,
+      shopStaff,
+    );
 
     setSaveStatus("Saving...");
 
     const payload = {
       current_process_step: nextProcessStep,
+      assigned_person_team: assignedPersonTeam,
       hold_reason: isBlockedUpdate ? normalizedHoldReason : null,
       required_next_action:
         isBlockedUpdate && normalizedRequiredNextAction
@@ -413,7 +437,7 @@ export default function ShopUpdatePage() {
               <SearchableSelect
                 options={orders.map((o) => ({
                   value: o.work_order_id,
-                  label: `${o.work_order_id} — PN: ${o.part_number || "–"} — ${o.customer || "–"} — ${o.work_order_type || "–"} — ${priorityLabel(o)}`,
+                  label: `${o.work_order_id} — PN: ${o.part_number || "–"} — ${o.customer || "–"} — ${o.work_order_type || "–"}${aogPrioritySuffix(o)}`,
                 }))}
                 value={selectedId}
                 onChange={(v) => selectOrder(v)}
@@ -470,7 +494,9 @@ export default function ShopUpdatePage() {
                 />
                 <InfoBox
                   label="Assigned"
-                  value={selectedOrder.assigned_person_team || "—"}
+                  value={normalizeAssignedPersonTeam(
+                    selectedOrder.assigned_person_team,
+                  )}
                 />
               </div>
             </section>
@@ -542,7 +568,10 @@ export default function ShopUpdatePage() {
                         ))}
                       </select>
 
-                      {stepTouched && completedStep && previewNextStep && (
+                      {stepTouched &&
+                        completedStep &&
+                        previewNextStep &&
+                        previewNextStep !== READY_TO_CLOSE_STEP && (
                         <div
                           style={{
                             marginTop: "12px",
@@ -559,7 +588,9 @@ export default function ShopUpdatePage() {
                         </div>
                       )}
 
-                      {stepTouched && completedStep && !previewNextStep && (
+                      {stepTouched &&
+                        completedStep &&
+                        previewNextStep === READY_TO_CLOSE_STEP && (
                         <div
                           style={{
                             marginTop: "12px",

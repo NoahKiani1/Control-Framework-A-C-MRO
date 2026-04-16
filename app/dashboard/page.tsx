@@ -7,6 +7,7 @@ import {
   isBlocked,
   isStale,
   latestUpdate,
+  normalizeAssignedPersonTeam,
   sortOrders,
 } from "@/lib/work-order-rules";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
@@ -17,7 +18,7 @@ import {
 } from "@/lib/engineers";
 import { calculateWeekCapacity } from "@/lib/capacity";
 import { RESTRICTION_BLOCKED_STEPS } from "@/lib/restrictions";
-import { getProcessStepsForType } from "@/lib/process-steps";
+import { getProcessStepsForType, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -386,10 +387,10 @@ export default function DashboardPage() {
   // -----------------------------------------------------------------------
 
   const activeOrders = orders.filter(
-    (o) => o.current_process_step !== "EASA-Form 1",
+    (o) => o.current_process_step !== READY_TO_CLOSE_STEP,
   );
   const readyToClose = orders.filter(
-    (o) => o.current_process_step === "EASA-Form 1",
+    (o) => o.current_process_step === READY_TO_CLOSE_STEP,
   );
 
   const dueThisWeek = activeOrders.filter(
@@ -638,7 +639,9 @@ export default function DashboardPage() {
               <td style={cellStyle}>{o.work_order_type || "–"}</td>
               <td style={cellStyle}>{formatDate(o.due_date)}</td>
               <td style={cellStyle}>{o.priority || "No"}</td>
-              <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
+              <td style={cellStyle}>
+                {normalizeAssignedPersonTeam(o.assigned_person_team)}
+              </td>
               <td style={cellStyle}>
                 <ProcessStepDisplay order={o} />
               </td>
@@ -817,7 +820,9 @@ export default function DashboardPage() {
                   </Link>
                 </td>
                 <td style={cellStyle}>{o.customer || "–"}</td>
-                <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
+                <td style={cellStyle}>
+                  {normalizeAssignedPersonTeam(o.assigned_person_team)}
+                </td>
                 <td style={cellStyle}>{o.current_process_step || "–"}</td>
                 <td style={cellStyle}>{formatDate(last)}</td>
               </tr>

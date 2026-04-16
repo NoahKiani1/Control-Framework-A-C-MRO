@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEngineers } from "@/lib/engineers";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
+import { autoAssignForStep } from "@/lib/auto-assign";
+import {
+  DEFAULT_ASSIGNED_PERSON_TEAM,
+  normalizeAssignedPersonTeam,
+} from "@/lib/work-order-rules";
 import { SearchableSelect } from "@/app/components/searchable-select";
 
 type WorkOrder = {
@@ -19,6 +24,14 @@ type WorkOrder = {
   is_active: boolean;
   work_order_type: string | null;
   current_process_step: string | null;
+  part_number: string | null;
+};
+
+type StaffMember = {
+  id: number;
+  name: string;
+  role: string | null;
+  restrictions: string[] | null;
 };
 
 type FormState = {
@@ -28,10 +41,10 @@ type FormState = {
   hold_reason: string;
   required_next_action: string;
   action_owner: string;
-  action_status: string;
-  action_closed: boolean;
   is_active: boolean;
 };
+
+type Mode = "active" | "inactive" | null;
 
 const EMPTY_FORM: FormState = {
   due_date: "",
@@ -40,220 +53,211 @@ const EMPTY_FORM: FormState = {
   hold_reason: "",
   required_next_action: "",
   action_owner: "",
-  action_status: "",
-  action_closed: false,
   is_active: true,
 };
 
-type StaffMember = {
-  id: number;
-  name: string;
-  role: string | null;
+const COLORS = {
+  pageBg: "#f7f2e8",
+  panelBg: "#fcfaf6",
+  cardBg: "#ffffff",
+  border: "#ddd3c3",
+  borderStrong: "#cdbfa9",
+  text: "#1f2937",
+  textSoft: "#6b7280",
+  textMuted: "#8b857a",
+  heading: "#1d2a3a",
+  blue: "#2f5fd7",
+  blueSoft: "#eef4ff",
+  green: "#18794e",
+  greenSoft: "#eefbf3",
+  amber: "#b7791f",
+  amberSoft: "#fff7e8",
+  red: "#c2410c",
+  redSoft: "#fff1eb",
+  inputBg: "#fffdf9",
 };
 
 export default function OfficeUpdatePage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
   const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
-  const [activateId, setActivateId] = useState("");
-  const [activateStatus, setActivateStatus] = useState("");
+  const [mode, setMode] = useState<Mode>(null);
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [isBlockedUpdate, setIsBlockedUpdate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState("");
 
+  const buildFormFromOrder = useCallback((order: WorkOrder): FormState => {
+    const storedAssignedPersonTeam = order.assigned_person_team?.trim() || "";
+    const assignedPersonTeam =
+      storedAssignedPersonTeam === DEFAULT_ASSIGNED_PERSON_TEAM
+        ? ""
+        : storedAssignedPersonTeam;
+
+    return {
+      due_date: order.due_date || "",
+      priority: order.priority || "No",
+      assigned_person_team: assignedPersonTeam,
+      hold_reason: order.hold_reason || "",
+      required_next_action: order.hold_reason?.trim()
+        ? order.required_next_action || ""
+        : "",
+      action_owner: order.hold_reason?.trim() ? order.action_owner || "" : "",
+      is_active: order.is_active,
+    };
+  }, []);
+
+  const applyOrderSelection = useCallback(
+    (order: WorkOrder) => {
+      setSelectedId(order.work_order_id);
+      setForm(buildFormFromOrder(order));
+      setIsBlockedUpdate(Boolean(order.hold_reason?.trim()));
+      setSaveStatus("");
+    },
+    [buildFormFromOrder],
+  );
+
   useEffect(() => {
     async function load() {
-      const wo = await getWorkOrders<WorkOrder>({
-        select:
-          "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, required_next_action, action_owner, action_status, action_closed, is_active, work_order_type, current_process_step",
-        isOpen: true,
-        orderBy: { column: "work_order_id", ascending: false },
-      });
-
-      const staffData = await getEngineers<StaffMember>({
-        select: "id, name, role",
-        isActive: true,
-        orderBy: { column: "name" },
-      });
+      const [wo, staffData] = await Promise.all([
+        getWorkOrders<WorkOrder>({
+          select:
+            "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, required_next_action, action_owner, action_status, action_closed, is_active, work_order_type, current_process_step, part_number",
+          isOpen: true,
+          orderBy: { column: "work_order_id", ascending: false },
+        }),
+        getEngineers<StaffMember>({
+          select: "id, name, role, restrictions",
+          isActive: true,
+          orderBy: { column: "name" },
+        }),
+      ]);
 
       setShopStaff(staffData.filter((s) => s.role === "shop"));
       setOfficeStaff(staffData.filter((s) => s.role === "office"));
-
       setOrders(wo);
       setLoading(false);
 
-      // Auto-select work order from URL query parameter
       const woParam = new URLSearchParams(window.location.search).get("wo");
       if (woParam) {
         const order = wo.find((o) => o.work_order_id === woParam);
-        if (order && order.is_active) {
-          const orderHasHoldReason = Boolean(order.hold_reason?.trim());
-          setSelectedId(woParam);
-          setForm({
-            due_date: order.due_date || "",
-            priority: order.priority || "No",
-            assigned_person_team: order.assigned_person_team || "",
-            hold_reason: order.hold_reason || "",
-            required_next_action: orderHasHoldReason ? order.required_next_action || "" : "",
-            action_owner: orderHasHoldReason ? order.action_owner || "" : "",
-            action_status: orderHasHoldReason ? order.action_status || "Open" : "",
-            action_closed: orderHasHoldReason ? Boolean(order.action_closed) : false,
-            is_active: order.is_active,
-          });
+        if (order) {
+          setMode(order.is_active ? "active" : "inactive");
+          applyOrderSelection(order);
         }
       }
     }
 
-    load();
-  }, []);
+    void load();
+  }, [applyOrderSelection]);
 
-  const inactiveOrders = useMemo(() => orders.filter((o) => !o.is_active), [orders]);
-  const activeOrders = useMemo(() => orders.filter((o) => o.is_active), [orders]);
+  const activeOrders = useMemo(
+    () => orders.filter((o) => o.is_active),
+    [orders],
+  );
+
+  const inactiveOrders = useMemo(
+    () => orders.filter((o) => !o.is_active),
+    [orders],
+  );
+
+  const visibleOrders = useMemo(() => {
+    if (mode === "active") return activeOrders;
+    if (mode === "inactive") return inactiveOrders;
+    return [];
+  }, [mode, activeOrders, inactiveOrders]);
+
   const selectedOrder = useMemo(
     () => orders.find((o) => o.work_order_id === selectedId),
     [orders, selectedId],
   );
-  const hasHoldReason = Boolean(form.hold_reason.trim());
+
   const dueDateRequired = form.priority === "Yes" || form.priority === "AOG";
 
-  async function activateOrder() {
-    if (!activateId) return;
+  function displayDate(value: string | null): string {
+    if (!value) return "—";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString("en-GB");
+  }
 
-    const order = orders.find((o) => o.work_order_id === activateId);
-    const preservedStep = order?.current_process_step?.trim() || "";
-    const nextProcessStep = preservedStep || "Intake";
+  function aogPrioritySuffix(order: WorkOrder): string {
+    return order.priority === "AOG" ? " — AOG" : "";
+  }
 
-    setActivateStatus("Activating...");
-
-    const payload = {
-      is_active: true,
-      current_process_step: nextProcessStep,
-      last_manual_update: new Date().toISOString(),
-    };
-
-    const { error } = await updateWorkOrder(activateId, payload);
-
-    if (error) {
-      setActivateStatus(`Error: ${error.message}`);
-      return;
-    }
-
-    setActivateStatus("✅ Activated!");
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.work_order_id === activateId
-          ? { ...o, is_active: true, current_process_step: nextProcessStep }
-          : o,
-      ),
-    );
-    setActivateId("");
+  function clearPageAfterSave() {
+    setMode(null);
+    setSelectedId("");
+    setForm(EMPTY_FORM);
+    setIsBlockedUpdate(false);
   }
 
   function selectOrder(id: string) {
     const order = orders.find((o) => o.work_order_id === id);
     if (!order) return;
+    applyOrderSelection(order);
+  }
 
-    const orderHasHoldReason = Boolean(order.hold_reason?.trim());
-
-    setSelectedId(id);
-    setForm({
-      due_date: order.due_date || "",
-      priority: order.priority || "No",
-      assigned_person_team: order.assigned_person_team || "",
-      hold_reason: order.hold_reason || "",
-      required_next_action: orderHasHoldReason ? order.required_next_action || "" : "",
-      action_owner: orderHasHoldReason ? order.action_owner || "" : "",
-      action_status: orderHasHoldReason ? order.action_status || "Open" : "",
-      action_closed: orderHasHoldReason ? Boolean(order.action_closed) : false,
-      is_active: order.is_active,
-    });
+  function changeMode(nextMode: "active" | "inactive") {
+    setMode(nextMode);
+    setSelectedId("");
+    setForm(EMPTY_FORM);
+    setIsBlockedUpdate(false);
     setSaveStatus("");
   }
 
-  function setActionStatus(status: string) {
-    if (status === "Done") {
+  function setBlockedChoice(blocked: boolean) {
+    setIsBlockedUpdate(blocked);
+
+    if (!blocked) {
       setForm((prev) => ({
         ...prev,
-        action_status: "Done",
-        action_closed: true,
         hold_reason: "",
         required_next_action: "",
         action_owner: "",
       }));
+    }
+  }
+
+  async function saveActiveOrder() {
+    if (!selectedId || !selectedOrder) return;
+
+    if (dueDateRequired && !form.due_date) {
+      setSaveStatus("Due Date is required when Priority is Yes or AOG.");
       return;
     }
 
-    setForm((prev) => ({
-      ...prev,
-      action_status: "Open",
-      action_closed: false,
-    }));
-  }
-
-  function updateHoldReason(value: string) {
-    setForm((prev) => {
-      const trimmed = value.trim();
-
-      if (!trimmed) {
-        return {
-          ...prev,
-          hold_reason: "",
-          required_next_action: "",
-          action_owner: "",
-          action_status: "",
-          action_closed: false,
-        };
-      }
-
-      const isNewAction =
-        !prev.hold_reason.trim() || prev.action_status === "Done";
-
-      return {
-        ...prev,
-        hold_reason: value,
-        action_status: isNewAction ? "Open" : prev.action_status || "Open",
-        action_closed: false,
-      };
-    });
-  }
-
-  async function saveOrder() {
-    if (!selectedId) return;
-
-    if ((form.priority === "Yes" || form.priority === "AOG") && !form.due_date) {
-      setSaveStatus("❌ Due Date is required when Priority is Yes or AOG.");
+    if (isBlockedUpdate && !form.hold_reason.trim()) {
+      setSaveStatus("Please enter a hold reason.");
       return;
     }
 
-    const normalizedAssignedPersonTeam = form.assigned_person_team.trim() || "Shop";
+    const normalizedAssigned = autoAssignForStep(
+      form.assigned_person_team,
+      selectedOrder.current_process_step,
+      shopStaff,
+    );
     const normalizedHoldReason = form.hold_reason.trim();
-    const shouldStoreActionFields = Boolean(normalizedHoldReason);
-    const normalizedRequiredNextAction = form.required_next_action.trim();
+    const normalizedRequiredAction = form.required_next_action.trim();
     const normalizedActionOwner = form.action_owner.trim();
-    const normalizedActionStatus = shouldStoreActionFields
-      ? form.action_status || "Open"
-      : null;
 
     setSaveStatus("Saving...");
 
     const payload = {
       due_date: form.due_date || null,
       priority: form.priority,
-      assigned_person_team: normalizedAssignedPersonTeam,
-      hold_reason: shouldStoreActionFields ? normalizedHoldReason : null,
+      assigned_person_team: normalizedAssigned,
+      hold_reason: isBlockedUpdate ? normalizedHoldReason : null,
       required_next_action:
-        shouldStoreActionFields && normalizedRequiredNextAction
-          ? normalizedRequiredNextAction
+        isBlockedUpdate && normalizedRequiredAction
+          ? normalizedRequiredAction
           : null,
       action_owner:
-        shouldStoreActionFields && normalizedActionOwner
-          ? normalizedActionOwner
-          : null,
-      action_status: normalizedActionStatus,
-      action_closed: shouldStoreActionFields
-        ? normalizedActionStatus === "Done"
-        : false,
+        isBlockedUpdate && normalizedActionOwner ? normalizedActionOwner : null,
+      action_status: isBlockedUpdate ? "Open" : null,
+      action_closed: false,
       is_active: form.is_active,
       last_manual_update: new Date().toISOString(),
     };
@@ -265,329 +269,802 @@ export default function OfficeUpdatePage() {
       return;
     }
 
-    setSaveStatus("✅ Saved!");
     setOrders((prev) =>
       prev.map((o) =>
         o.work_order_id === selectedId
           ? {
               ...o,
               ...payload,
-              assigned_person_team: normalizedAssignedPersonTeam,
+              assigned_person_team: normalizedAssigned,
             }
           : o,
       ),
     );
+
+    clearPageAfterSave();
+    setSaveStatus("Saved.");
   }
 
-  if (loading) return <div style={{ padding: "20px" }}>Loading...</div>;
+  async function activateInactiveOrder() {
+    if (!selectedId || !selectedOrder) return;
+
+    const preservedStep = selectedOrder.current_process_step?.trim() || "";
+    const nextProcessStep = preservedStep || "Intake";
+
+    setSaveStatus("Activating...");
+
+    const payload = {
+      is_active: true,
+      current_process_step: nextProcessStep,
+      assigned_person_team: autoAssignForStep(
+        selectedOrder.assigned_person_team,
+        nextProcessStep,
+        shopStaff,
+      ),
+      last_manual_update: new Date().toISOString(),
+    };
+
+    const { error } = await updateWorkOrder(selectedId, payload);
+
+    if (error) {
+      setSaveStatus(`Error: ${error.message}`);
+      return;
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.work_order_id === selectedId ? { ...o, ...payload } : o,
+      ),
+    );
+
+    clearPageAfterSave();
+    setSaveStatus("Saved.");
+  }
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          backgroundColor: COLORS.pageBg,
+          padding: "28px",
+          color: COLORS.textSoft,
+          fontFamily: "sans-serif",
+        }}
+      >
+        Loading...
+      </div>
+    );
+  }
 
   const pageStyle: React.CSSProperties = {
-    padding: "20px",
-    maxWidth: "900px",
+    minHeight: "100vh",
+    backgroundColor: COLORS.pageBg,
+    padding: "28px 32px 40px",
+    fontFamily: "sans-serif",
+    color: COLORS.text,
+  };
+
+  const shellStyle: React.CSSProperties = {
+    maxWidth: "1220px",
     margin: "0 auto",
   };
 
-  const sectionStyle: React.CSSProperties = {
-    background: "white",
-    padding: "20px",
-    borderRadius: "10px",
-    marginTop: "20px",
-    boxShadow: "0 1px 6px rgba(0,0,0,0.08)",
+  const sectionCard: React.CSSProperties = {
+    backgroundColor: COLORS.panelBg,
+    border: `1px solid ${COLORS.borderStrong}`,
+    borderRadius: "18px",
+    padding: "18px",
+    boxShadow: "0 8px 24px rgba(73, 52, 18, 0.05)",
   };
 
-  const labelStyle: React.CSSProperties = {
-    display: "block",
-    marginTop: "12px",
-    fontWeight: "bold",
-    fontSize: "13px",
+  const innerCard: React.CSSProperties = {
+    backgroundColor: COLORS.cardBg,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: "14px",
+    padding: "16px",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.03)",
   };
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
-    padding: "8px",
-    border: "1px solid #ccc",
-    borderRadius: "4px",
+    padding: "10px 12px",
+    border: `1px solid ${COLORS.borderStrong}`,
+    borderRadius: "10px",
     fontSize: "14px",
-    marginTop: "4px",
     boxSizing: "border-box",
+    backgroundColor: COLORS.inputBg,
+    color: COLORS.text,
+    minHeight: "42px",
+    outline: "none",
   };
 
-  const selectStyle: React.CSSProperties = { ...inputStyle };
-
-  const helperStyle: React.CSSProperties = {
-    marginTop: "4px",
-    fontSize: "12px",
-    color: "#666",
+  const subtitleStyle: React.CSSProperties = {
+    margin: "4px 0 0",
+    fontSize: "14px",
+    color: COLORS.textSoft,
   };
 
-  const errorHelperStyle: React.CSSProperties = {
-    marginTop: "4px",
-    fontSize: "12px",
-    color: "#b91c1c",
-    fontWeight: "bold",
+  const fieldTitleStyle: React.CSSProperties = {
+    fontSize: "15px",
+    fontWeight: 700,
+    color: COLORS.heading,
+    margin: 0,
   };
 
-  const buttonStyle: React.CSSProperties = {
-    padding: "10px 20px",
-    backgroundColor: "#0070f3",
+  const eyebrowStyle: React.CSSProperties = {
+    fontSize: "11px",
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    color: COLORS.textMuted,
+    marginBottom: "6px",
+  };
+
+  const modeBtn = (
+    kind: "active" | "inactive",
+    active: boolean,
+  ): React.CSSProperties => ({
+    padding: "11px 16px",
+    borderRadius: "12px",
+    border: active
+      ? `2px solid ${kind === "active" ? COLORS.blue : COLORS.amber}`
+      : `1px solid ${COLORS.borderStrong}`,
+    backgroundColor: active
+      ? kind === "active"
+        ? COLORS.blueSoft
+        : COLORS.amberSoft
+      : COLORS.cardBg,
+    color: active
+      ? kind === "active"
+        ? COLORS.blue
+        : COLORS.amber
+      : COLORS.textSoft,
+    fontWeight: 800,
+    fontSize: "14px",
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+  });
+
+  const choiceBtn = (active: boolean): React.CSSProperties => ({
+    flex: 1,
+    padding: "10px 12px",
+    borderRadius: "10px",
+    border: active
+      ? `2px solid ${COLORS.blue}`
+      : `1px solid ${COLORS.borderStrong}`,
+    backgroundColor: active ? COLORS.blueSoft : COLORS.cardBg,
+    color: active ? COLORS.blue : COLORS.textSoft,
+    fontWeight: 700,
+    fontSize: "14px",
+    cursor: "pointer",
+  });
+
+  const primaryBtn: React.CSSProperties = {
+    padding: "12px 28px",
+    backgroundColor: COLORS.blue,
     color: "white",
     border: "none",
-    borderRadius: "6px",
+    borderRadius: "12px",
     cursor: "pointer",
-    fontWeight: "bold",
-    fontSize: "14px",
-    marginTop: "16px",
-  };
-
-  const secondaryButtonStyle: React.CSSProperties = {
-    ...buttonStyle,
-    backgroundColor: "#111827",
-  };
-
-  const warningStyle: React.CSSProperties = {
-    marginTop: "12px",
-    padding: "10px 12px",
-    background: "#fff7ed",
-    border: "1px solid #fdba74",
-    borderRadius: "8px",
-    fontSize: "14px",
+    fontWeight: 700,
+    fontSize: "15px",
+    boxShadow: "0 8px 20px rgba(47,95,215,0.22)",
   };
 
   return (
     <div style={pageStyle}>
-      <h1 style={{ marginBottom: "8px" }}>Office Update</h1>
-
-      <div style={sectionStyle}>
-        <h2 style={{ marginTop: 0 }}>Activate Work Order</h2>
-        <p>
-          Select an inactive work order to activate ({inactiveOrders.length} available)
-        </p>
-
-        <label style={labelStyle}>Select Work Order</label>
-        <SearchableSelect
-          options={inactiveOrders.map((o) => ({
-            value: o.work_order_id,
-            label: `${o.work_order_id} — ${o.customer || "No customer"} — ${o.work_order_type || "Unknown type"}`,
-          }))}
-          value={activateId}
-          onChange={(v) => setActivateId(v)}
-          placeholder="Type WO number or customer name..."
-        />
-        <select
-          style={{ ...selectStyle, marginTop: "6px" }}
-          value={activateId}
-          onChange={(e) => setActivateId(e.target.value)}
+      <div style={shellStyle}>
+        <div
+          style={{
+            marginBottom: "20px",
+            display: "flex",
+            alignItems: "center",
+            gap: "16px",
+          }}
         >
-          <option value="">-- Or browse the list --</option>
-          {inactiveOrders.map((o) => (
-            <option key={o.work_order_id} value={o.work_order_id}>
-              {o.work_order_id} — {o.customer || "No customer"} — {o.work_order_type || "Unknown type"}
-            </option>
-          ))}
-        </select>
+          <div
+            style={{
+              width: "68px",
+              height: "68px",
+              borderRadius: "18px",
+              backgroundColor: "#fffdfa",
+              border: "1px solid #d6cbb8",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 6px 18px rgba(73, 52, 18, 0.08)",
+              flexShrink: 0,
+              fontSize: "34px",
+              lineHeight: 1,
+            }}
+          >
+            💻
+          </div>
 
-        <div style={helperStyle}>
-          New active orders without a process step automatically start at <strong>Intake</strong>.
-          Orders that were already further along keep their current step.
+          <div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "34px",
+                lineHeight: 1.05,
+                fontWeight: 800,
+                color: COLORS.heading,
+                letterSpacing: "-0.03em",
+              }}
+            >
+              Office Update
+            </h1>
+
+            <p
+              style={{
+                margin: "10px 0 0",
+                fontSize: "15px",
+                color: COLORS.textSoft,
+                maxWidth: "760px",
+              }}
+            >
+              Here you can manage the work order planning, add additional tasks
+              when a work order is blocked, and activate or deactivate work
+              orders as needed.
+            </p>
+          </div>
         </div>
 
-        {activateId && (
-          <button style={buttonStyle} onClick={activateOrder}>
-            ✅ Activate this work order
-          </button>
-        )}
+        <section style={sectionCard}>
+          <h2 style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "10px" }}>
+            Choose an active or inactive work order to update
+          </h2>
 
-        {activateStatus && <p>{activateStatus}</p>}
-      </div>
-
-      <div style={sectionStyle}>
-        <h2 style={{ marginTop: 0 }}>Update Active Work Order</h2>
-        <p>{activeOrders.length} active work orders</p>
-
-        <label style={labelStyle}>Select Work Order</label>
-        <SearchableSelect
-          options={activeOrders.map((o) => ({
-            value: o.work_order_id,
-            label: `${o.work_order_id} — ${o.customer || "No customer"} — ${o.work_order_type || "Unknown type"}`,
-          }))}
-          value={selectedId}
-          onChange={(v) => selectOrder(v)}
-          placeholder="Type WO number or customer name..."
-        />
-        <select
-          style={{ ...selectStyle, marginTop: "6px" }}
-          value={selectedId}
-          onChange={(e) => selectOrder(e.target.value)}
-        >
-          <option value="">-- Or browse the list --</option>
-          {activeOrders.map((o) => (
-            <option key={o.work_order_id} value={o.work_order_id}>
-              {o.work_order_id} — {o.customer || "No customer"} — {o.work_order_type || "Unknown type"}
-            </option>
-          ))}
-        </select>
-
-        {selectedId && (
-          <>
-            {selectedOrder && (
-              <p style={{ marginTop: "12px" }}>
-                Type: {selectedOrder.work_order_type || "Unknown"} | Customer: {selectedOrder.customer || "–"}
-              </p>
-            )}
-
-            <label style={labelStyle}>Active</label>
-            <select
-              style={selectStyle}
-              value={String(form.is_active)}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  is_active: e.target.value === "true",
-                }))
-              }
+          <div style={{ display: "flex", gap: "12px" }}>
+            <button
+              type="button"
+              onClick={() => changeMode("active")}
+              style={modeBtn("active", mode === "active")}
             >
-              <option value="true">Yes — visible in Dashboard, Planning, Shop</option>
-              <option value="false">No — back to Backlog</option>
-            </select>
+              Active ({activeOrders.length})
+            </button>
 
-            <label style={labelStyle}>Due Date</label>
-            <input
-              type="date"
+            <button
+              type="button"
+              onClick={() => changeMode("inactive")}
+              style={modeBtn("inactive", mode === "inactive")}
+            >
+              Inactive ({inactiveOrders.length})
+            </button>
+          </div>
+
+          {mode && (
+            <div
               style={{
-                ...inputStyle,
-                borderColor: dueDateRequired && !form.due_date ? "#dc2626" : "#ccc",
+                marginTop: "18px",
+                paddingTop: "18px",
+                borderTop: `1px solid ${COLORS.border}`,
               }}
-              value={form.due_date}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, due_date: e.target.value }))
-              }
-            />
-            {dueDateRequired && !form.due_date && (
-              <div style={errorHelperStyle}>
-                Due Date is required when Priority is set to Yes or AOG.
-              </div>
-            )}
-
-            <label style={labelStyle}>Priority</label>
-            <select
-              style={selectStyle}
-              value={form.priority}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, priority: e.target.value }))
-              }
             >
-              <option value="No">No</option>
-              <option value="Yes">Yes</option>
-              <option value="AOG">AOG</option>
-            </select>
-            {dueDateRequired && (
-              <div style={helperStyle}>
-                A Due Date is required for <strong>Yes</strong> or <strong>AOG</strong> priority.
+              <div style={eyebrowStyle}>
+                {mode === "active" ? "Active work orders" : "Inactive work orders"}
               </div>
-            )}
 
-            <label style={labelStyle}>Assigned Person/Team</label>
-            <select
-              style={selectStyle}
-              value={form.assigned_person_team}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  assigned_person_team: e.target.value,
-                }))
-              }
-            >
-              <option value="">Shop (default)</option>
-              {shopStaff.map((s) => (
-                <option key={s.id} value={s.name}>{s.name}</option>
-              ))}
-            </select>
-            <div style={helperStyle}>
-              Assign to a specific engineer or leave as <strong>Shop</strong>.
+              <h2
+                style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "4px" }}
+              >
+                Select work order
+              </h2>
+
+              <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
+                Search or browse only within the currently selected group.
+              </p>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.65fr 1fr",
+                  gap: "14px",
+                }}
+              >
+                <div style={innerCard}>
+                  <div style={eyebrowStyle}>Search</div>
+                  <SearchableSelect
+                    options={visibleOrders.map((o) => ({
+                      value: o.work_order_id,
+                      label: `${o.work_order_id} — ${o.customer || "No customer"} — ${o.part_number || "No PN"} — ${o.work_order_type || "Unknown type"}${aogPrioritySuffix(o)}`,
+                    }))}
+                    value={selectedId}
+                    onChange={(v) => selectOrder(v)}
+                    placeholder="Search by work order, customer or part number..."
+                    style={{ marginTop: "2px" }}
+                  />
+                </div>
+
+                <div style={innerCard}>
+                  <div style={eyebrowStyle}>Browse list</div>
+                  <select
+                    value={selectedId}
+                    onChange={(e) => selectOrder(e.target.value)}
+                    style={inputStyle}
+                  >
+                    <option value="">Select from list...</option>
+                    {visibleOrders.map((o) => (
+                      <option key={o.work_order_id} value={o.work_order_id}>
+                        {o.work_order_id} — {o.customer || "No customer"} —{" "}
+                        {o.part_number || "No PN"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
+          )}
+        </section>
 
-            <label style={labelStyle}>Hold Reason (leave empty if not blocked)</label>
-            <input
-              type="text"
-              style={inputStyle}
-              value={form.hold_reason}
-              onChange={(e) => updateHoldReason(e.target.value)}
-              placeholder="E.g. Parts on order, RFQ Send, Awaiting customer..."
-            />
+        {selectedOrder && (
+          <>
+            <section style={{ ...sectionCard, marginTop: "18px" }}>
+              <div style={eyebrowStyle}>Selected work order</div>
+              <h2 style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "14px" }}>
+                Current details
+              </h2>
 
-            {hasHoldReason ? (
-              <>
-                <label style={labelStyle}>Required Next Action</label>
-                <input
-                  type="text"
-                  style={inputStyle}
-                  value={form.required_next_action}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      required_next_action: e.target.value,
-                    }))
-                  }
-                  placeholder="What needs to happen?"
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(8, 1fr)",
+                  gap: "12px",
+                }}
+              >
+                <InfoBox label="Work Order" value={selectedOrder.work_order_id} />
+                <InfoBox label="Customer" value={selectedOrder.customer || "—"} />
+                <InfoBox label="Part Number" value={selectedOrder.part_number || "—"} />
+                <InfoBox
+                  label="Work Order Type"
+                  value={selectedOrder.work_order_type || "—"}
                 />
-
-                <label style={labelStyle}>Action Owner</label>
-                <select
-                  style={selectStyle}
-                  value={form.action_owner}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      action_owner: e.target.value,
-                    }))
-                  }
-                >
-                  <option value="">-- Select owner --</option>
-                  {officeStaff.length > 0 && (
-                    <optgroup label="Office">
-                      {officeStaff.map((s) => (
-                        <option key={s.id} value={s.name}>{s.name}</option>
-                      ))}
-                    </optgroup>
+                <InfoBox
+                  label="Current Step"
+                  value={selectedOrder.current_process_step || "—"}
+                />
+                <InfoBox label="Due Date" value={displayDate(selectedOrder.due_date)} />
+                <InfoBox
+                  label="Assigned"
+                  value={normalizeAssignedPersonTeam(
+                    selectedOrder.assigned_person_team,
                   )}
-                  {shopStaff.length > 0 && (
-                    <optgroup label="Shop">
-                      {shopStaff.map((s) => (
-                        <option key={s.id} value={s.name}>{s.name}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
+                />
+                {selectedOrder.priority === "AOG" && (
+                  <InfoBox label="Priority" value="AOG" />
+                )}
+              </div>
+            </section>
 
-                <label style={labelStyle}>Action Status</label>
-                <select
-                  style={selectStyle}
-                  value={form.action_status || "Open"}
-                  onChange={(e) => setActionStatus(e.target.value)}
+            {mode === "active" ? (
+              <>
+                <section style={{ marginTop: "18px" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 0.8fr",
+                      gap: "16px",
+                    }}
+                  >
+                    <div style={sectionCard}>
+                      <div style={eyebrowStyle}>Planning</div>
+                      <h2
+                        style={{
+                          ...fieldTitleStyle,
+                          fontSize: "20px",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        Planning details
+                      </h2>
+                      <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
+                        Update due date, priority, and assignment.
+                      </p>
+
+                      <div style={{ display: "grid", gap: "10px" }}>
+                        <div>
+                          <div style={eyebrowStyle}>Due Date</div>
+                          <input
+                            type="date"
+                            value={form.due_date}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                due_date: e.target.value,
+                              }))
+                            }
+                            style={{
+                              ...inputStyle,
+                              borderColor:
+                                dueDateRequired && !form.due_date
+                                  ? "#c2410c"
+                                  : COLORS.borderStrong,
+                            }}
+                          />
+                          {dueDateRequired && !form.due_date && (
+                            <div
+                              style={{
+                                marginTop: "6px",
+                                fontSize: "12px",
+                                color: COLORS.red,
+                                fontWeight: 700,
+                              }}
+                            >
+                              Due Date is required for Priority or AOG.
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div style={eyebrowStyle}>Priority</div>
+                          <select
+                            value={form.priority}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                priority: e.target.value,
+                              }))
+                            }
+                            style={inputStyle}
+                          >
+                            <option value="No">No</option>
+                            <option value="Yes">Yes</option>
+                            <option value="AOG">AOG</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <div style={eyebrowStyle}>Assigned Person / Team</div>
+                          <select
+                            value={form.assigned_person_team}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                assigned_person_team: e.target.value,
+                              }))
+                            }
+                            style={inputStyle}
+                          >
+                            <option value="">Shop (default)</option>
+                            {shopStaff.map((s) => (
+                              <option key={s.id} value={s.name}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={sectionCard}>
+                      <div style={eyebrowStyle}>Corrective action</div>
+                      <h2
+                        style={{
+                          ...fieldTitleStyle,
+                          fontSize: "20px",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        Blocked?
+                      </h2>
+                      <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
+                        Only use this when the work order cannot continue.
+                      </p>
+
+                      <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
+                        <button
+                          type="button"
+                          onClick={() => setBlockedChoice(false)}
+                          style={choiceBtn(!isBlockedUpdate)}
+                        >
+                          No
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBlockedChoice(true)}
+                          style={choiceBtn(isBlockedUpdate)}
+                        >
+                          Yes
+                        </button>
+                      </div>
+
+                      {isBlockedUpdate ? (
+                        <div
+                          style={{
+                            display: "grid",
+                            gap: "10px",
+                            padding: "14px",
+                            backgroundColor: "#fffdfa",
+                            border: `1px solid ${COLORS.border}`,
+                            borderRadius: "12px",
+                          }}
+                        >
+                          <div>
+                            <div style={eyebrowStyle}>Hold Reason</div>
+                            <input
+                              value={form.hold_reason}
+                              onChange={(e) =>
+                                setForm((prev) => ({
+                                  ...prev,
+                                  hold_reason: e.target.value,
+                                }))
+                              }
+                              placeholder="For example: awaiting customer approval..."
+                              style={inputStyle}
+                            />
+                          </div>
+
+                          <div>
+                            <div style={eyebrowStyle}>Action Required</div>
+                            <input
+                              value={form.required_next_action}
+                              onChange={(e) =>
+                                setForm((prev) => ({
+                                  ...prev,
+                                  required_next_action: e.target.value,
+                                }))
+                              }
+                              placeholder="What needs to happen?"
+                              style={inputStyle}
+                            />
+                          </div>
+
+                          <div>
+                            <div style={eyebrowStyle}>Action Owner</div>
+                            <select
+                              value={form.action_owner}
+                              onChange={(e) =>
+                                setForm((prev) => ({
+                                  ...prev,
+                                  action_owner: e.target.value,
+                                }))
+                              }
+                              style={inputStyle}
+                            >
+                              <option value="">Select owner...</option>
+                              {officeStaff.length > 0 && (
+                                <optgroup label="Office">
+                                  {officeStaff.map((s) => (
+                                    <option key={s.id} value={s.name}>
+                                      {s.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              {shopStaff.length > 0 && (
+                                <optgroup label="Shop">
+                                  {shopStaff.map((s) => (
+                                    <option key={s.id} value={s.name}>
+                                      {s.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </select>
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: "13px",
+                              color: COLORS.textSoft,
+                            }}
+                          >
+                            Status will be saved as <strong>Open</strong>.
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            padding: "12px",
+                            borderRadius: "12px",
+                            backgroundColor: COLORS.greenSoft,
+                            border: "1px solid #cdeedc",
+                            color: COLORS.green,
+                            fontWeight: 700,
+                            fontSize: "13px",
+                          }}
+                        >
+                          No corrective action is currently set.
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={sectionCard}>
+                      <div style={eyebrowStyle}>Activation</div>
+                      <h2
+                        style={{
+                          ...fieldTitleStyle,
+                          fontSize: "20px",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        Active status
+                      </h2>
+                      <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
+                        Keep this work order active or move it back to Inactive.
+                      </p>
+
+                      <select
+                        value={String(form.is_active)}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            is_active: e.target.value === "true",
+                          }))
+                        }
+                        style={inputStyle}
+                      >
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                      </select>
+
+                      <div
+                        style={{
+                          marginTop: "12px",
+                          padding: "12px",
+                          borderRadius: "12px",
+                          backgroundColor: form.is_active
+                            ? COLORS.blueSoft
+                            : COLORS.amberSoft,
+                          border: form.is_active
+                            ? "1px solid #d7e5ff"
+                            : "1px solid #e8c98f",
+                          color: form.is_active ? COLORS.blue : COLORS.amber,
+                          fontWeight: 700,
+                          fontSize: "13px",
+                        }}
+                      >
+                        {form.is_active
+                          ? "This work order will remain active."
+                          : "This work order will be moved to Inactive after saving."}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginTop: "18px",
+                  }}
                 >
-                  <option value="Open">Open</option>
-                  <option value="Done">
-                    Done — automatically clears hold reason, action and owner
-                  </option>
-                </select>
-
-                <div style={warningStyle}>
-                  ⚠ This work order is blocked due to: {form.hold_reason}
+                  <button onClick={() => void saveActiveOrder()} style={primaryBtn}>
+                    Save Work Order
+                  </button>
                 </div>
               </>
             ) : (
-              <div style={helperStyle}>
-                Enter a hold reason first. The action fields will appear automatically.
-              </div>
+              <>
+                <section style={{ ...sectionCard, marginTop: "18px" }}>
+                  <div style={eyebrowStyle}>Activation</div>
+                  <h2
+                    style={{
+                      ...fieldTitleStyle,
+                      fontSize: "20px",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    Activate work order
+                  </h2>
+                  <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
+                    This inactive work order can be activated and moved back into
+                    the live flow.
+                  </p>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1.2fr 1fr",
+                      gap: "14px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: "14px",
+                        backgroundColor: "#fffdfa",
+                        border: `1px solid ${COLORS.border}`,
+                        borderRadius: "12px",
+                      }}
+                    >
+                      <div style={eyebrowStyle}>What happens on activation</div>
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          color: COLORS.text,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        If the work order already has a process step, that step
+                        is kept. Otherwise it starts at <strong>Intake</strong>.
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        padding: "14px",
+                        backgroundColor: COLORS.blueSoft,
+                        border: "1px solid #d7e5ff",
+                        borderRadius: "12px",
+                        color: COLORS.blue,
+                        fontWeight: 700,
+                        fontSize: "13px",
+                      }}
+                    >
+                      Current stored step:{" "}
+                      <strong>{selectedOrder.current_process_step || "Intake"}</strong>
+                    </div>
+                  </div>
+                </section>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginTop: "18px",
+                  }}
+                >
+                  <button onClick={() => void activateInactiveOrder()} style={primaryBtn}>
+                    Activate Work Order
+                  </button>
+                </div>
+              </>
             )}
-
-            <button style={secondaryButtonStyle} onClick={saveOrder}>
-              Save Work Order
-            </button>
-
-            {saveStatus && <p>{saveStatus}</p>}
           </>
         )}
+
+        {saveStatus && (
+          <div
+            style={{
+              marginTop: "16px",
+              padding: "12px 14px",
+              backgroundColor: COLORS.cardBg,
+              border: `1px solid ${COLORS.borderStrong}`,
+              borderRadius: "12px",
+              fontSize: "14px",
+              color: COLORS.textSoft,
+            }}
+          >
+            {saveStatus}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InfoBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      style={{
+        padding: "14px 14px 13px",
+        backgroundColor: "#fffdfa",
+        border: "1px solid #ddd3c3",
+        borderRadius: "12px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "11px",
+          color: "#8b857a",
+          marginBottom: "5px",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          fontWeight: 700,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: "15px",
+          fontWeight: 700,
+          color: "#1f2937",
+          lineHeight: 1.3,
+        }}
+      >
+        {value}
       </div>
     </div>
   );

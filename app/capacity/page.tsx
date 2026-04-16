@@ -10,7 +10,7 @@ import { getWorkOrders } from "@/lib/work-orders";
 import { calculateWeekCapacity, type WeekCapacity, type OrderCapacity } from "@/lib/capacity";
 import { isRfqBlockedState } from "@/lib/work-order-rules";
 import { RESTRICTION_LABELS, RESTRICTION_BLOCKED_STEPS } from "@/lib/restrictions";
-import { PROCESS_STEPS } from "@/lib/process-steps";
+import { PROCESS_STEPS, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
 
 type Engineer = {
   id: number;
@@ -128,7 +128,7 @@ export default function CapacityPage() {
       if (!o.due_date) return true;
       if (o.hold_reason) return true;
       if (isRfqBlockedState(o.rfq_state)) return true;
-      if (o.current_process_step === "EASA-Form 1") return true;
+      if (o.current_process_step === READY_TO_CLOSE_STEP) return true;
       return false;
     })
     .map((o) => {
@@ -136,13 +136,13 @@ export default function CapacityPage() {
       if (!o.due_date) reason = "No due date";
       else if (o.hold_reason) reason = `Blocked: ${o.hold_reason}`;
       else if (isRfqBlockedState(o.rfq_state)) reason = "RFQ blocked";
-      else if (o.current_process_step === "EASA-Form 1") reason = "Ready to close (EASA-Form 1)";
+      else if (o.current_process_step === READY_TO_CLOSE_STEP) reason = "Ready to close";
       return { ...o, reason };
     });
 
   const ordersNoDueDate = excludedOrders.filter((o) => !o.due_date);
   const ordersBlocked = excludedOrders.filter((o) => o.due_date && (o.hold_reason || isRfqBlockedState(o.rfq_state)));
-  const ordersEasa = excludedOrders.filter((o) => o.due_date && o.current_process_step === "EASA-Form 1" && !o.hold_reason && !isRfqBlockedState(o.rfq_state));
+  const ordersEasa = excludedOrders.filter((o) => o.due_date && o.current_process_step === READY_TO_CLOSE_STEP && !o.hold_reason && !isRfqBlockedState(o.rfq_state));
 
   // --- Restriction warnings ---
   // For each day in the 3-week window, check if any capability is unavailable
@@ -452,7 +452,7 @@ export default function CapacityPage() {
             <br />
             • Blocked orders ({ordersBlocked.length}) — on hold or waiting for RFQ
             <br />
-            • Orders at EASA-Form 1 ({ordersEasa.length}) — ready to close, no work remaining
+            • Ready to close ({ordersEasa.length}) — no work remaining
           </div>
         </section>
       )}
@@ -620,7 +620,7 @@ export default function CapacityPage() {
             Orders included in calculation ({orderDetails.length})
           </h2>
           <p style={{ margin: "0 0 8px", fontSize: "13px", color: "#666" }}>
-            Only active, non-blocked orders with a due date and not yet at EASA-Form 1.
+            Only active, non-blocked orders with a due date and not yet ready to close.
           </p>
           <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
@@ -666,7 +666,7 @@ export default function CapacityPage() {
         </section>
       )}
 
-      {/* Excluded orders (blocked + EASA) — collapsible */}
+      {/* Excluded orders (blocked + ready to close) — collapsible */}
       {(ordersBlocked.length > 0 || ordersEasa.length > 0) && (
         <section style={{ marginTop: "1.5rem" }}>
           <details>

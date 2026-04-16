@@ -19,6 +19,9 @@ export const OPTIONAL_PROCESS_STEPS = ["Magnetic Test"];
 /** The last tracked step in every flow. */
 export const FINAL_PROCESS_STEP = "EASA-Form 1";
 
+/** Status after the final tracked step has been completed. */
+export const READY_TO_CLOSE_STEP = "Ready to close";
+
 /**
  * Full step sequences per work-order type, including optional steps.
  * Used by capacity calculations (STEP_WEIGHTS) and restriction checks.
@@ -146,8 +149,8 @@ export function getCompletableStepsForType(
  * Given a completed step, return the value that `current_process_step` should
  * be set to. Optional steps are skipped unless `includeOptional` is true.
  *
- * Returns `null` when the completed step is the final step (EASA-Form 1),
- * meaning there are no more steps remaining.
+ * Returns `READY_TO_CLOSE_STEP` when the completed step is the final step
+ * (EASA-Form 1), meaning there are no more tracked shop steps remaining.
  */
 export function getNextProcessStepAfterCompleted(
   workOrderType: string | null,
@@ -168,8 +171,8 @@ export function getNextProcessStepAfterCompleted(
     }
   }
 
-  // Completed step was the last step — nothing left
-  return null;
+  // Completed step was the last tracked step.
+  return READY_TO_CLOSE_STEP;
 }
 
 /**

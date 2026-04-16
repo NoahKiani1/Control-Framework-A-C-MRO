@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { READY_TO_CLOSE_STEP } from "@/lib/process-steps";
 import {
   blockReason,
   formatDate,
   isBlocked,
   latestUpdate,
+  normalizeAssignedPersonTeam,
   isStale,
   sortOrders,
 } from "@/lib/work-order-rules";
@@ -40,7 +42,7 @@ export default function PlanningPage() {
       });
 
       const filtered = data.filter(
-        (o) => o.current_process_step !== "EASA-Form 1",
+        (o) => o.current_process_step !== READY_TO_CLOSE_STEP,
       );
 
       setOrders(sortOrders(filtered));
@@ -112,7 +114,9 @@ export default function PlanningPage() {
                   <td style={cellStyle}>{o.part_number || "–"}</td>
                   <td style={cellStyle}>{formatDate(o.due_date)}</td>
                   <td style={cellStyle}>{o.priority || "No"}</td>
-                  <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
+                  <td style={cellStyle}>
+                    {normalizeAssignedPersonTeam(o.assigned_person_team)}
+                  </td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
                   <td style={cellStyle}>
                     {formatDate(lastUpdate)}
@@ -168,7 +172,9 @@ export default function PlanningPage() {
                   <td style={cellStyle}>{o.part_number || "–"}</td>
                   <td style={cellStyle}>{formatDate(o.due_date)}</td>
                   <td style={cellStyle}>{o.priority || "No"}</td>
-                  <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
+                  <td style={cellStyle}>
+                    {normalizeAssignedPersonTeam(o.assigned_person_team)}
+                  </td>
                   <td style={cellStyle}>{o.current_process_step || "–"}</td>
                   <td style={cellStyle}>
                     {blockReason(o, { rfqSentLabel: "Waiting for RFQ Approval" })}

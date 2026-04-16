@@ -2,9 +2,11 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { READY_TO_CLOSE_STEP } from "@/lib/process-steps";
 import {
   formatDate,
   isBlocked,
+  normalizeAssignedPersonTeam,
   normalizeRfqState,
   sortOrders,
 } from "@/lib/work-order-rules";
@@ -41,18 +43,17 @@ function AssignedPerson({
   photoUrl: string | null;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-
-  if (!name) return <>–</>;
+  const displayName = normalizeAssignedPersonTeam(name);
 
   if (!photoUrl || imageFailed) {
-    return <>{name}</>;
+    return <>{displayName}</>;
   }
 
   return (
     <span style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
       <Image
         src={photoUrl}
-        alt={name}
+        alt={displayName}
         width={38}
         height={38}
         unoptimized
@@ -91,7 +92,7 @@ export default function ShopPage() {
       ]);
 
       const filtered = data.filter(
-        (o) => o.current_process_step !== "EASA-Form 1",
+        (o) => o.current_process_step !== READY_TO_CLOSE_STEP,
       );
 
       setOrders(sortOrders(filtered));
@@ -193,12 +194,20 @@ export default function ShopPage() {
                 <td style={cellStyle}>{formatDate(o.due_date)}</td>
                 <td style={cellStyle}>{o.current_process_step || "–"}</td>
                 <td style={{ ...cellStyle, textAlign: "center" }}>
-                  <AssignedPerson
-                    name={o.assigned_person_team}
-                    photoUrl={getEngineerPhotoUrl(
-                      engineerByName.get(o.assigned_person_team || "")?.photo_path,
-                    )}
-                  />
+                  {(() => {
+                    const assignedPersonTeam = normalizeAssignedPersonTeam(
+                      o.assigned_person_team,
+                    );
+
+                    return (
+                      <AssignedPerson
+                        name={assignedPersonTeam}
+                        photoUrl={getEngineerPhotoUrl(
+                          engineerByName.get(assignedPersonTeam)?.photo_path,
+                        )}
+                      />
+                    );
+                  })()}
                 </td>
               </tr>
             ))}

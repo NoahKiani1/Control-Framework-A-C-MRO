@@ -1,4 +1,4 @@
-import { PROCESS_STEPS } from "@/lib/process-steps";
+import { PROCESS_STEPS, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
 import { isRfqBlockedState } from "@/lib/work-order-rules";
 import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
 
@@ -247,7 +247,7 @@ export function calculateWeekCapacity(
     if (!o.due_date) return false;
     if (o.hold_reason) return false;
     if (isRfqBlockedState(o.rfq_state)) return false;
-    if (o.current_process_step === "EASA-Form 1") return false;
+    if (o.current_process_step === READY_TO_CLOSE_STEP) return false;
     return true;
   });
 

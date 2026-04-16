@@ -8,6 +8,7 @@ import {
   normalizeImportedRfqState,
   parseExcelDate,
 } from "@/lib/import-normalize";
+import { normalizeAssignedPersonTeam } from "@/lib/work-order-rules";
 import { getEngineers } from "@/lib/engineers";
 import {
   clearImportRuns,
@@ -312,13 +313,17 @@ export default function ImportPage() {
           Boolean(rfqActivationSetup[r.work_order_id]) &&
           Boolean(current) &&
           !current?.is_active;
+        const shouldDefaultAssigned =
+          Boolean(current?.is_active || shouldActivateFromRfq) &&
+          !current?.assigned_person_team?.trim();
         const changed =
           !current ||
           current.customer !== r.customer ||
           current.rfq_state !== r.rfq_state ||
           current.work_order_type !== r.work_order_type ||
           current.part_number !== r.part_number ||
-          shouldActivateFromRfq;
+          shouldActivateFromRfq ||
+          shouldDefaultAssigned;
 
         if (shouldActivateFromRfq) {
           rfqActivated += 1;
@@ -330,9 +335,17 @@ export default function ImportPage() {
             ? {
                 is_active: true,
                 current_process_step: current?.current_process_step || "Intake",
-                assigned_person_team: current?.assigned_person_team || "Shop",
+                assigned_person_team: normalizeAssignedPersonTeam(
+                  current?.assigned_person_team,
+                ),
               }
-            : {}),
+            : shouldDefaultAssigned
+              ? {
+                  assigned_person_team: normalizeAssignedPersonTeam(
+                    current?.assigned_person_team,
+                  ),
+                }
+              : {}),
           last_system_update: changed ? importTimestamp : r.last_system_update,
         };
       });
@@ -355,7 +368,9 @@ export default function ImportPage() {
         due_date: newOrderSetup[r.work_order_id]?.due_date || null,
         assigned_person_team:
           (newOrderSetup[r.work_order_id]?.assigned_person_team || "").trim() ||
-          (newOrderSetup[r.work_order_id]?.is_active ? "Shop" : null),
+          (newOrderSetup[r.work_order_id]?.is_active
+            ? normalizeAssignedPersonTeam(null)
+            : null),
         current_process_step: newOrderSetup[r.work_order_id]?.is_active
           ? "Intake"
           : null,

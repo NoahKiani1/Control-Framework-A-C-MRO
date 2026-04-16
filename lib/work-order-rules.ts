@@ -12,6 +12,14 @@ type BlockReasonOptions = {
   rfqSentLabel?: string;
 };
 
+export const DEFAULT_ASSIGNED_PERSON_TEAM = "Shop";
+
+export function normalizeAssignedPersonTeam(
+  assignedPersonTeam: string | null | undefined,
+): string {
+  return assignedPersonTeam?.trim() || DEFAULT_ASSIGNED_PERSON_TEAM;
+}
+
 export function normalizeRfqState(state: string | null | undefined): string {
   return (state || "").trim().replace(/\s+/g, " ").toLowerCase();
 }
@@ -27,26 +35,19 @@ export function isBlocked(order: BlockableOrder): boolean {
   return false;
 }
 
+function dueDateTime(dateStr: string | null | undefined): number {
+  if (!dateStr) return Number.POSITIVE_INFINITY;
+
+  const normalizedDate = /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
+    ? `${dateStr}T00:00:00Z`
+    : dateStr;
+  const time = new Date(normalizedDate).getTime();
+
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+}
+
 export function sortOrders<T extends SortableOrder>(orders: T[]): T[] {
-  return [...orders].sort((a, b) => {
-    const rank = (order: T) => {
-      if (isBlocked(order)) return 5;
-      if (order.priority === "AOG") return 1;
-      if (order.priority === "Yes") return 2;
-      if (order.due_date) return 3;
-      return 4;
-    };
-
-    const ra = rank(a);
-    const rb = rank(b);
-
-    if (ra !== rb) return ra - rb;
-    if (ra === 3 && a.due_date && b.due_date) {
-      return a.due_date.localeCompare(b.due_date);
-    }
-
-    return 0;
-  });
+  return [...orders].sort((a, b) => dueDateTime(a.due_date) - dueDateTime(b.due_date));
 }
 
 export function latestUpdate(system: string | null, manual: string | null): string | null {
