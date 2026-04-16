@@ -100,11 +100,14 @@ export function SearchableSelect({
         onKeyDown={handleKeyDown}
         style={{
           width: "100%",
-          padding: "8px",
-          border: "1px solid #ccc",
-          borderRadius: "4px",
+          padding: "7px 10px",
+          border: "1px solid #e2e8f0",
+          borderRadius: "6px",
           fontSize: "14px",
           boxSizing: "border-box",
+          backgroundColor: "white",
+          color: "#1e293b",
+          minHeight: "36px",
         }}
       />
 
@@ -119,14 +122,14 @@ export function SearchableSelect({
             maxHeight: "240px",
             overflowY: "auto",
             backgroundColor: "white",
-            border: "1px solid #ccc",
+            border: "1px solid #e2e8f0",
             borderTop: "none",
-            borderRadius: "0 0 4px 4px",
+            borderRadius: "0 0 6px 6px",
             margin: 0,
             padding: 0,
             listStyle: "none",
             zIndex: 50,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
           }}
         >
           {filtered.length === 0 && (
@@ -134,7 +137,7 @@ export function SearchableSelect({
               style={{
                 padding: "8px 10px",
                 fontSize: "13px",
-                color: "#999",
+                color: "#94a3b8",
               }}
             >
               No results
@@ -152,13 +155,14 @@ export function SearchableSelect({
                 padding: "8px 10px",
                 fontSize: "13px",
                 cursor: "pointer",
+                color: "#1e293b",
                 backgroundColor:
                   i === highlightIndex
-                    ? "#e0e7ff"
+                    ? "#eff6ff"
                     : option.value === value
-                      ? "#f0f4ff"
+                      ? "#f8fafc"
                       : "white",
-                borderBottom: "1px solid #f3f3f3",
+                borderBottom: "1px solid #f1f5f9",
               }}
             >
               {option.label}

@@ -9,7 +9,7 @@ import {
   latestUpdate,
   sortOrders,
 } from "@/lib/work-order-rules";
-import { getWorkOrders } from "@/lib/work-orders";
+import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 import {
   getEngineers,
   getEngineerAbsences,
@@ -36,6 +36,7 @@ type WorkOrder = {
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;
+  action_closed: boolean | null;
   last_manual_update: string | null;
   last_system_update: string | null;
   work_order_type: string | null;
@@ -91,6 +92,13 @@ function hasOpenAction(o: WorkOrder): boolean {
 function engineerCanDoRestriction(eng: Engineer, restriction: string): boolean {
   if (!eng.restrictions || eng.restrictions.length === 0) return true;
   return !eng.restrictions.includes(restriction);
+}
+
+function blockedReason(order: WorkOrder): string {
+  if (order.hold_reason) return order.hold_reason;
+  if (order.rfq_state === "RFQ Rejected") return "RFQ Rejected";
+  if (order.rfq_state === "RFQ Send") return "Waiting for RFQ Approval";
+  return "Blocked";
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +240,32 @@ function AnimatedProgressBar({
   );
 }
 
+function ProcessStepDisplay({ order }: { order: WorkOrder }) {
+  if (isBlocked(order)) {
+    return (
+      <span
+        className="blocked-step-tooltip"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "5px",
+          color: "#dc2626",
+          fontWeight: 700,
+          cursor: "help",
+        }}
+      >
+        <span aria-hidden="true">▲</span>
+        <span>Blocked</span>
+        <span className="blocked-step-tooltip-text">
+          {blockedReason(order)}
+        </span>
+      </span>
+    );
+  }
+
+  return <>{order.current_process_step || "–"}</>;
+}
+
 function KpiCard({ label, value, color, bgColor, active, onClick, subtitle }: CardProps) {
   return (
     <button
@@ -359,14 +393,14 @@ export default function DashboardPage() {
   );
 
   const dueThisWeek = activeOrders.filter(
-    (o) => isDueThisWeek(o.due_date) && !isBlocked(o),
+    (o) => isDueThisWeek(o.due_date),
   );
   const overdueOrders = activeOrders.filter(
     (o) => isOverdue(o.due_date) && !isBlocked(o),
   );
   const openActions = activeOrders.filter(hasOpenAction);
   const aogOrders = activeOrders.filter(
-    (o) => (o.priority === "AOG" || o.priority === "Yes") && !isBlocked(o),
+    (o) => o.priority === "AOG" || o.priority === "Yes",
   );
   const staleOrders = activeOrders.filter((o) => {
     const last = latestUpdate(o.last_system_update, o.last_manual_update);
@@ -518,6 +552,43 @@ export default function DashboardPage() {
     setActivePanel((prev) => (prev === panel ? null : panel));
   }
 
+  async function closeAction(order: WorkOrder) {
+    const confirmed = window.confirm(
+      `Close action for ${order.work_order_id}?\n\n` +
+        `This will clear the hold reason and unblock the work order.\n` +
+        `This action cannot be undone.`,
+    );
+
+    if (!confirmed) return;
+
+    const payload = {
+      action_status: "Done",
+      action_closed: true,
+      hold_reason: null,
+      required_next_action: null,
+      action_owner: null,
+      last_manual_update: new Date().toISOString(),
+    };
+
+    const { error } = await updateWorkOrder(order.work_order_id, payload);
+
+    if (error) {
+      window.alert(`Error: ${error.message}`);
+      return;
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.work_order_id === order.work_order_id
+          ? {
+              ...o,
+              ...payload,
+            }
+          : o,
+      ),
+    );
+  }
+
   // -----------------------------------------------------------------------
   // Detail table renderers
   // -----------------------------------------------------------------------
@@ -568,7 +639,9 @@ export default function DashboardPage() {
               <td style={cellStyle}>{formatDate(o.due_date)}</td>
               <td style={cellStyle}>{o.priority || "No"}</td>
               <td style={cellStyle}>{o.assigned_person_team || "–"}</td>
-              <td style={cellStyle}>{o.current_process_step || "–"}</td>
+              <td style={cellStyle}>
+                <ProcessStepDisplay order={o} />
+              </td>
             </tr>
           ))}
           {sorted.length === 0 && (
@@ -597,37 +670,76 @@ export default function DashboardPage() {
             <th style={headerStyle}>Action Required</th>
             <th style={headerStyle}>Action Owner</th>
             <th style={headerStyle}>Action Status</th>
+            <th style={headerStyle}>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {list.map((o) => (
-            <tr
-              key={o.work_order_id}
-              style={{ backgroundColor: o.hold_reason ? "#fff0f0" : "white" }}
-            >
-              <td style={{ ...cellStyle, fontWeight: 600 }}>
-                <Link href={`/office-update?wo=${o.work_order_id}`} style={woLinkStyle}>
-                  {o.work_order_id}
-                </Link>
-              </td>
-              <td style={cellStyle}>{o.customer || "–"}</td>
-              <td
-                style={{
-                  ...cellStyle,
-                  fontWeight: o.hold_reason ? "bold" : "normal",
-                }}
+          {list.map((o) => {
+            const isDone = o.action_status === "Done";
+
+            return (
+              <tr
+                key={o.work_order_id}
+                style={{ backgroundColor: o.hold_reason ? "#fff0f0" : "white" }}
               >
-                {o.hold_reason || "–"}
-              </td>
-              <td style={cellStyle}>{o.required_next_action || "–"}</td>
-              <td style={cellStyle}>{o.action_owner || "–"}</td>
-              <td style={cellStyle}>{o.action_status || "Open"}</td>
-            </tr>
-          ))}
+                <td style={{ ...cellStyle, fontWeight: 600 }}>
+                  <Link href={`/office-update?wo=${o.work_order_id}`} style={woLinkStyle}>
+                    {o.work_order_id}
+                  </Link>
+                </td>
+                <td style={cellStyle}>{o.customer || "–"}</td>
+                <td
+                  style={{
+                    ...cellStyle,
+                    fontWeight: o.hold_reason ? "bold" : "normal",
+                  }}
+                >
+                  {o.hold_reason || "–"}
+                </td>
+                <td style={cellStyle}>{o.required_next_action || "–"}</td>
+                <td style={cellStyle}>{o.action_owner || "–"}</td>
+                <td style={cellStyle}>
+                  <span
+                    style={{
+                      padding: "3px 8px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      borderRadius: "4px",
+                      backgroundColor: isDone ? "#dcfce7" : "#fef3c7",
+                      color: isDone ? "#16a34a" : "#92400e",
+                      display: "inline-block",
+                    }}
+                  >
+                    {isDone ? "Closed" : "Open"}
+                  </span>
+                </td>
+                <td style={cellStyle}>
+                  {!isDone && (
+                    <button
+                      onClick={() => void closeAction(o)}
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        border: "1px solid #dc2626",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                        backgroundColor: "white",
+                        color: "#dc2626",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Close action
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
           {list.length === 0 && (
             <tr>
               <td
-                colSpan={6}
+                colSpan={7}
                 style={{ ...cellStyle, textAlign: "center", color: "#999" }}
               >
                 No open actions
@@ -884,7 +996,6 @@ export default function DashboardPage() {
           bgColor="#eff6ff"
           active={activePanel === "due"}
           onClick={() => togglePanel("due")}
-          subtitle="non-blocked"
         />
         <KpiCard
           label="Overdue"
@@ -1230,3 +1341,4 @@ export default function DashboardPage() {
     </main>
   );
 }
+

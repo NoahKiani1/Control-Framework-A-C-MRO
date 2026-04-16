@@ -72,3 +72,35 @@ td {
 .stale-warning:hover {
   animation: none;
 }
+
+.blocked-step-tooltip {
+  position: relative;
+}
+
+.blocked-step-tooltip-text {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  z-index: 30;
+  min-width: 180px;
+  max-width: 320px;
+  margin-bottom: 6px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  background: #1f2937;
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  transition: opacity 0.12s ease;
+}
+
+.blocked-step-tooltip:hover .blocked-step-tooltip-text {
+  visibility: visible;
+  opacity: 1;
+}
