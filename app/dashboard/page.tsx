@@ -87,6 +87,14 @@ type DetailPanel =
   | "stale"
   | null;
 
+type HealthStatus = {
+  label: string;
+  color: string;
+  bg: string;
+  reason: string;
+  panel: DetailPanel;
+};
+
 // Refined palette — modern, clean, professional
 const COLORS = {
   // Surfaces
@@ -620,14 +628,44 @@ export default function DashboardPage() {
     setActivePanel((prev) => (prev === panel ? null : panel));
   }
 
-  function getHealthStatus(): { label: string; color: string; bg: string } {
+  function getHealthStatus(): HealthStatus {
     if (overdueOrders.length > 0)
-      return { label: "Attention needed", color: COLORS.red, bg: COLORS.redSoft };
+      return {
+        label: "Attention needed",
+        color: COLORS.red,
+        bg: COLORS.redSoft,
+        reason: `${overdueOrders.length} overdue work ${
+          overdueOrders.length === 1 ? "order needs" : "orders need"
+        } attention.`,
+        panel: "overdue",
+      };
     if (openActions.length > 0)
-      return { label: "Blockers active", color: COLORS.amber, bg: COLORS.amberSoft };
+      return {
+        label: "Blockers active",
+        color: COLORS.amber,
+        bg: COLORS.amberSoft,
+        reason: `${openActions.length} open action ${
+          openActions.length === 1 ? "is" : "are"
+        } blocking flow.`,
+        panel: "actions",
+      };
     if ((thisWeek?.percentage ?? 0) >= 85)
-      return { label: "High load", color: COLORS.amber, bg: COLORS.amberSoft };
-    return { label: "Flow stable", color: COLORS.green, bg: COLORS.greenSoft };
+      return {
+        label: "High load",
+        color: COLORS.amber,
+        bg: COLORS.amberSoft,
+        reason: `This week is at ${Math.round(
+          thisWeek?.percentage ?? 0,
+        )}% of available capacity.`,
+        panel: null,
+      };
+    return {
+      label: "Flow stable",
+      color: COLORS.green,
+      bg: COLORS.greenSoft,
+      reason: "No overdue orders, blockers, or capacity warnings right now.",
+      panel: null,
+    };
   }
 
   const health = getHealthStatus();
@@ -1085,7 +1123,7 @@ export default function DashboardPage() {
                 marginBottom: "8px",
               }}
             >
-              A.C. MRO Operations
+              Aircraft & Component MRO&apos;s Wheels & Brake Shop
             </div>
 
             <h1
@@ -1098,7 +1136,7 @@ export default function DashboardPage() {
                 letterSpacing: "-0.025em",
               }}
             >
-              MRO Control Tower
+              Planning & Monitoring Tool
             </h1>
 
             <p
@@ -1113,13 +1151,21 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div
+          <button
+            type="button"
+            aria-label={`${health.label}: ${health.reason}`}
+            onClick={() => {
+              if (health.panel) {
+                setActivePanel(health.panel);
+              }
+            }}
             style={{
+              position: "relative",
               display: "inline-flex",
               alignItems: "center",
               gap: "8px",
               padding: "8px 14px",
-              borderRadius: "999px",
+              borderRadius: "8px",
               backgroundColor: health.bg,
               color: health.color,
               border: `1px solid ${health.color}33`,
@@ -1127,7 +1173,10 @@ export default function DashboardPage() {
               fontWeight: 600,
               whiteSpace: "nowrap",
               flexShrink: 0,
+              cursor: health.panel ? "pointer" : "help",
+              fontFamily: FONT_STACK,
             }}
+            className="health-status"
           >
             <span
               style={{
@@ -1139,7 +1188,11 @@ export default function DashboardPage() {
               }}
             />
             {health.label}
-          </div>
+            <span className="health-status-tooltip">
+              {health.reason}
+              {health.panel ? " Click to view the affected work orders." : ""}
+            </span>
+          </button>
         </header>
 
         {/* TOP STATS STRIP — capacity (prominent), active, engineers */}
@@ -1236,7 +1289,7 @@ export default function DashboardPage() {
                   ? "HIGH LOAD"
                   : thisWeek?.status === "orange"
                     ? "WATCH"
-                    : "HEALTHY"}
+                  : "ENOUGH CAPACITY"}
               </div>
             </div>
 

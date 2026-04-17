@@ -104,3 +104,32 @@ td {
   visibility: visible;
   opacity: 1;
 }
+
+.health-status-tooltip {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: 320px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: #1f2937;
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  transition: opacity 0.12s ease;
+}
+
+.health-status:hover .health-status-tooltip,
+.health-status:focus-visible .health-status-tooltip {
+  visibility: visible;
+  opacity: 1;
+}

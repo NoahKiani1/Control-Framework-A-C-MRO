@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -33,19 +34,31 @@ export function Navigation() {
     >
       <Link
         href="/dashboard"
+        aria-label="Dashboard home"
         style={{
-          display: "block",
-          padding: "10px 12px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-start",
+          padding: "0 0 0 2px",
           borderRadius: "8px",
-          backgroundColor: "#2563eb",
-          color: "white",
+          backgroundColor: "transparent",
           textDecoration: "none",
-          fontWeight: 700,
-          fontSize: "14px",
-          marginBottom: "18px",
+          marginBottom: "16px",
         }}
       >
-        ⌂ Home
+        <Image
+          src="/company-logo.png"
+          alt="Aircraft & Component"
+          width={1094}
+          height={1094}
+          priority
+          style={{
+            width: "100%",
+            maxWidth: "76px",
+            height: "auto",
+            display: "block",
+          }}
+        />
       </Link>
 
       <nav style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
