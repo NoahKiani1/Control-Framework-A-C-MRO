@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getEngineers } from "@/lib/engineers";
-import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
+import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
+import { getWorkOrders, updateWorkOrderAndFetch } from "@/lib/work-orders";
 import { autoAssignForStep } from "@/lib/auto-assign";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
@@ -56,6 +56,22 @@ const EMPTY_FORM: FormState = {
   is_active: true,
 };
 
+type Absence = {
+  engineer_id: number;
+  absence_date: string;
+};
+
+const WORK_ORDER_SELECT =
+  "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, required_next_action, action_owner, action_status, action_closed, is_active, work_order_type, current_process_step, part_number";
+
+function localDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 const COLORS = {
   pageBg: "#f7f2e8",
   panelBg: "#fcfaf6",
@@ -81,6 +97,7 @@ export default function OfficeUpdatePage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
   const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
+  const [todayAbsentEngineerIds, setTodayAbsentEngineerIds] = useState<number[]>([]);
   const [mode, setMode] = useState<Mode>(null);
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -120,10 +137,10 @@ export default function OfficeUpdatePage() {
 
   useEffect(() => {
     async function load() {
-      const [wo, staffData] = await Promise.all([
+      const today = localDateKey();
+      const [wo, staffData, absenceData] = await Promise.all([
         getWorkOrders<WorkOrder>({
-          select:
-            "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, required_next_action, action_owner, action_status, action_closed, is_active, work_order_type, current_process_step, part_number",
+          select: WORK_ORDER_SELECT,
           isOpen: true,
           orderBy: { column: "work_order_id", ascending: false },
         }),
@@ -132,10 +149,19 @@ export default function OfficeUpdatePage() {
           isActive: true,
           orderBy: { column: "name" },
         }),
+        getEngineerAbsences<Absence>({
+          select: "engineer_id, absence_date",
+          fromDate: today,
+        }),
       ]);
 
       setShopStaff(staffData.filter((s) => s.role === "shop"));
       setOfficeStaff(staffData.filter((s) => s.role === "office"));
+      setTodayAbsentEngineerIds(
+        absenceData
+          .filter((absence) => absence.absence_date === today)
+          .map((absence) => absence.engineer_id),
+      );
       setOrders(wo);
       setLoading(false);
 
@@ -171,6 +197,21 @@ export default function OfficeUpdatePage() {
   const selectedOrder = useMemo(
     () => orders.find((o) => o.work_order_id === selectedId),
     [orders, selectedId],
+  );
+
+  const todayAbsentEngineerIdSet = useMemo(
+    () => new Set(todayAbsentEngineerIds),
+    [todayAbsentEngineerIds],
+  );
+
+  const todayAbsentShopEngineerNames = useMemo(
+    () =>
+      new Set(
+        shopStaff
+          .filter((staffMember) => todayAbsentEngineerIdSet.has(staffMember.id))
+          .map((staffMember) => staffMember.name),
+      ),
+    [shopStaff, todayAbsentEngineerIdSet],
   );
 
   const dueDateRequired = form.priority === "Yes" || form.priority === "AOG";
@@ -234,10 +275,15 @@ export default function OfficeUpdatePage() {
       return;
     }
 
-    const normalizedAssigned = autoAssignForStep(
+    if (todayAbsentShopEngineerNames.has(form.assigned_person_team)) {
+      setSaveStatus(
+        `${form.assigned_person_team} is absent today. Choose another engineer or Shop (default).`,
+      );
+      return;
+    }
+
+    const normalizedAssigned = normalizeAssignedPersonTeam(
       form.assigned_person_team,
-      selectedOrder.current_process_step,
-      shopStaff,
     );
     const normalizedHoldReason = form.hold_reason.trim();
     const normalizedRequiredAction = form.required_next_action.trim();
@@ -262,7 +308,11 @@ export default function OfficeUpdatePage() {
       last_manual_update: new Date().toISOString(),
     };
 
-    const { error } = await updateWorkOrder(selectedId, payload);
+    const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
+      selectedId,
+      payload,
+      WORK_ORDER_SELECT,
+    );
 
     if (error) {
       setSaveStatus(`Error: ${error.message}`);
@@ -271,13 +321,7 @@ export default function OfficeUpdatePage() {
 
     setOrders((prev) =>
       prev.map((o) =>
-        o.work_order_id === selectedId
-          ? {
-              ...o,
-              ...payload,
-              assigned_person_team: normalizedAssigned,
-            }
-          : o,
+        o.work_order_id === selectedId && savedOrder ? savedOrder : o,
       ),
     );
 
@@ -300,11 +344,16 @@ export default function OfficeUpdatePage() {
         selectedOrder.assigned_person_team,
         nextProcessStep,
         shopStaff,
+        todayAbsentShopEngineerNames,
       ),
       last_manual_update: new Date().toISOString(),
     };
 
-    const { error } = await updateWorkOrder(selectedId, payload);
+    const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
+      selectedId,
+      payload,
+      WORK_ORDER_SELECT,
+    );
 
     if (error) {
       setSaveStatus(`Error: ${error.message}`);
@@ -313,7 +362,7 @@ export default function OfficeUpdatePage() {
 
     setOrders((prev) =>
       prev.map((o) =>
-        o.work_order_id === selectedId ? { ...o, ...payload } : o,
+        o.work_order_id === selectedId && savedOrder ? savedOrder : o,
       ),
     );
 
@@ -728,8 +777,15 @@ export default function OfficeUpdatePage() {
                           >
                             <option value="">Shop (default)</option>
                             {shopStaff.map((s) => (
-                              <option key={s.id} value={s.name}>
+                              <option
+                                key={s.id}
+                                value={s.name}
+                                disabled={todayAbsentEngineerIdSet.has(s.id)}
+                              >
                                 {s.name}
+                                {todayAbsentEngineerIdSet.has(s.id)
+                                  ? " (absent today)"
+                                  : ""}
                               </option>
                             ))}
                           </select>

@@ -66,6 +66,7 @@ type CardProps = {
 };
 
 type AbsenceDayImpact = {
+  dateKey: string;
   dateLabel: string;
   date: Date;
   absentEngineers: { name: string; restrictions: string[] | null }[];
@@ -76,6 +77,17 @@ type AbsenceDayImpact = {
     current_step: string;
     blocked_remaining_steps: string[];
   }[];
+};
+
+type AbsencePeriodImpact = {
+  key: string;
+  signature: string;
+  dateLabel: string;
+  startDate: Date;
+  endDate: Date;
+  absentEngineers: AbsenceDayImpact["absentEngineers"];
+  unavailableSteps: string[];
+  affectedOrders: AbsenceDayImpact["affectedOrders"];
 };
 
 type DetailPanel =
@@ -174,6 +186,45 @@ function formatAnimatedNumber(value: number, decimals: number): string {
   if (decimals === 0) return String(Math.round(value));
   const rounded = Number(value.toFixed(decimals));
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(decimals);
+}
+
+function toLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalDateKey(dateKey: string): Date {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function formatAbsenceDate(date: Date): string {
+  return date.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function formatAbsenceDateRange(startDate: Date, endDate: Date): string {
+  const startLabel = formatAbsenceDate(startDate);
+  const endLabel = formatAbsenceDate(endDate);
+  return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
+}
+
+function getAbsenceImpactSignature(day: AbsenceDayImpact): string {
+  return JSON.stringify({
+    absent: day.absentEngineers.map((e) => e.name),
+    unavailableSteps: day.unavailableSteps,
+    affectedOrders: day.affectedOrders.map((o) => ({
+      id: o.work_order_id,
+      steps: o.blocked_remaining_steps,
+    })),
+  });
 }
 
 function AnimatedNumber({
@@ -421,7 +472,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
-      const today = new Date().toISOString().split("T")[0];
+      const today = toLocalDateKey(new Date());
       await deletePastEngineerAbsences(today);
 
       const [wo, eng, abs] = await Promise.all([
@@ -489,14 +540,10 @@ export default function DashboardPage() {
     return isStale(last);
   });
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = toLocalDateKey(new Date());
   const absenceDates = absences
     .filter((a) => a.absence_date >= todayStr)
-    .map((a) => {
-      const d = new Date(a.absence_date + "T00:00:00");
-      d.setHours(0, 0, 0, 0);
-      return d;
-    });
+    .map((a) => parseLocalDateKey(a.absence_date));
 
   const { weeks } = calculateWeekCapacity(
     activeOrders.map((o) => ({
@@ -556,7 +603,7 @@ export default function DashboardPage() {
 
   const absenceDayImpacts: AbsenceDayImpact[] = remainingWorkDays
     .map((day) => {
-      const dayStr = day.toISOString().split("T")[0];
+      const dayStr = toLocalDateKey(day);
 
       const absentIds = new Set(
         absences
@@ -604,11 +651,8 @@ export default function DashboardPage() {
           : [];
 
       return {
-        dateLabel: day.toLocaleDateString("en-GB", {
-          weekday: "short",
-          day: "numeric",
-          month: "short",
-        }),
+        dateKey: dayStr,
+        dateLabel: formatAbsenceDate(day),
         date: day,
         absentEngineers,
         unavailableSteps,
@@ -617,12 +661,51 @@ export default function DashboardPage() {
     })
     .filter(Boolean) as AbsenceDayImpact[];
 
+  const absencePeriodImpacts = absenceDayImpacts.reduce<AbsencePeriodImpact[]>(
+    (periods, day) => {
+      const previous = periods[periods.length - 1];
+      const previousDay = previous ? new Date(previous.endDate) : null;
+      previousDay?.setDate(previousDay.getDate() + 1);
+
+      const isConsecutive =
+        previousDay !== null && toLocalDateKey(previousDay) === day.dateKey;
+      const matchesPrevious =
+        previous !== undefined &&
+        previous.signature === getAbsenceImpactSignature(day);
+
+      if (previous && isConsecutive && matchesPrevious) {
+        previous.endDate = day.date;
+        previous.dateLabel = formatAbsenceDateRange(
+          previous.startDate,
+          previous.endDate,
+        );
+        return periods;
+      }
+
+      const signature = getAbsenceImpactSignature(day);
+
+      periods.push({
+        key: `${day.dateKey}|${signature}`,
+        signature,
+        dateLabel: day.dateLabel,
+        startDate: day.date,
+        endDate: day.date,
+        absentEngineers: day.absentEngineers,
+        unavailableSteps: day.unavailableSteps,
+        affectedOrders: day.affectedOrders,
+      });
+
+      return periods;
+    },
+    [],
+  );
+
   const totalAffectedOrders = new Set(
-    absenceDayImpacts.flatMap((d) =>
+    absencePeriodImpacts.flatMap((d) =>
       d.affectedOrders.map((o) => o.work_order_id),
     ),
   ).size;
-  const hasAbsences = absenceDayImpacts.length > 0;
+  const hasAbsences = absencePeriodImpacts.length > 0;
 
   function togglePanel(panel: DetailPanel) {
     setActivePanel((prev) => (prev === panel ? null : panel));
@@ -1595,13 +1678,13 @@ export default function DashboardPage() {
 
             {hasAbsences && (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {absenceDayImpacts.map((day) => {
-                  const isExpanded = expandedDays.has(day.dateLabel);
-                  const hasImpact = day.affectedOrders.length > 0;
+                {absencePeriodImpacts.map((absence) => {
+                  const isExpanded = expandedDays.has(absence.key);
+                  const hasImpact = absence.affectedOrders.length > 0;
 
                   return (
                     <div
-                      key={day.dateLabel}
+                      key={absence.key}
                       style={{
                         padding: "12px 14px",
                         backgroundColor: hasImpact ? COLORS.redSoft : COLORS.surfaceSubtle,
@@ -1626,7 +1709,7 @@ export default function DashboardPage() {
                             color: COLORS.heading,
                           }}
                         >
-                          {day.dateLabel}
+                          {absence.dateLabel}
                         </div>
                         {hasImpact && (
                           <span
@@ -1643,10 +1726,10 @@ export default function DashboardPage() {
                       </div>
 
                       <div style={{ fontSize: "12px", color: COLORS.textSoft }}>
-                        Absent: {day.absentEngineers.map((e) => e.name).join(", ")}
+                        Absent: {absence.absentEngineers.map((e) => e.name).join(", ")}
                       </div>
 
-                      {day.unavailableSteps.length > 0 && (
+                      {absence.unavailableSteps.length > 0 && (
                         <div
                           style={{
                             marginTop: "8px",
@@ -1655,7 +1738,7 @@ export default function DashboardPage() {
                             fontWeight: 600,
                           }}
                         >
-                          No qualified engineer for: {day.unavailableSteps.join(", ")}
+                          No qualified engineer for: {absence.unavailableSteps.join(", ")}
                         </div>
                       )}
 
@@ -1664,10 +1747,10 @@ export default function DashboardPage() {
                           onClick={() => {
                             setExpandedDays((prev) => {
                               const next = new Set(prev);
-                              if (next.has(day.dateLabel)) {
-                                next.delete(day.dateLabel);
+                              if (next.has(absence.key)) {
+                                next.delete(absence.key);
                               } else {
-                                next.add(day.dateLabel);
+                                next.add(absence.key);
                               }
                               return next;
                             });
@@ -1687,14 +1770,14 @@ export default function DashboardPage() {
                           }}
                         >
                           <span style={{ fontSize: "10px" }}>{isExpanded ? "▾" : "▸"}</span>
-                          <AnimatedNumber value={day.affectedOrders.length} />{" "}
-                          {day.affectedOrders.length === 1 ? "order" : "orders"} at risk
+                          <AnimatedNumber value={absence.affectedOrders.length} />{" "}
+                          {absence.affectedOrders.length === 1 ? "order" : "orders"} at risk
                         </button>
                       )}
 
                       {hasImpact && isExpanded && (
                         <div style={{ marginTop: "10px" }}>
-                          {day.affectedOrders.map((o) => (
+                          {absence.affectedOrders.map((o) => (
                             <div
                               key={o.work_order_id}
                               style={{
@@ -1736,7 +1819,7 @@ export default function DashboardPage() {
                         </div>
                       )}
 
-                      {day.unavailableSteps.length === 0 && (
+                      {absence.unavailableSteps.length === 0 && (
                         <div
                           style={{
                             marginTop: "6px",

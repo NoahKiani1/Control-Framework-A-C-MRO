@@ -15,30 +15,44 @@ export function autoAssignForStep(
   currentAssignedPersonTeam: string | null | undefined,
   currentProcessStep: string | null | undefined,
   engineers: AssignableEngineer[],
+  unavailableEngineerNames: Set<string> = new Set(),
 ): string {
   const normalizedAssigned = normalizeAssignedPersonTeam(currentAssignedPersonTeam);
   const step = currentProcessStep?.trim();
 
   if (!step) return normalizedAssigned;
 
-  const eligibleEngineers = engineers.filter((engineer) =>
+  if (normalizedAssigned === DEFAULT_ASSIGNED_PERSON_TEAM) {
+    return normalizedAssigned;
+  }
+
+  const availableEngineers = engineers.filter(
+    (engineer) => !unavailableEngineerNames.has(engineer.name),
+  );
+
+  const eligibleEngineers = availableEngineers.filter((engineer) =>
     canPerformStep(engineer.restrictions, step),
   );
 
-  if (eligibleEngineers.length === 0) return normalizedAssigned;
+  if (eligibleEngineers.length === 0) {
+    return normalizedAssigned;
+  }
 
   const assignedEngineer = engineers.find(
     (engineer) => engineer.name === normalizedAssigned,
   );
+  const assignedEngineerUnavailable =
+    assignedEngineer && unavailableEngineerNames.has(assignedEngineer.name);
 
   if (
     assignedEngineer &&
+    !assignedEngineerUnavailable &&
     canPerformStep(assignedEngineer.restrictions, step)
   ) {
     return normalizedAssigned;
   }
 
-  if (normalizedAssigned !== DEFAULT_ASSIGNED_PERSON_TEAM && !assignedEngineer) {
+  if (!assignedEngineer) {
     return normalizedAssigned;
   }
 

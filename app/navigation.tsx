@@ -18,6 +18,8 @@ const navItems = [
 export function Navigation() {
   const pathname = usePathname();
 
+  if (pathname === "/shop") return null;
+
   return (
     <aside
       style={{

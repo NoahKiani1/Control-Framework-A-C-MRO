@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { READY_TO_CLOSE_STEP } from "@/lib/process-steps";
 import { canPerformStep } from "@/lib/restrictions";
 import {
@@ -47,6 +47,30 @@ type Absence = {
 };
 
 const NO_QUALIFIED_ENGINEER_REASON = "No Qualified Engineer Present";
+const FONT_STACK =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const AUTO_SCROLL_SPEED_PX_PER_SECOND = 18;
+const AUTO_SCROLL_TOP_PAUSE_MS = 7000;
+const AUTO_SCROLL_SECTION_PAUSE_MS = 5000;
+const AUTO_SCROLL_BOTTOM_PAUSE_MS = 9000;
+
+const COLORS = {
+  pageBg: "#eef2f6",
+  ink: "#111827",
+  muted: "#526071",
+  soft: "#f8fafc",
+  panel: "#ffffff",
+  border: "#cbd5e1",
+  green: "#087f5b",
+  greenBg: "#dff7ec",
+  red: "#c92a2a",
+  redBg: "#ffe3e3",
+  amber: "#b7791f",
+  amberBg: "#fff3bf",
+  blue: "#1d4ed8",
+  blueBg: "#dbeafe",
+  dark: "#172033",
+};
 
 function localDateKey(date = new Date()): string {
   const year = date.getFullYear();
@@ -98,26 +122,52 @@ function AssignedPerson({
   const displayName = normalizeAssignedPersonTeam(name);
 
   if (!photoUrl || imageFailed) {
-    return <>{displayName}</>;
+    return (
+      <span
+        style={{
+          display: "block",
+          color: COLORS.muted,
+          fontSize: "22px",
+          fontWeight: 900,
+          lineHeight: 1.12,
+          overflowWrap: "anywhere",
+        }}
+      >
+        {displayName}
+      </span>
+    );
   }
 
   return (
-    <span style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <span
+      style={{
+        display: "grid",
+        justifyItems: "center",
+        gap: "8px",
+        color: COLORS.muted,
+        fontSize: "18px",
+        fontWeight: 900,
+        lineHeight: 1.1,
+      }}
+    >
       <Image
         src={photoUrl}
         alt={displayName}
-        width={38}
-        height={38}
+        width={92}
+        height={92}
         unoptimized
         onError={() => setImageFailed(true)}
         style={{
-          width: "38px",
-          height: "38px",
+          width: "92px",
+          height: "92px",
           borderRadius: "50%",
-          objectFit: "contain",
+          objectFit: "cover",
           flexShrink: 0,
+          border: `3px solid ${COLORS.border}`,
+          backgroundColor: COLORS.soft,
         }}
       />
+      <span>{displayName}</span>
     </span>
   );
 }
@@ -126,6 +176,10 @@ export default function ShopPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [loading, setLoading] = useState(true);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const activeSectionRef = useRef<HTMLElement | null>(null);
+  const blockedSectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -169,42 +223,203 @@ export default function ShopPage() {
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) return <p style={{ padding: "2rem", fontSize: "24px" }}>Loading...</p>;
+  useEffect(() => {
+    if (loading) return;
+
+    const viewport = scrollerRef.current;
+    const content = contentRef.current;
+    if (!viewport || !content) return;
+    const scrollViewport: HTMLDivElement = viewport;
+    const scrollContent: HTMLDivElement = content;
+
+    let frame = 0;
+    let lastTimestamp: number | null = null;
+    let currentOffset = 0;
+    let previousOffset = 0;
+    let pauseUntil = performance.now() + AUTO_SCROLL_TOP_PAUSE_MS;
+    let shouldResetToTop = false;
+    const pausedTargets = new Set<number>();
+
+    function applyOffset(offset: number) {
+      scrollContent.style.transform = `translate3d(0, -${offset}px, 0)`;
+    }
+
+    function getPauseTargets() {
+      const maxScroll = Math.max(
+        0,
+        scrollContent.scrollHeight - scrollViewport.clientHeight,
+      );
+      const sectionTargets = [activeSectionRef.current, blockedSectionRef.current]
+        .map((section) => {
+          if (!section) return null;
+          return Math.max(0, section.offsetTop - 18);
+        })
+        .filter((target): target is number => target !== null && target <= maxScroll);
+
+      return [...new Set([0, ...sectionTargets, maxScroll])].sort((a, b) => a - b);
+    }
+
+    function tick(timestamp: number) {
+      const maxScroll = Math.max(
+        0,
+        scrollContent.scrollHeight - scrollViewport.clientHeight,
+      );
+
+      if (maxScroll <= 4) {
+        currentOffset = 0;
+        previousOffset = 0;
+        applyOffset(0);
+        frame = requestAnimationFrame(tick);
+        return;
+      }
+
+      if (timestamp < pauseUntil) {
+        lastTimestamp = timestamp;
+        frame = requestAnimationFrame(tick);
+        return;
+      }
+
+      if (shouldResetToTop) {
+        currentOffset = 0;
+        previousOffset = 0;
+        applyOffset(0);
+        pausedTargets.clear();
+        shouldResetToTop = false;
+        pauseUntil = timestamp + AUTO_SCROLL_TOP_PAUSE_MS;
+        lastTimestamp = timestamp;
+        frame = requestAnimationFrame(tick);
+        return;
+      }
+
+      const deltaMs = lastTimestamp === null ? 0 : timestamp - lastTimestamp;
+      lastTimestamp = timestamp;
+      const nextOffset = Math.min(
+        maxScroll,
+        currentOffset + (AUTO_SCROLL_SPEED_PX_PER_SECOND * deltaMs) / 1000,
+      );
+
+      currentOffset = nextOffset;
+      applyOffset(currentOffset);
+
+      const reachedTarget = getPauseTargets().find(
+        (target) =>
+          target > previousOffset + 1 &&
+          target <= nextOffset + 1 &&
+          !pausedTargets.has(target),
+      );
+
+      if (reachedTarget !== undefined && reachedTarget < maxScroll - 1) {
+        currentOffset = reachedTarget;
+        applyOffset(currentOffset);
+        pausedTargets.add(reachedTarget);
+        pauseUntil = timestamp + AUTO_SCROLL_SECTION_PAUSE_MS;
+      }
+
+      if (nextOffset >= maxScroll - 1) {
+        pauseUntil = timestamp + AUTO_SCROLL_BOTTOM_PAUSE_MS;
+        shouldResetToTop = true;
+      }
+
+      previousOffset = currentOffset;
+      frame = requestAnimationFrame(tick);
+    }
+
+    applyOffset(0);
+    frame = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      scrollContent.style.transform = "translate3d(0, 0, 0)";
+    };
+  }, [loading, orders.length]);
+
+  if (loading) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          backgroundColor: COLORS.pageBg,
+          color: COLORS.ink,
+          fontFamily: FONT_STACK,
+          fontSize: "34px",
+          fontWeight: 800,
+        }}
+      >
+        Loading shop wall...
+      </main>
+    );
+  }
 
   const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
   const blockedOrders = orders.filter((o) => isBlocked(o));
   const engineerByName = new Map(engineers.map((e) => [e.name, e]));
 
-  const cellStyle: React.CSSProperties = {
-    padding: "10px 14px",
-    borderBottom: "2px solid #ddd",
+  const cardStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "260px minmax(0, 1fr) minmax(340px, 1.05fr) 170px",
+    gap: "24px",
+    alignItems: "center",
+    minHeight: "166px",
+    padding: "24px 28px",
+    borderRadius: "8px",
+    border: `2px solid ${COLORS.border}`,
+    backgroundColor: COLORS.panel,
+    boxShadow: "0 8px 22px rgba(15, 23, 42, 0.08)",
+  };
+
+  const labelStyle: React.CSSProperties = {
+    marginBottom: "8px",
+    color: COLORS.muted,
     fontSize: "18px",
-    whiteSpace: "normal",
-    overflowWrap: "anywhere",
-    verticalAlign: "top",
-    textAlign: "left",
+    fontWeight: 800,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
   };
 
-  const headerStyle: React.CSSProperties = {
-    ...cellStyle,
-    fontWeight: "bold",
-    backgroundColor: "#f5f5f5",
-    position: "sticky",
-    top: 0,
-    fontSize: "16px",
-  };
+  function priorityStyle(order: WorkOrder): React.CSSProperties {
+    const base: React.CSSProperties = {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      minWidth: "96px",
+      padding: "10px 16px",
+      borderRadius: "8px",
+      fontSize: "24px",
+      fontWeight: 900,
+      border: `2px solid ${COLORS.border}`,
+    };
 
-  function rowColor(order: WorkOrder): string {
-    if (order.priority === "AOG") return "#fff0f0";
-    if (order.priority === "Yes") return "#fff8e0";
-    if (isBlocked(order)) return "#f0f0f0";
-    return "white";
+    if (order.priority === "AOG") {
+      return {
+        ...base,
+        color: COLORS.red,
+        backgroundColor: COLORS.redBg,
+        borderColor: "#ffc9c9",
+      };
+    }
+
+    if (order.priority === "Yes") {
+      return {
+        ...base,
+        color: COLORS.amber,
+        backgroundColor: COLORS.amberBg,
+        borderColor: "#ffe066",
+      };
+    }
+
+    return {
+      ...base,
+      color: COLORS.muted,
+      backgroundColor: COLORS.soft,
+    };
   }
 
-  function prioLabel(order: WorkOrder): string {
-    if (order.priority === "AOG") return "🔴 AOG";
-    if (order.priority === "Yes") return "🟡 Prio";
-    return "–";
+  function prioLabel(order: WorkOrder): string | null {
+    if (order.priority === "AOG") return "AOG";
+    if (order.priority === "Yes") return "PRIO";
+    return null;
   }
 
   function holdReasonDisplay(o: WorkOrder): string {
@@ -212,156 +427,282 @@ export default function ShopPage() {
     const rfqState = normalizeRfqState(o.rfq_state);
     if (rfqState === "rfq rejected") return "RFQ Rejected";
     if (rfqState === "rfq send") return "Waiting for RFQ Approval";
-    return "–";
+    return "-";
   }
 
-  function renderNonBlockedOrdersTable(list: WorkOrder[]) {
-    return (
-      <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
-          <colgroup>
-            <col style={{ width: "12%" }} />
-            <col style={{ width: "18%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "11%" }} />
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "8%" }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th style={headerStyle}>WO</th>
-              <th style={headerStyle}>Customer</th>
-              <th style={headerStyle}>Part Number</th>
-              <th style={headerStyle}>Type</th>
-              <th style={headerStyle}>Prio</th>
-              <th style={headerStyle}>Due Date</th>
-              <th style={headerStyle}>Next Process Step</th>
-              <th style={headerStyle}>Assigned</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.map((o) => (
-              <tr
-                key={o.work_order_id}
-                style={{ backgroundColor: rowColor(o) }}
-              >
-                <td style={{ ...cellStyle, fontWeight: "bold" }}>
-                  {o.work_order_id}
-                </td>
-                <td style={cellStyle}>{o.customer || "–"}</td>
-                <td style={cellStyle}>{o.part_number || "–"}</td>
-                <td style={cellStyle}>{o.work_order_type || "–"}</td>
-                <td style={cellStyle}>{prioLabel(o)}</td>
-                <td style={cellStyle}>{formatDate(o.due_date)}</td>
-                <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                <td style={{ ...cellStyle, textAlign: "center" }}>
-                  {(() => {
-                    const assignedPersonTeam = normalizeAssignedPersonTeam(
-                      o.assigned_person_team,
-                    );
+  function renderOrderCard(order: WorkOrder, blocked = false) {
+    const assignedPersonTeam = normalizeAssignedPersonTeam(order.assigned_person_team);
+    const engineer = engineerByName.get(assignedPersonTeam);
+    const statusColor = blocked ? COLORS.red : COLORS.green;
+    const statusBg = blocked ? COLORS.redBg : COLORS.greenBg;
 
-                    return (
-                      <AssignedPerson
-                        name={assignedPersonTeam}
-                        photoUrl={getEngineerPhotoUrl(
-                          engineerByName.get(assignedPersonTeam)?.photo_path,
-                        )}
-                      />
-                    );
-                  })()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    return (
+      <article
+        key={order.work_order_id}
+        style={{
+          ...cardStyle,
+          borderLeft: `16px solid ${statusColor}`,
+          backgroundColor:
+            order.priority === "AOG"
+              ? "#fff5f5"
+              : order.priority === "Yes"
+                ? "#fff9db"
+                : COLORS.panel,
+        }}
+      >
+        <div>
+          <div style={labelStyle}>Work order</div>
+          <div
+            style={{
+              color: COLORS.ink,
+              fontSize: "38px",
+              fontWeight: 950,
+              lineHeight: 1.05,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {order.work_order_id}
+          </div>
+          <div
+            style={{
+              marginTop: "12px",
+              color: COLORS.muted,
+              fontSize: "28px",
+              fontWeight: 850,
+              lineHeight: 1.12,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {order.part_number || "-"}
+          </div>
+          <div
+            style={{
+              marginTop: "14px",
+              display: "inline-flex",
+              padding: "8px 12px",
+              borderRadius: "8px",
+              color: statusColor,
+              backgroundColor: statusBg,
+              fontSize: "20px",
+              fontWeight: 900,
+            }}
+          >
+            {blocked ? "BLOCKED" : "READY"}
+          </div>
+        </div>
+
+        <div>
+          <div style={labelStyle}>Customer</div>
+          <div
+            style={{
+              color: COLORS.ink,
+              fontSize: "34px",
+              fontWeight: 850,
+              lineHeight: 1.12,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {order.customer || "-"}
+          </div>
+        </div>
+
+        <div>
+          <div style={labelStyle}>{blocked ? "Hold reason" : "Next step"}</div>
+          <div
+            style={{
+              color: blocked ? COLORS.red : COLORS.blue,
+              fontSize: "34px",
+              fontWeight: 900,
+              lineHeight: 1.12,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {blocked ? holdReasonDisplay(order) : order.current_process_step || "-"}
+          </div>
+          <div
+            style={{
+              marginTop: "10px",
+              color: COLORS.muted,
+              fontSize: "23px",
+              fontWeight: 750,
+              lineHeight: 1.15,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {blocked
+              ? order.required_next_action || "Action required"
+              : order.work_order_type || "-"}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gap: "14px",
+            justifyItems: "center",
+            textAlign: "center",
+          }}
+        >
+          {prioLabel(order) && (
+            <span style={priorityStyle(order)}>{prioLabel(order)}</span>
+          )}
+          <div>
+            <div style={{ ...labelStyle, marginBottom: "6px", fontSize: "16px" }}>
+              Due
+            </div>
+            <div
+              style={{
+                color: COLORS.ink,
+                fontSize: "25px",
+                fontWeight: 900,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {formatDate(order.due_date)}
+            </div>
+          </div>
+          {!blocked && (
+            <AssignedPerson
+              name={assignedPersonTeam}
+              photoUrl={getEngineerPhotoUrl(engineer?.photo_path)}
+            />
+          )}
+        </div>
+      </article>
     );
   }
 
-  function renderBlockedOrdersTable(list: WorkOrder[]) {
+  function renderOrderSection(
+    title: string,
+    subtitle: string,
+    list: WorkOrder[],
+    blocked = false,
+    ref?: React.Ref<HTMLElement>,
+  ) {
     return (
-      <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
-          <colgroup>
-            <col style={{ width: "12%" }} />
-            <col style={{ width: "18%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "11%" }} />
-            <col style={{ width: "12%" }} />
-            <col style={{ width: "10%" }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th style={headerStyle}>WO</th>
-              <th style={headerStyle}>Customer</th>
-              <th style={headerStyle}>Part Number</th>
-              <th style={headerStyle}>Type</th>
-              <th style={headerStyle}>Prio</th>
-              <th style={headerStyle}>Due Date</th>
-              <th style={headerStyle}>Hold Reason</th>
-              <th style={headerStyle}>Action Required</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.map((o) => (
-              <tr
-                key={o.work_order_id}
-                style={{ backgroundColor: rowColor(o) }}
-              >
-                <td style={{ ...cellStyle, fontWeight: "bold" }}>
-                  {o.work_order_id}
-                </td>
-                <td style={cellStyle}>{o.customer || "–"}</td>
-                <td style={cellStyle}>{o.part_number || "–"}</td>
-                <td style={cellStyle}>{o.work_order_type || "–"}</td>
-                <td style={cellStyle}>{prioLabel(o)}</td>
-                <td style={cellStyle}>{formatDate(o.due_date)}</td>
-                <td style={cellStyle}>{holdReasonDisplay(o)}</td>
-                <td style={cellStyle}>{o.required_next_action || "–"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <section ref={ref} style={{ marginTop: "26px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "24px",
+            padding: "18px 22px",
+            borderRadius: "8px",
+            color: blocked ? "#ffffff" : COLORS.ink,
+            backgroundColor: blocked ? COLORS.red : COLORS.blueBg,
+            border: `2px solid ${blocked ? COLORS.red : "#bfdbfe"}`,
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "36px",
+                lineHeight: 1,
+                fontWeight: 950,
+              }}
+            >
+              {title}
+            </h2>
+            <div
+              style={{
+                marginTop: "8px",
+                fontSize: "22px",
+                fontWeight: 750,
+                color: blocked ? "#ffe3e3" : COLORS.muted,
+              }}
+            >
+              {subtitle}
+            </div>
+          </div>
+          <div
+            style={{
+              minWidth: "108px",
+              textAlign: "center",
+              padding: "12px 18px",
+              borderRadius: "8px",
+              backgroundColor: blocked ? "rgba(255,255,255,0.18)" : "#ffffff",
+              fontSize: "40px",
+              fontWeight: 950,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {list.length}
+          </div>
+        </div>
+
+        {list.length === 0 ? (
+          <div
+            style={{
+              marginTop: "14px",
+              padding: "30px",
+              borderRadius: "8px",
+              backgroundColor: COLORS.panel,
+              border: `2px dashed ${COLORS.border}`,
+              color: COLORS.muted,
+              fontSize: "28px",
+              fontWeight: 800,
+              textAlign: "center",
+            }}
+          >
+            Nothing here right now.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gap: "14px",
+              marginTop: "14px",
+            }}
+          >
+            {list.map((order) => renderOrderCard(order, blocked))}
+          </div>
+        )}
+      </section>
     );
   }
 
   return (
-    <main style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
+    <main
+      style={{
+        height: "100vh",
+        overflow: "hidden",
+        backgroundColor: COLORS.pageBg,
+        color: COLORS.ink,
+        fontFamily: FONT_STACK,
+      }}
+    >
       <div
+        ref={scrollerRef}
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
+          height: "100vh",
+          overflowY: "hidden",
+          padding: "26px",
         }}
       >
-        <h1 style={{ margin: 0, fontSize: "28px" }}>🛠 Shop Wall Screen</h1>
-        <span style={{ fontSize: "14px", color: "#888" }}>
-          Auto-refreshes every 30s
-        </span>
+        <div
+          ref={contentRef}
+          style={{
+            willChange: "transform",
+          }}
+        >
+          {renderOrderSection(
+            "Ready for shop",
+            "Orders that can move now",
+            nonBlockedOrders,
+            false,
+            activeSectionRef,
+          )}
+          {renderOrderSection(
+            "Blocked",
+            "Orders waiting for a decision, material, RFQ, or qualified engineer",
+            blockedOrders,
+            true,
+            blockedSectionRef,
+          )}
+        </div>
       </div>
-
-      <p style={{ marginTop: "1rem", color: "#666", fontSize: "16px" }}>
-        {orders.length} active work orders
-      </p>
-
-      <section style={{ marginTop: "1rem" }}>
-        <h2 style={{ marginBottom: "0.25rem", fontSize: "22px" }}>
-          Non-blocked work orders ({nonBlockedOrders.length})
-        </h2>
-        {renderNonBlockedOrdersTable(nonBlockedOrders)}
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2 style={{ marginBottom: "0.25rem", fontSize: "22px" }}>
-          Blocked work orders ({blockedOrders.length})
-        </h2>
-        {renderBlockedOrdersTable(blockedOrders)}
-      </section>
     </main>
   );
 }

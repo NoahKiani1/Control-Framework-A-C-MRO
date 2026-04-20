@@ -81,6 +81,35 @@ export async function updateWorkOrder(
   return supabase.from("work_orders").update(payload).eq("work_order_id", workOrderId);
 }
 
+export async function updateWorkOrderAndFetch<T = unknown>(
+  workOrderId: string,
+  payload: Record<string, unknown>,
+  select = "*",
+): Promise<{
+  data: T | null;
+  error: { message: string } | null;
+}> {
+  const { data, error } = await supabase
+    .from("work_orders")
+    .update(payload)
+    .eq("work_order_id", workOrderId)
+    .select(select)
+    .maybeSingle();
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  if (!data) {
+    return {
+      data: null,
+      error: { message: `No work order was updated for ${workOrderId}.` },
+    };
+  }
+
+  return { data: data as T, error: null };
+}
+
 export async function getExistingWorkOrderIds(workOrderIds: string[]): Promise<string[]> {
   if (workOrderIds.length === 0) return [];
 

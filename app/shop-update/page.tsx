@@ -9,7 +9,7 @@ import {
   READY_TO_CLOSE_STEP,
 } from "@/lib/process-steps";
 import { autoAssignForStep } from "@/lib/auto-assign";
-import { getEngineers } from "@/lib/engineers";
+import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
 import { normalizeAssignedPersonTeam } from "@/lib/work-order-rules";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 import { SearchableSelect } from "@/app/components/searchable-select";
@@ -35,6 +35,19 @@ type StaffMember = {
   name: string;
   restrictions: string[] | null;
 };
+
+type Absence = {
+  engineer_id: number;
+  absence_date: string;
+};
+
+function localDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
 
 const COLORS = {
   pageBg: "#f7f2e8",
@@ -67,12 +80,14 @@ export default function ShopUpdatePage() {
   const [requiredNextAction, setRequiredNextAction] = useState("");
   const [magneticTestRequired, setMagneticTestRequired] = useState(false);
   const [isBlockedUpdate, setIsBlockedUpdate] = useState(false);
+  const [todayAbsentEngineerIds, setTodayAbsentEngineerIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState("");
 
   useEffect(() => {
     async function load() {
-      const [data, staffData] = await Promise.all([
+      const today = localDateKey();
+      const [data, staffData, absenceData] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select:
             "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, magnetic_test_required",
@@ -86,10 +101,19 @@ export default function ShopUpdatePage() {
           role: "shop",
           orderBy: { column: "name" },
         }),
+        getEngineerAbsences<Absence>({
+          select: "engineer_id, absence_date",
+          fromDate: today,
+        }),
       ]);
 
       setOrders(data.filter((order) => order.current_process_step !== READY_TO_CLOSE_STEP));
       setShopStaff(staffData);
+      setTodayAbsentEngineerIds(
+        absenceData
+          .filter((absence) => absence.absence_date === today)
+          .map((absence) => absence.engineer_id),
+      );
       setLoading(false);
     }
 
@@ -99,6 +123,21 @@ export default function ShopUpdatePage() {
   const selectedOrder = useMemo(
     () => orders.find((o) => o.work_order_id === selectedId),
     [orders, selectedId],
+  );
+
+  const todayAbsentEngineerIdSet = useMemo(
+    () => new Set(todayAbsentEngineerIds),
+    [todayAbsentEngineerIds],
+  );
+
+  const todayAbsentShopEngineerNames = useMemo(
+    () =>
+      new Set(
+        shopStaff
+          .filter((staffMember) => todayAbsentEngineerIdSet.has(staffMember.id))
+          .map((staffMember) => staffMember.name),
+      ),
+    [shopStaff, todayAbsentEngineerIdSet],
   );
 
   const showMagneticTestOption =
@@ -200,6 +239,7 @@ export default function ShopUpdatePage() {
       selectedOrder.assigned_person_team,
       nextProcessStep,
       shopStaff,
+      todayAbsentShopEngineerNames,
     );
 
     setSaveStatus("Saving...");
