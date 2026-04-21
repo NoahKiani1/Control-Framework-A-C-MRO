@@ -127,6 +127,19 @@ export function getTrackedStepsForType(workOrderType: string | null): string[] {
 
 /** The first step, set automatically when a work order is activated. */
 export const INTAKE_STEP = "Intake";
+export const DEFAULT_START_PROCESS_STEP = "Disassembly";
+
+export function getInitialProcessStep(
+  workOrderType: string | null,
+  includeOptional = false,
+): string {
+  const completableSteps = getCompletableStepsForType(
+    workOrderType,
+    includeOptional,
+  );
+
+  return completableSteps[0] || DEFAULT_START_PROCESS_STEP;
+}
 
 /**
  * Steps the shop engineer can select as "completed" in the shop-update form.

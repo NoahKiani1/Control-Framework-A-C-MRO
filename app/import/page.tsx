@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import * as XLSX from "xlsx";
+import { getInitialProcessStep } from "@/lib/process-steps";
 import {
   isOlderThanOneYear,
   mapWorkOrderType,
@@ -334,7 +335,9 @@ export default function ImportPage() {
           ...(shouldActivateFromRfq
             ? {
                 is_active: true,
-                current_process_step: current?.current_process_step || "Intake",
+                current_process_step:
+                  current?.current_process_step ||
+                  getInitialProcessStep(current?.work_order_type || r.work_order_type),
                 assigned_person_team: normalizeAssignedPersonTeam(
                   current?.assigned_person_team,
                 ),
@@ -372,7 +375,7 @@ export default function ImportPage() {
             ? normalizeAssignedPersonTeam(null)
             : null),
         current_process_step: newOrderSetup[r.work_order_id]?.is_active
-          ? "Intake"
+          ? getInitialProcessStep(r.work_order_type)
           : null,
         last_system_update: importTimestamp,
       }));
@@ -431,21 +434,21 @@ export default function ImportPage() {
   }
 
   const buttonStyle: React.CSSProperties = {
-    padding: "10px 20px",
-    backgroundColor: "#0070f3",
+    padding: "11px 18px",
+    backgroundColor: "#2563eb",
     color: "white",
     border: "none",
-    borderRadius: "6px",
+    borderRadius: "8px",
     cursor: "pointer",
-    fontWeight: "bold",
+    fontWeight: 700,
     fontSize: "14px",
   };
 
   const secondaryButtonStyle: React.CSSProperties = {
     ...buttonStyle,
     backgroundColor: "#4b5563",
-    padding: "8px 12px",
-    fontSize: "12px",
+    padding: "10px 14px",
+    fontSize: "13px",
   };
 
   const cellStyle: React.CSSProperties = {
@@ -466,16 +469,44 @@ export default function ImportPage() {
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
-    minWidth: "120px",
-    padding: "6px",
-    border: "1px solid #ccc",
-    borderRadius: "4px",
+    minWidth: 0,
+    padding: "8px 10px",
+    border: "1px solid #cbd5e1",
+    borderRadius: "8px",
     fontSize: "13px",
     boxSizing: "border-box",
+    backgroundColor: "#fffefb",
+  };
+
+  const panelStyle: React.CSSProperties = {
+    marginBottom: "1rem",
+    padding: "16px 18px",
+    borderRadius: "10px",
+  };
+
+  const newOrderCardStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns:
+      "minmax(170px, 0.9fr) minmax(220px, 1.1fr) minmax(150px, 0.8fr) repeat(4, minmax(110px, 0.6fr))",
+    gap: "12px",
+    alignItems: "start",
+    padding: "14px 16px",
+    border: "1px solid #e5dccb",
+    borderRadius: "10px",
+    backgroundColor: "#fffef9",
+  };
+
+  const newOrderFieldLabel: React.CSSProperties = {
+    fontSize: "11px",
+    fontWeight: 700,
+    color: "#6b7280",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    marginBottom: "6px",
   };
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "700px" }}>
+    <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "1240px" }}>
       <h1>AcMP Import</h1>
 
       {step === "upload" && (
@@ -496,7 +527,7 @@ export default function ImportPage() {
               fontWeight: "bold",
             }}
           >
-            📂 Choose file
+            Choose file
             <input
               type="file"
               accept=".xlsx,.xls"
@@ -511,14 +542,12 @@ export default function ImportPage() {
         <>
           <div
             style={{
-              marginBottom: "1rem",
-              padding: "12px 16px",
+              ...panelStyle,
               backgroundColor: "#f0f8ff",
               border: "1px solid #aad",
-              borderRadius: "6px",
             }}
           >
-            <strong>📊 File analyzed: {fileName}</strong>
+            <strong>File analyzed: {fileName}</strong>
             <br />
             {existingOrders.length} existing orders (system fields will be updated, manual fields remain intact)
             <br />
@@ -556,18 +585,16 @@ export default function ImportPage() {
           {rfqActivationCandidates.length > 0 && (
             <div
               style={{
-                marginBottom: "1rem",
-                padding: "12px 16px",
+                ...panelStyle,
                 backgroundColor: "#ecfdf5",
                 border: "1px solid #86efac",
-                borderRadius: "6px",
               }}
             >
               <strong>RFQ approved on inactive work orders</strong>
               <p style={{ margin: "8px 0 4px" }}>
                 These inactive work orders now have an approved RFQ. Do you want to
                 activate them during this import? Activated orders keep their current
-                process step, or start at <strong>Intake</strong> if no step is set.
+                process step, or start at <strong>Disassembly</strong> if no step is set.
               </p>
               <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
                 <button
@@ -631,17 +658,15 @@ export default function ImportPage() {
           {newOrders.length > 0 && (
             <div
               style={{
-                marginBottom: "1rem",
-                padding: "12px 16px",
+                ...panelStyle,
                 backgroundColor: "#fff8e0",
                 border: "1px solid #dda",
-                borderRadius: "6px",
               }}
             >
               <strong>Set up new work orders</strong>
               <p style={{ margin: "8px 0 4px" }}>
                 Choose which new orders should become active right away. Active
-                orders start at <strong>Intake</strong> and can be assigned here,
+                orders start at <strong>Disassembly</strong> and can be assigned here,
                 so you do not need to open Office Update after importing.
               </p>
               <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
@@ -660,116 +685,126 @@ export default function ImportPage() {
                   Mark all inactive
                 </button>
               </div>
-              <div style={{ overflowX: "auto", marginTop: "12px" }}>
-                <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
-                  <thead>
-                    <tr>
-                      <th style={headerStyle}>WO</th>
-                      <th style={headerStyle}>Customer</th>
-                      <th style={headerStyle}>Part Number</th>
-                      <th style={headerStyle}>Active</th>
-                      <th style={headerStyle}>Priority</th>
-                      <th style={headerStyle}>Due Date</th>
-                      <th style={headerStyle}>Assigned</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {newOrders.map((order) => {
-                      const setup = newOrderSetup[order.work_order_id] || {
-                        is_active: false,
-                        priority: "No",
-                        due_date: "",
-                        assigned_person_team: "",
-                      };
-                      const dueRequired =
-                        setup.is_active &&
-                        (setup.priority === "Yes" || setup.priority === "AOG");
+              <div
+                style={{
+                  display: "grid",
+                  gap: "10px",
+                  marginTop: "14px",
+                }}
+              >
+                {newOrders.map((order) => {
+                  const setup = newOrderSetup[order.work_order_id] || {
+                    is_active: false,
+                    priority: "No",
+                    due_date: "",
+                    assigned_person_team: "",
+                  };
+                  const dueRequired =
+                    setup.is_active &&
+                    (setup.priority === "Yes" || setup.priority === "AOG");
 
-                      return (
-                        <tr key={order.work_order_id}>
-                          <td style={{ ...cellStyle, fontWeight: 700 }}>
-                            {order.work_order_id}
-                          </td>
-                          <td style={cellStyle}>{order.customer || "-"}</td>
-                          <td style={cellStyle}>{order.part_number || "-"}</td>
-                          <td style={cellStyle}>
-                            <select
-                              style={inputStyle}
-                              value={setup.is_active ? "yes" : "no"}
-                              onChange={(e) =>
-                                updateNewOrderSetup(order.work_order_id, {
-                                  is_active: e.target.value === "yes",
-                                })
-                              }
-                            >
-                              <option value="no">No</option>
-                              <option value="yes">Yes</option>
-                            </select>
-                          </td>
-                          <td style={cellStyle}>
-                            <select
-                              style={inputStyle}
-                              value={setup.priority}
-                              disabled={!setup.is_active}
-                              onChange={(e) =>
-                                updateNewOrderSetup(order.work_order_id, {
-                                  priority: e.target.value,
-                                })
-                              }
-                            >
-                              <option value="No">No</option>
-                              <option value="Yes">Yes</option>
-                              <option value="AOG">AOG</option>
-                            </select>
-                          </td>
-                          <td style={cellStyle}>
-                            <input
-                              type="date"
-                              style={{
-                                ...inputStyle,
-                                borderColor: dueRequired && !setup.due_date
-                                  ? "#dc2626"
-                                  : "#ccc",
-                              }}
-                              value={setup.due_date}
-                              disabled={!setup.is_active}
-                              onChange={(e) =>
-                                updateNewOrderSetup(order.work_order_id, {
-                                  due_date: e.target.value,
-                                })
-                              }
-                            />
-                          </td>
-                          <td style={cellStyle}>
-                            <select
-                              style={inputStyle}
-                              value={setup.assigned_person_team}
-                              disabled={!setup.is_active}
-                              onChange={(e) =>
-                                updateNewOrderSetup(order.work_order_id, {
-                                  assigned_person_team: e.target.value,
-                                })
-                              }
-                            >
-                              <option value="">Shop</option>
-                              {shopStaff.map((staff) => (
-                                <option key={staff.id} value={staff.name}>
-                                  {staff.name}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                  return (
+                    <div key={order.work_order_id} style={newOrderCardStyle}>
+                      <div>
+                        <div style={newOrderFieldLabel}>Work order</div>
+                        <div style={{ fontWeight: 700, fontSize: "16px" }}>
+                          {order.work_order_id}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={newOrderFieldLabel}>Customer</div>
+                        <div style={{ fontWeight: 600 }}>{order.customer || "-"}</div>
+                      </div>
+
+                      <div>
+                        <div style={newOrderFieldLabel}>Part number</div>
+                        <div style={{ fontWeight: 600 }}>{order.part_number || "-"}</div>
+                      </div>
+
+                      <div>
+                        <div style={newOrderFieldLabel}>Active</div>
+                        <select
+                          style={inputStyle}
+                          value={setup.is_active ? "yes" : "no"}
+                          onChange={(e) =>
+                            updateNewOrderSetup(order.work_order_id, {
+                              is_active: e.target.value === "yes",
+                            })
+                          }
+                        >
+                          <option value="no">No</option>
+                          <option value="yes">Yes</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <div style={newOrderFieldLabel}>Priority</div>
+                        <select
+                          style={inputStyle}
+                          value={setup.priority}
+                          disabled={!setup.is_active}
+                          onChange={(e) =>
+                            updateNewOrderSetup(order.work_order_id, {
+                              priority: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="No">No</option>
+                          <option value="Yes">Yes</option>
+                          <option value="AOG">AOG</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <div style={newOrderFieldLabel}>Due date</div>
+                        <input
+                          type="date"
+                          style={{
+                            ...inputStyle,
+                            borderColor: dueRequired && !setup.due_date
+                              ? "#dc2626"
+                              : "#cbd5e1",
+                          }}
+                          value={setup.due_date}
+                          disabled={!setup.is_active}
+                          onChange={(e) =>
+                            updateNewOrderSetup(order.work_order_id, {
+                              due_date: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <div style={newOrderFieldLabel}>Assigned to</div>
+                        <select
+                          style={inputStyle}
+                          value={setup.assigned_person_team}
+                          disabled={!setup.is_active}
+                          onChange={(e) =>
+                            updateNewOrderSetup(order.work_order_id, {
+                              assigned_person_team: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="">Shop</option>
+                          {shopStaff.map((staff) => (
+                            <option key={staff.id} value={staff.name}>
+                              {staff.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
           <button style={buttonStyle} onClick={doImport}>
-            ✅ Import now
+            Import now
           </button>
         </>
       )}

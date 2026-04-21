@@ -48,28 +48,28 @@ type Absence = {
 
 const NO_QUALIFIED_ENGINEER_REASON = "No Qualified Engineer Present";
 const FONT_STACK =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  'var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const AUTO_SCROLL_SPEED_PX_PER_SECOND = 18;
 const AUTO_SCROLL_TOP_PAUSE_MS = 7000;
 const AUTO_SCROLL_SECTION_PAUSE_MS = 5000;
 const AUTO_SCROLL_BOTTOM_PAUSE_MS = 9000;
 
 const COLORS = {
-  pageBg: "#eef2f6",
-  ink: "#111827",
-  muted: "#526071",
-  soft: "#f8fafc",
+  pageBg: "#f3f5f7",
+  ink: "#14181f",
+  muted: "#5c6675",
+  soft: "#f6f8fa",
   panel: "#ffffff",
-  border: "#cbd5e1",
-  green: "#087f5b",
-  greenBg: "#dff7ec",
-  red: "#c92a2a",
-  redBg: "#ffe3e3",
-  amber: "#b7791f",
-  amberBg: "#fff3bf",
-  blue: "#1d4ed8",
-  blueBg: "#dbeafe",
-  dark: "#172033",
+  border: "#d6dde6",
+  borderStrong: "#b8c4d1",
+  green: "#0f8a67",
+  greenSoft: "#e7f5ef",
+  red: "#cf3b32",
+  redSoft: "#fdeceb",
+  amber: "#b56a15",
+  amberSoft: "#fff1dc",
+  blue: "#2358d4",
+  blueSoft: "#eaf0ff",
 };
 
 function localDateKey(date = new Date()): string {
@@ -120,17 +120,28 @@ function AssignedPerson({
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const displayName = normalizeAssignedPersonTeam(name);
+  const showPhotoOnly = Boolean(photoUrl) && !imageFailed;
+  const resolvedPhotoUrl = photoUrl || "";
 
-  if (!photoUrl || imageFailed) {
+  if (!showPhotoOnly) {
     return (
       <span
         style={{
-          display: "block",
-          color: COLORS.muted,
-          fontSize: "22px",
-          fontWeight: 900,
-          lineHeight: 1.12,
-          overflowWrap: "anywhere",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minWidth: "92px",
+          minHeight: "40px",
+          padding: "0 14px",
+          borderRadius: "999px",
+          backgroundColor: COLORS.soft,
+          border: `1px solid ${COLORS.border}`,
+          color: COLORS.ink,
+          fontSize: "15px",
+          fontWeight: 700,
+          lineHeight: 1,
+          textAlign: "center",
+          whiteSpace: "nowrap",
         }}
       >
         {displayName}
@@ -142,32 +153,31 @@ function AssignedPerson({
     <span
       style={{
         display: "grid",
+        alignItems: "center",
         justifyItems: "center",
-        gap: "8px",
-        color: COLORS.muted,
-        fontSize: "18px",
-        fontWeight: 900,
-        lineHeight: 1.1,
+        width: "100%",
+        height: "100%",
+        minHeight: "76px",
       }}
     >
       <Image
-        src={photoUrl}
+        src={resolvedPhotoUrl}
         alt={displayName}
-        width={92}
-        height={92}
+        width={84}
+        height={84}
         unoptimized
         onError={() => setImageFailed(true)}
         style={{
           width: "92px",
           height: "92px",
-          borderRadius: "50%",
-          objectFit: "cover",
+          maxWidth: "92px",
+          maxHeight: "92px",
+          borderRadius: "0",
+          objectFit: "contain",
+          objectPosition: "center bottom",
           flexShrink: 0,
-          border: `3px solid ${COLORS.border}`,
-          backgroundColor: COLORS.soft,
         }}
       />
-      <span>{displayName}</span>
     </span>
   );
 }
@@ -240,15 +250,28 @@ export default function ShopPage() {
     let shouldResetToTop = false;
     const pausedTargets = new Set<number>();
 
+    function getViewportInnerHeight() {
+      const styles = window.getComputedStyle(scrollViewport);
+      const paddingTop = Number.parseFloat(styles.paddingTop || "0");
+      const paddingBottom = Number.parseFloat(styles.paddingBottom || "0");
+      return Math.max(
+        0,
+        scrollViewport.clientHeight - paddingTop - paddingBottom,
+      );
+    }
+
+    function getMaxScroll() {
+      const contentHeight = scrollContent.getBoundingClientRect().height;
+      const viewportHeight = getViewportInnerHeight();
+      return Math.max(0, contentHeight - viewportHeight);
+    }
+
     function applyOffset(offset: number) {
       scrollContent.style.transform = `translate3d(0, -${offset}px, 0)`;
     }
 
     function getPauseTargets() {
-      const maxScroll = Math.max(
-        0,
-        scrollContent.scrollHeight - scrollViewport.clientHeight,
-      );
+      const maxScroll = getMaxScroll();
       const sectionTargets = [activeSectionRef.current, blockedSectionRef.current]
         .map((section) => {
           if (!section) return null;
@@ -260,10 +283,7 @@ export default function ShopPage() {
     }
 
     function tick(timestamp: number) {
-      const maxScroll = Math.max(
-        0,
-        scrollContent.scrollHeight - scrollViewport.clientHeight,
-      );
+      const maxScroll = getMaxScroll();
 
       if (maxScroll <= 4) {
         currentOffset = 0;
@@ -358,22 +378,23 @@ export default function ShopPage() {
 
   const cardStyle: React.CSSProperties = {
     display: "grid",
-    gridTemplateColumns: "260px minmax(0, 1fr) minmax(340px, 1.05fr) 170px",
-    gap: "24px",
+    gridTemplateColumns:
+      "minmax(190px, 0.85fr) minmax(220px, 1.05fr) minmax(220px, 1fr) 140px 150px",
+    gap: "12px",
     alignItems: "center",
-    minHeight: "166px",
-    padding: "24px 28px",
+    minHeight: "96px",
+    padding: "12px 14px",
     borderRadius: "8px",
-    border: `2px solid ${COLORS.border}`,
+    border: `1px solid ${COLORS.border}`,
     backgroundColor: COLORS.panel,
-    boxShadow: "0 8px 22px rgba(15, 23, 42, 0.08)",
+    boxShadow: "0 10px 24px rgba(20, 24, 31, 0.07)",
   };
 
   const labelStyle: React.CSSProperties = {
-    marginBottom: "8px",
+    marginBottom: "4px",
     color: COLORS.muted,
-    fontSize: "18px",
-    fontWeight: 800,
+    fontSize: "11px",
+    fontWeight: 700,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
   };
@@ -383,20 +404,20 @@ export default function ShopPage() {
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
-      minWidth: "96px",
-      padding: "10px 16px",
+      minWidth: "82px",
+      padding: "8px 14px",
       borderRadius: "8px",
-      fontSize: "24px",
-      fontWeight: 900,
-      border: `2px solid ${COLORS.border}`,
+      fontSize: "16px",
+      fontWeight: 800,
+      border: `1px solid ${COLORS.borderStrong}`,
     };
 
     if (order.priority === "AOG") {
       return {
         ...base,
         color: COLORS.red,
-        backgroundColor: COLORS.redBg,
-        borderColor: "#ffc9c9",
+        backgroundColor: COLORS.redSoft,
+        borderColor: "#f3b2ad",
       };
     }
 
@@ -404,8 +425,8 @@ export default function ShopPage() {
       return {
         ...base,
         color: COLORS.amber,
-        backgroundColor: COLORS.amberBg,
-        borderColor: "#ffe066",
+        backgroundColor: COLORS.amberSoft,
+        borderColor: "#efc48f",
       };
     }
 
@@ -434,19 +455,18 @@ export default function ShopPage() {
     const assignedPersonTeam = normalizeAssignedPersonTeam(order.assigned_person_team);
     const engineer = engineerByName.get(assignedPersonTeam);
     const statusColor = blocked ? COLORS.red : COLORS.green;
-    const statusBg = blocked ? COLORS.redBg : COLORS.greenBg;
 
     return (
       <article
         key={order.work_order_id}
         style={{
           ...cardStyle,
-          borderLeft: `16px solid ${statusColor}`,
+          borderLeft: `8px solid ${statusColor}`,
           backgroundColor:
             order.priority === "AOG"
-              ? "#fff5f5"
+              ? "#fff8f7"
               : order.priority === "Yes"
-                ? "#fff9db"
+                ? "#fffaf2"
                 : COLORS.panel,
         }}
       >
@@ -455,9 +475,9 @@ export default function ShopPage() {
           <div
             style={{
               color: COLORS.ink,
-              fontSize: "38px",
-              fontWeight: 950,
-              lineHeight: 1.05,
+              fontSize: "24px",
+              fontWeight: 800,
+              lineHeight: 1.02,
               overflowWrap: "anywhere",
             }}
           >
@@ -465,29 +485,15 @@ export default function ShopPage() {
           </div>
           <div
             style={{
-              marginTop: "12px",
+              marginTop: "4px",
               color: COLORS.muted,
-              fontSize: "28px",
-              fontWeight: 850,
+              fontSize: "16px",
+              fontWeight: 700,
               lineHeight: 1.12,
               overflowWrap: "anywhere",
             }}
           >
             {order.part_number || "-"}
-          </div>
-          <div
-            style={{
-              marginTop: "14px",
-              display: "inline-flex",
-              padding: "8px 12px",
-              borderRadius: "8px",
-              color: statusColor,
-              backgroundColor: statusBg,
-              fontSize: "20px",
-              fontWeight: 900,
-            }}
-          >
-            {blocked ? "BLOCKED" : "READY"}
           </div>
         </div>
 
@@ -496,9 +502,9 @@ export default function ShopPage() {
           <div
             style={{
               color: COLORS.ink,
-              fontSize: "34px",
-              fontWeight: 850,
-              lineHeight: 1.12,
+              fontSize: "20px",
+              fontWeight: 700,
+              lineHeight: 1.08,
               overflowWrap: "anywhere",
             }}
           >
@@ -511,34 +517,49 @@ export default function ShopPage() {
           <div
             style={{
               color: blocked ? COLORS.red : COLORS.blue,
-              fontSize: "34px",
-              fontWeight: 900,
+              fontSize: "22px",
+              fontWeight: 800,
               lineHeight: 1.12,
               overflowWrap: "anywhere",
             }}
           >
             {blocked ? holdReasonDisplay(order) : order.current_process_step || "-"}
           </div>
-          <div
-            style={{
-              marginTop: "10px",
-              color: COLORS.muted,
-              fontSize: "23px",
-              fontWeight: 750,
-              lineHeight: 1.15,
-              overflowWrap: "anywhere",
-            }}
-          >
-            {blocked
-              ? order.required_next_action || "Action required"
-              : order.work_order_type || "-"}
-          </div>
+          {!blocked && (
+            <div
+              style={{
+                marginTop: "6px",
+                color: COLORS.muted,
+                fontSize: "15px",
+                fontWeight: 750,
+                lineHeight: 1.15,
+                overflowWrap: "anywhere",
+              }}
+            >
+              {order.work_order_type || "-"}
+            </div>
+          )}
         </div>
 
         <div
           style={{
             display: "grid",
-            gap: "14px",
+            alignSelf: "stretch",
+            visibility: blocked ? "hidden" : "visible",
+            alignContent: "center",
+            justifyItems: "center",
+          }}
+        >
+          <AssignedPerson
+            name={assignedPersonTeam}
+            photoUrl={getEngineerPhotoUrl(engineer?.photo_path)}
+          />
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gap: "4px",
             justifyItems: "center",
             textAlign: "center",
           }}
@@ -547,26 +568,20 @@ export default function ShopPage() {
             <span style={priorityStyle(order)}>{prioLabel(order)}</span>
           )}
           <div>
-            <div style={{ ...labelStyle, marginBottom: "6px", fontSize: "16px" }}>
-              Due
+            <div style={{ ...labelStyle, marginBottom: "4px", fontSize: "11px" }}>
+              Due on
             </div>
             <div
               style={{
                 color: COLORS.ink,
-                fontSize: "25px",
-                fontWeight: 900,
+                fontSize: "18px",
+                fontWeight: 800,
                 whiteSpace: "nowrap",
               }}
             >
               {formatDate(order.due_date)}
             </div>
           </div>
-          {!blocked && (
-            <AssignedPerson
-              name={assignedPersonTeam}
-              photoUrl={getEngineerPhotoUrl(engineer?.photo_path)}
-            />
-          )}
         </div>
       </article>
     );
@@ -580,37 +595,37 @@ export default function ShopPage() {
     ref?: React.Ref<HTMLElement>,
   ) {
     return (
-      <section ref={ref} style={{ marginTop: "26px" }}>
+      <section ref={ref}>
         <div
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            gap: "24px",
-            padding: "18px 22px",
+            gap: "14px",
+            padding: "8px 12px",
             borderRadius: "8px",
-            color: blocked ? "#ffffff" : COLORS.ink,
-            backgroundColor: blocked ? COLORS.red : COLORS.blueBg,
-            border: `2px solid ${blocked ? COLORS.red : "#bfdbfe"}`,
+            color: COLORS.ink,
+            backgroundColor: COLORS.panel,
+            border: `1px solid ${blocked ? "#f2b2ad" : COLORS.border}`,
+            boxShadow: "0 8px 20px rgba(20, 24, 31, 0.05)",
           }}
         >
-          <div>
+          <div style={{ display: "grid", gap: "2px" }}>
             <h2
               style={{
                 margin: 0,
-                fontSize: "36px",
+                fontSize: "20px",
                 lineHeight: 1,
-                fontWeight: 950,
+                fontWeight: 800,
               }}
             >
               {title}
             </h2>
             <div
               style={{
-                marginTop: "8px",
-                fontSize: "22px",
-                fontWeight: 750,
-                color: blocked ? "#ffe3e3" : COLORS.muted,
+                fontSize: "12px",
+                fontWeight: 600,
+                color: COLORS.muted,
               }}
             >
               {subtitle}
@@ -618,13 +633,14 @@ export default function ShopPage() {
           </div>
           <div
             style={{
-              minWidth: "108px",
+              minWidth: "48px",
               textAlign: "center",
-              padding: "12px 18px",
+              padding: "6px 10px",
               borderRadius: "8px",
-              backgroundColor: blocked ? "rgba(255,255,255,0.18)" : "#ffffff",
-              fontSize: "40px",
-              fontWeight: 950,
+              backgroundColor: blocked ? COLORS.redSoft : COLORS.greenSoft,
+              color: blocked ? COLORS.red : COLORS.green,
+              fontSize: "22px",
+              fontWeight: 800,
               fontVariantNumeric: "tabular-nums",
             }}
           >
@@ -636,13 +652,13 @@ export default function ShopPage() {
           <div
             style={{
               marginTop: "14px",
-              padding: "30px",
+              padding: "18px",
               borderRadius: "8px",
               backgroundColor: COLORS.panel,
-              border: `2px dashed ${COLORS.border}`,
+              border: `1px dashed ${COLORS.borderStrong}`,
               color: COLORS.muted,
-              fontSize: "28px",
-              fontWeight: 800,
+              fontSize: "16px",
+              fontWeight: 700,
               textAlign: "center",
             }}
           >
@@ -652,8 +668,9 @@ export default function ShopPage() {
           <div
             style={{
               display: "grid",
-              gap: "14px",
-              marginTop: "14px",
+              gridTemplateColumns: "1fr",
+              gap: "6px",
+              marginTop: "8px",
             }}
           >
             {list.map((order) => renderOrderCard(order, blocked))}
@@ -678,25 +695,27 @@ export default function ShopPage() {
         style={{
           height: "100vh",
           overflowY: "hidden",
-          padding: "26px",
+          padding: "14px",
         }}
       >
         <div
           ref={contentRef}
           style={{
+            display: "grid",
+            gap: "14px",
             willChange: "transform",
           }}
         >
           {renderOrderSection(
-            "Ready for shop",
-            "Orders that can move now",
+            "Open",
+            "Work orders that can be worked on",
             nonBlockedOrders,
             false,
             activeSectionRef,
           )}
           {renderOrderSection(
             "Blocked",
-            "Orders waiting for a decision, material, RFQ, or qualified engineer",
+            "Work orders that cannot be worked on",
             blockedOrders,
             true,
             blockedSectionRef,

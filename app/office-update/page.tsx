@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
 import { getWorkOrders, updateWorkOrderAndFetch } from "@/lib/work-orders";
 import { autoAssignForStep } from "@/lib/auto-assign";
+import { getInitialProcessStep } from "@/lib/process-steps";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
   normalizeAssignedPersonTeam,
@@ -333,7 +334,8 @@ export default function OfficeUpdatePage() {
     if (!selectedId || !selectedOrder) return;
 
     const preservedStep = selectedOrder.current_process_step?.trim() || "";
-    const nextProcessStep = preservedStep || "Intake";
+    const nextProcessStep =
+      preservedStep || getInitialProcessStep(selectedOrder.work_order_type);
 
     setSaveStatus("Activating...");
 
@@ -1033,7 +1035,7 @@ export default function OfficeUpdatePage() {
                         }}
                       >
                         If the work order already has a process step, that step
-                        is kept. Otherwise it starts at <strong>Intake</strong>.
+                        is kept. Otherwise it starts at <strong>Disassembly</strong>.
                       </div>
                     </div>
 
@@ -1049,7 +1051,10 @@ export default function OfficeUpdatePage() {
                       }}
                     >
                       Current stored step:{" "}
-                      <strong>{selectedOrder.current_process_step || "Intake"}</strong>
+                      <strong>
+                        {selectedOrder.current_process_step ||
+                          getInitialProcessStep(selectedOrder.work_order_type)}
+                      </strong>
                     </div>
                   </div>
                 </section>
