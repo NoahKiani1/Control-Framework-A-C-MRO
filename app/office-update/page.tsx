@@ -74,7 +74,7 @@ function localDateKey(date = new Date()): string {
 }
 
 const COLORS = {
-  pageBg: "#f7f2e8",
+  pageBg: "#f2efe9",
   panelBg: "#fcfaf6",
   cardBg: "#ffffff",
   border: "#ddd3c3",
@@ -93,6 +93,8 @@ const COLORS = {
   redSoft: "#fff1eb",
   inputBg: "#fffdf9",
 };
+
+const FONT_STACK = 'var(--font-inter), var(--font-geist-sans), sans-serif';
 
 export default function OfficeUpdatePage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
@@ -380,7 +382,7 @@ export default function OfficeUpdatePage() {
           backgroundColor: COLORS.pageBg,
           padding: "28px",
           color: COLORS.textSoft,
-          fontFamily: "sans-serif",
+          fontFamily: FONT_STACK,
         }}
       >
         Loading...
@@ -391,14 +393,13 @@ export default function OfficeUpdatePage() {
   const pageStyle: React.CSSProperties = {
     minHeight: "100vh",
     backgroundColor: COLORS.pageBg,
-    padding: "28px 32px 40px",
-    fontFamily: "sans-serif",
+    padding: "32px 40px 40px",
+    fontFamily: FONT_STACK,
     color: COLORS.text,
   };
 
   const shellStyle: React.CSSProperties = {
     maxWidth: "1220px",
-    margin: "0 auto",
   };
 
   const sectionCard: React.CSSProperties = {

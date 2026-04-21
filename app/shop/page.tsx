@@ -127,6 +127,18 @@ function applyTodayQualificationBlocks(
   });
 }
 
+function isOverdue(dateStr: string | null): boolean {
+  if (!dateStr) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const due = new Date(dateStr);
+  due.setHours(0, 0, 0, 0);
+
+  return due < today;
+}
+
 function AssignedPerson({
   name,
   photoUrl,
@@ -489,6 +501,7 @@ export default function ShopPage() {
     const assignedPersonTeam = normalizeAssignedPersonTeam(order.assigned_person_team);
     const engineer = engineerByName.get(assignedPersonTeam);
     const statusColor = blocked ? COLORS.red : COLORS.green;
+    const overdue = isOverdue(order.due_date);
 
     return (
       <article
@@ -584,43 +597,95 @@ export default function ShopPage() {
           </div>
         </div>
 
-        {/* COL 3: operational message - next step or hold reason */}
+        {/* COL 3: operational message - current step, with hold reason in the right-side gap for blocked work */}
         <div
           style={{
             display: "grid",
             alignContent: "center",
-            gap: "3px",
             minWidth: 0,
             borderLeft: `1px solid ${COLORS.border}`,
             paddingLeft: "16px",
           }}
         >
-          {blocked && (
-            <div style={labelStyle}>Hold reason</div>
-          )}
-          <div
-            style={{
-              color: blocked ? COLORS.red : COLORS.ink,
-              fontSize: "26px",
-              fontWeight: 650,
-              lineHeight: 1.1,
-              letterSpacing: "-0.01em",
-              overflowWrap: "anywhere",
-            }}
-          >
-            {blocked ? holdReasonDisplay(order) : order.current_process_step || "-"}
-          </div>
-          {!blocked && (
+          {blocked ? (
             <div
               style={{
-                color: COLORS.muted,
-                fontSize: "16px",
-                fontWeight: 500,
-                lineHeight: 1.2,
-                overflowWrap: "anywhere",
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) minmax(220px, 0.9fr)",
+                columnGap: "18px",
+                alignItems: "center",
+                minWidth: 0,
               }}
             >
-              {order.work_order_type || "-"}
+              <div style={{ minWidth: 0, display: "grid", gap: "3px" }}>
+                <div style={labelStyle}>Current step</div>
+                <div
+                  style={{
+                    color: COLORS.ink,
+                    fontSize: "26px",
+                    fontWeight: 650,
+                    lineHeight: 1.1,
+                    letterSpacing: "-0.01em",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {order.current_process_step || "-"}
+                </div>
+                <div
+                  style={{
+                    color: COLORS.muted,
+                    fontSize: "16px",
+                    fontWeight: 500,
+                    lineHeight: 1.2,
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {order.work_order_type || "-"}
+                </div>
+              </div>
+
+              <div style={{ minWidth: 0, display: "grid", gap: "3px" }}>
+                <div style={labelStyle}>Hold reason</div>
+                <div
+                  style={{
+                    color: COLORS.red,
+                    fontSize: "18px",
+                    fontWeight: 650,
+                    lineHeight: 1.15,
+                    letterSpacing: "-0.01em",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {holdReasonDisplay(order)}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ minWidth: 0, display: "grid", gap: "3px" }}>
+              <div style={labelStyle}>Current step</div>
+              <div
+                style={{
+                  color: COLORS.ink,
+                  fontSize: "26px",
+                  fontWeight: 650,
+                  lineHeight: 1.1,
+                  letterSpacing: "-0.01em",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {order.current_process_step || "-"}
+              </div>
+              <div
+                style={{
+                  color: COLORS.muted,
+                  fontSize: "16px",
+                  fontWeight: 500,
+                  lineHeight: 1.2,
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {order.work_order_type || "-"}
+              </div>
             </div>
           )}
         </div>
@@ -630,7 +695,7 @@ export default function ShopPage() {
           style={{
             alignSelf: "stretch",
             display: "grid",
-            gridTemplateColumns: "84px minmax(0, 1fr)",
+            gridTemplateColumns: "84px minmax(132px, 1fr)",
             gridTemplateRows: "auto auto",
             columnGap: "12px",
             rowGap: "4px",
@@ -677,13 +742,12 @@ export default function ShopPage() {
               alignContent: "center",
               justifyItems: "end",
               minWidth: 0,
-              gridColumn: 2,
               gridRow: 2,
             }}
           >
             <div
               style={{
-                color: COLORS.ink,
+                color: overdue ? COLORS.red : COLORS.ink,
                 fontSize: "24px",
                 fontWeight: 700,
                 whiteSpace: "nowrap",

@@ -53,7 +53,7 @@ export default function BacklogPage() {
   };
 
   return (
-    <main style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
+    <main style={{ minHeight: "100vh", backgroundColor: "#f2efe9", padding: "32px 40px 40px", fontFamily: "sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Backlog</h1>
       </div>

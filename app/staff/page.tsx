@@ -584,7 +584,8 @@ export default function StaffPage() {
   }
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "960px" }}>
+    <main style={{ minHeight: "100vh", backgroundColor: "#f2efe9", padding: "32px 40px 40px", fontFamily: "sans-serif" }}>
+      <div style={{ maxWidth: "960px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Staff Management</h1>
       </div>
@@ -828,6 +829,7 @@ export default function StaffPage() {
           <strong>{saveStatus}</strong>
         </p>
       )}
+      </div>
     </main>
   );
 }

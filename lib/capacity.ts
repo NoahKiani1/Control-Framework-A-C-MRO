@@ -173,6 +173,7 @@ export type OrderCapacity = {
   customer: string | null;
   work_order_type: string | null;
   part_number: string | null;
+  current_step: string | null;
   due_date: string;
   remaining_hours: number;
   hours_per_day: number;
@@ -266,6 +267,7 @@ export function calculateWeekCapacity(
       customer: order.customer,
       work_order_type: order.work_order_type,
       part_number: order.part_number,
+      current_step: order.current_process_step,
       due_date: order.due_date!,
       remaining_hours: remaining,
       hours_per_day: 0,

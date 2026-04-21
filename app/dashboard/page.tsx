@@ -110,7 +110,7 @@ type HealthStatus = {
 // Refined palette — modern, clean, professional
 const COLORS = {
   // Surfaces
-  pageBg: "#f8fafc",
+  pageBg: "#f2efe9",
   surface: "#ffffff",
   surfaceSubtle: "#f9fafb",
 
@@ -510,7 +510,7 @@ export default function DashboardPage() {
         style={{
           minHeight: "100vh",
           backgroundColor: COLORS.pageBg,
-          padding: "32px",
+          padding: "32px 40px 40px",
           color: COLORS.textSoft,
           fontFamily: FONT_STACK,
         }}
@@ -528,9 +528,7 @@ export default function DashboardPage() {
   );
 
   const dueThisWeek = activeOrders.filter((o) => isDueThisWeek(o.due_date));
-  const overdueOrders = activeOrders.filter(
-    (o) => isOverdue(o.due_date) && !isBlocked(o),
-  );
+  const overdueOrders = activeOrders.filter((o) => isOverdue(o.due_date));
   const openActions = activeOrders.filter(hasOpenAction);
   const aogOrders = activeOrders.filter(
     (o) => o.priority === "AOG" || o.priority === "Yes",
@@ -800,7 +798,7 @@ export default function DashboardPage() {
     color: COLORS.textMuted,
     borderBottom: `1px solid ${COLORS.border}`,
     backgroundColor: COLORS.surfaceSubtle,
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
   };
 
   const cellStyle: React.CSSProperties = {
@@ -808,10 +806,31 @@ export default function DashboardPage() {
     fontSize: "13px",
     color: COLORS.text,
     borderBottom: `1px solid ${COLORS.border}`,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
+    wordBreak: "break-word",
+    lineHeight: 1.45,
   };
+
+  const detailTableStyle: React.CSSProperties = {
+    borderCollapse: "collapse",
+    width: "100%",
+    tableLayout: "fixed",
+  };
+
+  const defaultColumnWidths = ["12%", "18%", "12%", "12%", "10%", "16%", "20%"];
+  const staleColumnWidths = ["12%", "24%", "18%", "24%", "22%"];
+  const readyColumnWidths = ["18%", "46%", "36%"];
+
+  function renderColumnGroup(widths: string[]) {
+    return (
+      <colgroup>
+        {widths.map((width, index) => (
+          <col key={`${width}-${index}`} style={{ width }} />
+        ))}
+      </colgroup>
+    );
+  }
 
   const woLinkStyle: React.CSSProperties = {
     color: COLORS.blue,
@@ -842,7 +861,8 @@ export default function DashboardPage() {
     );
 
     return (
-      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "auto" }}>
+      <table style={detailTableStyle}>
+        {renderColumnGroup(defaultColumnWidths)}
         <thead>
           <tr>
             <th style={headerStyle}>WO</th>
@@ -923,7 +943,8 @@ export default function DashboardPage() {
 
   function renderActionsTable(list: WorkOrder[]) {
     return (
-      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "auto" }}>
+      <table style={detailTableStyle}>
+        {renderColumnGroup(defaultColumnWidths)}
         <thead>
           <tr>
             <th style={headerStyle}>WO</th>
@@ -990,7 +1011,7 @@ export default function DashboardPage() {
                         cursor: "pointer",
                         backgroundColor: COLORS.surface,
                         color: COLORS.red,
-                        whiteSpace: "nowrap",
+                        whiteSpace: "normal",
                         transition: "all 0.15s ease",
                       }}
                       onMouseEnter={(e) => {
@@ -1027,7 +1048,8 @@ export default function DashboardPage() {
 
   function renderReadyTable(list: WorkOrder[]) {
     return (
-      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "auto" }}>
+      <table style={detailTableStyle}>
+        {renderColumnGroup(readyColumnWidths)}
         <thead>
           <tr>
             <th style={headerStyle}>WO</th>
@@ -1070,7 +1092,8 @@ export default function DashboardPage() {
 
   function renderStaleTable(list: WorkOrder[]) {
     return (
-      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "auto" }}>
+      <table style={detailTableStyle}>
+        {renderColumnGroup(staleColumnWidths)}
         <thead>
           <tr>
             <th style={headerStyle}>WO</th>
@@ -1179,12 +1202,12 @@ export default function DashboardPage() {
       style={{
         minHeight: "100vh",
         backgroundColor: COLORS.pageBg,
-        padding: "28px 32px 48px",
+        padding: "32px 40px 40px",
         fontFamily: FONT_STACK,
         color: COLORS.text,
       }}
     >
-      <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
+      <div style={{ maxWidth: "1400px" }}>
         {/* HEADER */}
         <header
           style={{

@@ -506,7 +506,8 @@ export default function ImportPage() {
   };
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "sans-serif", maxWidth: "1240px" }}>
+    <main style={{ minHeight: "100vh", backgroundColor: "#f2efe9", padding: "32px 40px 40px", fontFamily: "sans-serif" }}>
+      <div style={{ maxWidth: "1240px" }}>
       <h1>AcMP Import</h1>
 
       {step === "upload" && (
@@ -878,6 +879,7 @@ export default function ImportPage() {
         </p>
       )}
 
+      </div>
     </main>
   );
 }
