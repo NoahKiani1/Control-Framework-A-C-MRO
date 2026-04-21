@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { Public_Sans } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
 import { READY_TO_CLOSE_STEP } from "@/lib/process-steps";
 import { canPerformStep } from "@/lib/restrictions";
@@ -47,30 +48,45 @@ type Absence = {
 };
 
 const NO_QUALIFIED_ENGINEER_REASON = "No Qualified Engineer Present";
-const FONT_STACK =
-  'var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const shopFont = Public_Sans({
+  subsets: ["latin"],
+  display: "swap",
+});
+const FONT_STACK = `${shopFont.style.fontFamily}, "Gotham", var(--font-geist-sans), "Geist", var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`;
 const AUTO_SCROLL_SPEED_PX_PER_SECOND = 18;
 const AUTO_SCROLL_TOP_PAUSE_MS = 7000;
 const AUTO_SCROLL_SECTION_PAUSE_MS = 5000;
 const AUTO_SCROLL_BOTTOM_PAUSE_MS = 9000;
 
 const COLORS = {
-  pageBg: "#f3f5f7",
-  ink: "#14181f",
-  muted: "#5c6675",
-  soft: "#f6f8fa",
-  panel: "#ffffff",
-  border: "#d6dde6",
-  borderStrong: "#b8c4d1",
-  green: "#0f8a67",
-  greenSoft: "#e7f5ef",
-  red: "#cf3b32",
-  redSoft: "#fdeceb",
-  amber: "#b56a15",
-  amberSoft: "#fff1dc",
-  blue: "#2358d4",
-  blueSoft: "#eaf0ff",
+  pageBg: "#e3e7ee",
+  ink: "#1a1f2b",
+  muted: "#5f6878",
+  soft: "#eef1f6",
+  panel: "#f7f8fb",
+  border: "#d2d8e1",
+  borderStrong: "#b5bdc9",
+  green: "#2d8a5f",
+  greenSoft: "#e4efe9",
+  red: "#b5372f",
+  redSoft: "#f4e2df",
+  amber: "#a56610",
+  amberSoft: "#f5ecd7",
+  blue: "#2f549e",
+  blueSoft: "#e4ebf5",
 };
+
+const CARD_OPEN_BG = "#f1f6f2";
+const CARD_OPEN_BORDER = "#cedbd2";
+const CARD_BLOCKED_BG = "#f7ece9";
+const CARD_BLOCKED_BORDER = "#e4c9c3";
+
+const HEADER_BG = "#1b2230";
+const HEADER_BORDER = "#0f141d";
+const HEADER_INK = "#eef2f7";
+const HEADER_MUTED = "rgba(238, 242, 247, 0.6)";
+const HEADER_TILE_BG = "rgba(255, 255, 255, 0.06)";
+const HEADER_TILE_BORDER = "rgba(255, 255, 255, 0.12)";
 
 function localDateKey(date = new Date()): string {
   const year = date.getFullYear();
@@ -119,7 +135,8 @@ function AssignedPerson({
   photoUrl: string | null;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const displayName = normalizeAssignedPersonTeam(name);
+  const normalizedName = normalizeAssignedPersonTeam(name);
+  const displayName = normalizedName === "Shop" ? "Shop" : normalizedName;
   const showPhotoOnly = Boolean(photoUrl) && !imageFailed;
   const resolvedPhotoUrl = photoUrl || "";
 
@@ -130,18 +147,21 @@ function AssignedPerson({
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          minWidth: "92px",
+          width: "84px",
           minHeight: "40px",
-          padding: "0 14px",
-          borderRadius: "999px",
+          padding: "0 10px",
+          borderRadius: "8px",
           backgroundColor: COLORS.soft,
-          border: `1px solid ${COLORS.border}`,
+          border: `1px solid ${COLORS.borderStrong}`,
           color: COLORS.ink,
-          fontSize: "15px",
-          fontWeight: 700,
+          fontSize: "14px",
+          fontWeight: 600,
           lineHeight: 1,
+          letterSpacing: "0.01em",
           textAlign: "center",
           whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
         }}
       >
         {displayName}
@@ -153,11 +173,10 @@ function AssignedPerson({
     <span
       style={{
         display: "grid",
-        alignItems: "center",
+        alignItems: "end",
         justifyItems: "center",
-        width: "100%",
-        height: "100%",
-        minHeight: "76px",
+        width: "84px",
+        height: "84px",
       }}
     >
       <Image
@@ -168,10 +187,10 @@ function AssignedPerson({
         unoptimized
         onError={() => setImageFailed(true)}
         style={{
-          width: "92px",
-          height: "92px",
-          maxWidth: "92px",
-          maxHeight: "92px",
+          width: "84px",
+          height: "84px",
+          maxWidth: "84px",
+          maxHeight: "84px",
           borderRadius: "0",
           objectFit: "contain",
           objectPosition: "center bottom",
@@ -363,11 +382,22 @@ export default function ShopPage() {
           backgroundColor: COLORS.pageBg,
           color: COLORS.ink,
           fontFamily: FONT_STACK,
-          fontSize: "34px",
-          fontWeight: 800,
         }}
       >
-        Loading shop wall...
+        <div style={{ display: "grid", gap: "10px", justifyItems: "center" }}>
+          <div
+            style={{
+              fontSize: "11px",
+              fontWeight: 500,
+              letterSpacing: "0.18em",
+              color: COLORS.muted,
+              textTransform: "uppercase",
+            }}
+          >
+            Aircraft & Component MRO · Workshop
+          </div>
+          <div style={{ fontSize: "24px", fontWeight: 600, letterSpacing: "-0.015em" }}>Loading shop wall...</div>
+        </div>
       </main>
     );
   }
@@ -375,27 +405,29 @@ export default function ShopPage() {
   const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
   const blockedOrders = orders.filter((o) => isBlocked(o));
   const engineerByName = new Map(engineers.map((e) => [e.name, e]));
+  const aogCount = orders.filter((o) => o.priority === "AOG").length;
 
   const cardStyle: React.CSSProperties = {
+    position: "relative",
     display: "grid",
     gridTemplateColumns:
-      "minmax(190px, 0.85fr) minmax(220px, 1.05fr) minmax(220px, 1fr) 140px 150px",
-    gap: "12px",
-    alignItems: "center",
-    minHeight: "96px",
-    padding: "12px 14px",
-    borderRadius: "8px",
+      "minmax(200px, 22fr) minmax(150px, 18fr) minmax(260px, 40fr) minmax(232px, 20fr)",
+    columnGap: "14px",
+    alignItems: "stretch",
+    minHeight: "104px",
+    padding: "10px 14px 10px 18px",
+    borderRadius: "10px",
     border: `1px solid ${COLORS.border}`,
     backgroundColor: COLORS.panel,
-    boxShadow: "0 10px 24px rgba(20, 24, 31, 0.07)",
+    boxShadow: "0 1px 2px rgba(15, 20, 30, 0.04)",
+    overflow: "hidden",
   };
 
   const labelStyle: React.CSSProperties = {
-    marginBottom: "4px",
     color: COLORS.muted,
     fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.08em",
+    fontWeight: 600,
+    letterSpacing: "0.14em",
     textTransform: "uppercase",
   };
 
@@ -404,29 +436,31 @@ export default function ShopPage() {
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
-      minWidth: "82px",
-      padding: "8px 14px",
-      borderRadius: "8px",
-      fontSize: "16px",
-      fontWeight: 800,
-      border: `1px solid ${COLORS.borderStrong}`,
+      minWidth: "58px",
+      padding: "4px 10px",
+      borderRadius: "5px",
+      fontSize: "13px",
+      fontWeight: 700,
+      letterSpacing: "0.08em",
+      border: `1px solid transparent`,
+      lineHeight: 1.1,
     };
 
     if (order.priority === "AOG") {
       return {
         ...base,
-        color: COLORS.red,
-        backgroundColor: COLORS.redSoft,
-        borderColor: "#f3b2ad",
+        color: "#ffffff",
+        backgroundColor: COLORS.red,
+        borderColor: COLORS.red,
       };
     }
 
     if (order.priority === "Yes") {
       return {
         ...base,
-        color: COLORS.amber,
+        color: COLORS.ink,
         backgroundColor: COLORS.amberSoft,
-        borderColor: "#efc48f",
+        borderColor: "#e5cf9a",
       };
     }
 
@@ -461,50 +495,88 @@ export default function ShopPage() {
         key={order.work_order_id}
         style={{
           ...cardStyle,
-          borderLeft: `8px solid ${statusColor}`,
-          backgroundColor:
-            order.priority === "AOG"
-              ? "#fff8f7"
-              : order.priority === "Yes"
-                ? "#fffaf2"
-                : COLORS.panel,
+          backgroundColor: blocked ? CARD_BLOCKED_BG : CARD_OPEN_BG,
+          borderColor: blocked ? CARD_BLOCKED_BORDER : CARD_OPEN_BORDER,
         }}
       >
-        <div>
-          <div style={labelStyle}>Work order</div>
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: "5px",
+            backgroundColor: statusColor,
+          }}
+        />
+
+        {/* COL 1: work order identity - ID + priority badge + part number */}
+        <div
+          style={{
+            display: "grid",
+            alignContent: "center",
+            gap: "4px",
+            minWidth: 0,
+          }}
+        >
           <div
             style={{
-              color: COLORS.ink,
-              fontSize: "24px",
-              fontWeight: 800,
-              lineHeight: 1.02,
-              overflowWrap: "anywhere",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              flexWrap: "wrap",
+              rowGap: "4px",
             }}
           >
-            {order.work_order_id}
+            <div
+              style={{
+                color: COLORS.ink,
+                fontSize: "36px",
+                fontWeight: 650,
+                lineHeight: 0.98,
+                letterSpacing: "-0.015em",
+                fontVariantNumeric: "tabular-nums",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {order.work_order_id}
+            </div>
+            {prioLabel(order) && (
+              <span style={priorityStyle(order)}>{prioLabel(order)}</span>
+            )}
           </div>
           <div
             style={{
-              marginTop: "4px",
               color: COLORS.muted,
               fontSize: "16px",
-              fontWeight: 700,
-              lineHeight: 1.12,
+              fontWeight: 600,
+              lineHeight: 1.2,
+              letterSpacing: "0.01em",
               overflowWrap: "anywhere",
+              fontVariantNumeric: "tabular-nums",
             }}
           >
-            {order.part_number || "-"}
+            {`PN: ${order.part_number || "-"}`}
           </div>
         </div>
 
-        <div>
-          <div style={labelStyle}>Customer</div>
+        {/* COL 2: customer */}
+        <div
+          style={{
+            display: "grid",
+            alignContent: "center",
+            gap: "2px",
+            minWidth: 0,
+          }}
+        >
           <div
             style={{
               color: COLORS.ink,
               fontSize: "20px",
-              fontWeight: 700,
-              lineHeight: 1.08,
+              fontWeight: 550,
+              lineHeight: 1.15,
+              letterSpacing: "0.002em",
               overflowWrap: "anywhere",
             }}
           >
@@ -512,14 +584,27 @@ export default function ShopPage() {
           </div>
         </div>
 
-        <div>
-          <div style={labelStyle}>{blocked ? "Hold reason" : "Next step"}</div>
+        {/* COL 3: operational message - next step or hold reason */}
+        <div
+          style={{
+            display: "grid",
+            alignContent: "center",
+            gap: "3px",
+            minWidth: 0,
+            borderLeft: `1px solid ${COLORS.border}`,
+            paddingLeft: "16px",
+          }}
+        >
+          {blocked && (
+            <div style={labelStyle}>Hold reason</div>
+          )}
           <div
             style={{
-              color: blocked ? COLORS.red : COLORS.blue,
-              fontSize: "22px",
-              fontWeight: 800,
-              lineHeight: 1.12,
+              color: blocked ? COLORS.red : COLORS.ink,
+              fontSize: "26px",
+              fontWeight: 650,
+              lineHeight: 1.1,
+              letterSpacing: "-0.01em",
               overflowWrap: "anywhere",
             }}
           >
@@ -528,11 +613,10 @@ export default function ShopPage() {
           {!blocked && (
             <div
               style={{
-                marginTop: "6px",
                 color: COLORS.muted,
-                fontSize: "15px",
-                fontWeight: 750,
-                lineHeight: 1.15,
+                fontSize: "16px",
+                fontWeight: 500,
+                lineHeight: 1.2,
                 overflowWrap: "anywhere",
               }}
             >
@@ -541,42 +625,71 @@ export default function ShopPage() {
           )}
         </div>
 
+        {/* COL 4: compact meta rail - owner + due date */}
         <div
           style={{
-            display: "grid",
             alignSelf: "stretch",
-            visibility: blocked ? "hidden" : "visible",
-            alignContent: "center",
-            justifyItems: "center",
-          }}
-        >
-          <AssignedPerson
-            name={assignedPersonTeam}
-            photoUrl={getEngineerPhotoUrl(engineer?.photo_path)}
-          />
-        </div>
-
-        <div
-          style={{
             display: "grid",
-            gap: "4px",
-            justifyItems: "center",
-            textAlign: "center",
+            gridTemplateColumns: "84px minmax(0, 1fr)",
+            gridTemplateRows: "auto auto",
+            columnGap: "12px",
+            rowGap: "4px",
+            paddingLeft: "14px",
+            borderLeft: `1px solid ${COLORS.border}`,
+            minWidth: 0,
           }}
         >
-          {prioLabel(order) && (
-            <span style={priorityStyle(order)}>{prioLabel(order)}</span>
-          )}
-          <div>
-            <div style={{ ...labelStyle, marginBottom: "4px", fontSize: "11px" }}>
-              Due on
-            </div>
+          <div
+            style={{
+              ...labelStyle,
+              visibility: blocked ? "hidden" : "visible",
+            }}
+          >
+            Assigned
+          </div>
+          <div
+            style={{
+              ...labelStyle,
+              textAlign: "right",
+            }}
+          >
+            Work order due on
+          </div>
+          <div
+            style={{
+              visibility: blocked ? "hidden" : "visible",
+              display: "grid",
+              placeItems: "center",
+              width: "84px",
+              height: "84px",
+              gridRow: 2,
+            }}
+          >
+            <AssignedPerson
+              name={assignedPersonTeam}
+              photoUrl={getEngineerPhotoUrl(engineer?.photo_path)}
+            />
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gap: "1px",
+              alignContent: "center",
+              justifyItems: "end",
+              minWidth: 0,
+              gridColumn: 2,
+              gridRow: 2,
+            }}
+          >
             <div
               style={{
                 color: COLORS.ink,
-                fontSize: "18px",
-                fontWeight: 800,
+                fontSize: "24px",
+                fontWeight: 700,
                 whiteSpace: "nowrap",
+                fontVariantNumeric: "tabular-nums",
+                lineHeight: 1.0,
+                letterSpacing: "-0.015em",
               }}
             >
               {formatDate(order.due_date)}
@@ -594,72 +707,79 @@ export default function ShopPage() {
     blocked = false,
     ref?: React.Ref<HTMLElement>,
   ) {
+    const accent = blocked ? COLORS.red : COLORS.green;
+
     return (
       <section ref={ref}>
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+            alignItems: "baseline",
             gap: "14px",
-            padding: "8px 12px",
-            borderRadius: "8px",
-            color: COLORS.ink,
-            backgroundColor: COLORS.panel,
-            border: `1px solid ${blocked ? "#f2b2ad" : COLORS.border}`,
-            boxShadow: "0 8px 20px rgba(20, 24, 31, 0.05)",
+            padding: "2px 4px 10px 4px",
+            borderBottom: `1px solid ${COLORS.border}`,
           }}
         >
-          <div style={{ display: "grid", gap: "2px" }}>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: "20px",
-                lineHeight: 1,
-                fontWeight: 800,
-              }}
-            >
-              {title}
-            </h2>
-            <div
-              style={{
-                fontSize: "12px",
-                fontWeight: 600,
-                color: COLORS.muted,
-              }}
-            >
-              {subtitle}
-            </div>
-          </div>
+          <div
+            aria-hidden
+            style={{
+              width: "4px",
+              height: "22px",
+              borderRadius: "2px",
+              backgroundColor: accent,
+              alignSelf: "center",
+            }}
+          />
+          <h2
+            style={{
+              margin: 0,
+              fontSize: "22px",
+              fontWeight: 700,
+              lineHeight: 1,
+              letterSpacing: "-0.015em",
+              color: COLORS.ink,
+            }}
+          >
+            {title}
+          </h2>
           <div
             style={{
-              minWidth: "48px",
-              textAlign: "center",
-              padding: "6px 10px",
-              borderRadius: "8px",
-              backgroundColor: blocked ? COLORS.redSoft : COLORS.greenSoft,
-              color: blocked ? COLORS.red : COLORS.green,
               fontSize: "22px",
-              fontWeight: 800,
+              fontWeight: 600,
+              lineHeight: 1,
+              color: accent,
               fontVariantNumeric: "tabular-nums",
+              letterSpacing: "-0.01em",
             }}
           >
             {list.length}
+          </div>
+          <div
+            style={{
+              marginLeft: "auto",
+              fontSize: "13px",
+              fontWeight: 500,
+              color: COLORS.muted,
+              letterSpacing: "0.005em",
+            }}
+          >
+            {subtitle}
           </div>
         </div>
 
         {list.length === 0 ? (
           <div
             style={{
-              marginTop: "14px",
+              marginTop: "10px",
               padding: "18px",
-              borderRadius: "8px",
+              borderRadius: "10px",
               backgroundColor: COLORS.panel,
               border: `1px dashed ${COLORS.borderStrong}`,
               color: COLORS.muted,
-              fontSize: "16px",
-              fontWeight: 700,
+              fontSize: "15px",
+              fontWeight: 500,
               textAlign: "center",
+              letterSpacing: "0.01em",
             }}
           >
             Nothing here right now.
@@ -669,8 +789,8 @@ export default function ShopPage() {
             style={{
               display: "grid",
               gridTemplateColumns: "1fr",
-              gap: "6px",
-              marginTop: "8px",
+              gap: "8px",
+              marginTop: "10px",
             }}
           >
             {list.map((order) => renderOrderCard(order, blocked))}
@@ -680,29 +800,122 @@ export default function ShopPage() {
     );
   }
 
+  const stats = [
+    { label: "Open", value: nonBlockedOrders.length, tone: "#7fd1a4" },
+    { label: "Blocked", value: blockedOrders.length, tone: "#f0a39b" },
+    { label: "AOG", value: aogCount, tone: aogCount > 0 ? "#ff7a6d" : HEADER_INK },
+  ];
+
   return (
     <main
       style={{
         height: "100vh",
+        display: "flex",
+        flexDirection: "column",
         overflow: "hidden",
         backgroundColor: COLORS.pageBg,
         color: COLORS.ink,
         fontFamily: FONT_STACK,
       }}
     >
+      <header
+        style={{
+          flex: "0 0 auto",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "24px",
+          padding: "14px 26px",
+          borderBottom: `1px solid ${HEADER_BORDER}`,
+          backgroundColor: HEADER_BG,
+          color: HEADER_INK,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+          
+          <div style={{ display: "grid", gap: "4px" }}>
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 500,
+                letterSpacing: "0.18em",
+                color: HEADER_MUTED,
+                textTransform: "uppercase",
+              }}
+            >
+              Aircraft & Component MRO · Workshop
+            </div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "24px",
+                fontWeight: 600,
+                letterSpacing: "-0.02em",
+                lineHeight: 1,
+                color: HEADER_INK,
+              }}
+            >
+              Workshop Operations
+            </h1>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "6px" }}>
+          {stats.map((stat) => (
+            <div
+              key={stat.label}
+              style={{
+                display: "grid",
+                gap: "3px",
+                justifyItems: "center",
+                minWidth: "88px",
+                padding: "6px 16px",
+                borderRadius: "8px",
+                backgroundColor: HEADER_TILE_BG,
+                border: `1px solid ${HEADER_TILE_BORDER}`,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 500,
+                  letterSpacing: "0.16em",
+                  color: HEADER_MUTED,
+                  textTransform: "uppercase",
+                }}
+              >
+                {stat.label}
+              </div>
+              <div
+                style={{
+                  fontSize: "24px",
+                  fontWeight: 600,
+                  color: stat.tone,
+                  lineHeight: 1,
+                  fontVariantNumeric: "tabular-nums",
+                  letterSpacing: "-0.015em",
+                }}
+              >
+                {stat.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      </header>
+
       <div
         ref={scrollerRef}
         style={{
-          height: "100vh",
+          flex: "1 1 auto",
           overflowY: "hidden",
-          padding: "14px",
+          padding: "18px 22px",
         }}
       >
         <div
           ref={contentRef}
           style={{
             display: "grid",
-            gap: "14px",
+            gap: "18px",
             willChange: "transform",
           }}
         >
