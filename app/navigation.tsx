@@ -51,7 +51,7 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-const CURRENT_USER = { name: "Noah Kiani", role: "Planner", initials: "NK" };
+const CURRENT_USER = { name: "Noah Kiani", role: "Developer", initials: "NK" };
 
 export function Navigation() {
   const pathname = usePathname();

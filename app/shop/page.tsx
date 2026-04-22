@@ -4,12 +4,14 @@ import Image from "next/image";
 import { Public_Sans } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
 import { READY_TO_CLOSE_STEP } from "@/lib/process-steps";
-import { canPerformStep } from "@/lib/restrictions";
 import {
+  applyTodayQualificationBlocks,
   formatDate,
   isBlocked,
+  localDateKey,
   normalizeAssignedPersonTeam,
   normalizeRfqState,
+  priorityTag,
   sortOrders,
 } from "@/lib/work-order-rules";
 import {
@@ -47,7 +49,6 @@ type Absence = {
   absence_date: string;
 };
 
-const NO_QUALIFIED_ENGINEER_REASON = "No Qualified Engineer Present";
 const shopFont = Public_Sans({
   subsets: ["latin"],
   display: "swap",
@@ -87,45 +88,6 @@ const HEADER_INK = "#eef2f7";
 const HEADER_MUTED = "rgba(238, 242, 247, 0.6)";
 const HEADER_TILE_BG = "rgba(255, 255, 255, 0.06)";
 const HEADER_TILE_BORDER = "rgba(255, 255, 255, 0.12)";
-
-function localDateKey(date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
-function applyTodayQualificationBlocks(
-  orders: WorkOrder[],
-  engineers: Engineer[],
-  absences: Absence[],
-  today: string,
-): WorkOrder[] {
-  const absentEngineerIds = new Set(
-    absences
-      .filter((absence) => absence.absence_date === today)
-      .map((absence) => absence.engineer_id),
-  );
-  const presentEngineers = engineers.filter(
-    (engineer) => !absentEngineerIds.has(engineer.id),
-  );
-
-  return orders.map((order) => {
-    if (isBlocked(order) || !order.current_process_step) return order;
-
-    const hasQualifiedEngineer = presentEngineers.some((engineer) =>
-      canPerformStep(engineer.restrictions, order.current_process_step!),
-    );
-
-    if (hasQualifiedEngineer) return order;
-
-    return {
-      ...order,
-      hold_reason: NO_QUALIFIED_ENGINEER_REASON,
-    };
-  });
-}
 
 function isOverdue(dateStr: string | null): boolean {
   if (!dateStr) return false;
@@ -417,7 +379,7 @@ export default function ShopPage() {
   const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
   const blockedOrders = orders.filter((o) => isBlocked(o));
   const engineerByName = new Map(engineers.map((e) => [e.name, e]));
-  const aogCount = orders.filter((o) => o.priority === "AOG").length;
+  const aogCount = orders.filter((o) => priorityTag(o.priority) === "AOG").length;
 
   const cardStyle: React.CSSProperties = {
     position: "relative",
@@ -458,7 +420,9 @@ export default function ShopPage() {
       lineHeight: 1.1,
     };
 
-    if (order.priority === "AOG") {
+    const tag = priorityTag(order.priority);
+
+    if (tag === "AOG") {
       return {
         ...base,
         color: "#ffffff",
@@ -467,7 +431,7 @@ export default function ShopPage() {
       };
     }
 
-    if (order.priority === "Yes") {
+    if (tag === "PRIO") {
       return {
         ...base,
         color: COLORS.ink,
@@ -484,9 +448,7 @@ export default function ShopPage() {
   }
 
   function prioLabel(order: WorkOrder): string | null {
-    if (order.priority === "AOG") return "AOG";
-    if (order.priority === "Yes") return "PRIO";
-    return null;
+    return priorityTag(order.priority);
   }
 
   function holdReasonDisplay(o: WorkOrder): string {

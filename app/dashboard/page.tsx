@@ -8,6 +8,7 @@ import {
   isStale,
   latestUpdate,
   normalizeAssignedPersonTeam,
+  priorityTag,
   sortOrders,
 } from "@/lib/work-order-rules";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
@@ -530,9 +531,7 @@ export default function DashboardPage() {
   const dueThisWeek = activeOrders.filter((o) => isDueThisWeek(o.due_date));
   const overdueOrders = activeOrders.filter((o) => isOverdue(o.due_date));
   const openActions = activeOrders.filter(hasOpenAction);
-  const aogOrders = activeOrders.filter(
-    (o) => o.priority === "AOG" || o.priority === "Yes",
-  );
+  const aogOrders = activeOrders.filter((o) => priorityTag(o.priority) !== null);
   const staleOrders = activeOrders.filter((o) => {
     const last = latestUpdate(o.last_system_update, o.last_manual_update);
     return isStale(last);
@@ -875,14 +874,16 @@ export default function DashboardPage() {
           </tr>
         </thead>
         <tbody>
-          {sorted.map((o, idx) => (
+          {sorted.map((o, idx) => {
+            const tag = priorityTag(o.priority);
+            return (
             <tr
               key={o.work_order_id}
               style={{
                 backgroundColor:
-                  o.priority === "AOG"
+                  tag === "AOG"
                     ? COLORS.redSoft
-                    : o.priority === "Yes"
+                    : tag === "PRIO"
                       ? COLORS.amberSoft
                       : idx % 2 === 0
                         ? COLORS.surface
@@ -898,7 +899,7 @@ export default function DashboardPage() {
               <td style={cellStyle}>{o.work_order_type || "–"}</td>
               <td style={cellStyle}>{formatDate(o.due_date)}</td>
               <td style={cellStyle}>
-                {o.priority && o.priority !== "No" ? (
+                {tag ? (
                   <span
                     style={{
                       padding: "3px 8px",
@@ -906,12 +907,12 @@ export default function DashboardPage() {
                       fontWeight: 700,
                       borderRadius: "999px",
                       backgroundColor:
-                        o.priority === "AOG" ? COLORS.red : COLORS.amber,
+                        tag === "AOG" ? COLORS.red : COLORS.amber,
                       color: "white",
                       letterSpacing: "0.03em",
                     }}
                   >
-                    {o.priority}
+                    {tag}
                   </span>
                 ) : (
                   <span style={{ color: COLORS.textMuted }}>–</span>
@@ -924,7 +925,8 @@ export default function DashboardPage() {
                 <ProcessStepDisplay order={o} />
               </td>
             </tr>
-          ))}
+            );
+          })}
 
           {sorted.length === 0 && (
             <tr>

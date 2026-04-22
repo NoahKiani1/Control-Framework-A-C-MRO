@@ -1,3 +1,5 @@
+import { canPerformStep } from "@/lib/restrictions";
+
 type BlockableOrder = {
   hold_reason?: string | null;
   rfq_state?: string | null;
@@ -8,11 +10,49 @@ type SortableOrder = BlockableOrder & {
   due_date?: string | null;
 };
 
+type CorrectiveActionOrder = {
+  required_next_action?: string | null;
+  action_owner?: string | null;
+};
+
+type QualifiableOrder = BlockableOrder & {
+  current_process_step: string | null;
+};
+
+type QualifiableEngineer = {
+  id: number;
+  restrictions: string[] | null;
+};
+
+type DatedAbsence = {
+  engineer_id: number;
+  absence_date: string;
+};
+
 type BlockReasonOptions = {
   rfqSentLabel?: string;
 };
 
 export const DEFAULT_ASSIGNED_PERSON_TEAM = "Shop";
+export const NO_QUALIFIED_ENGINEER_REASON = "No Qualified Engineer Present";
+
+export type PriorityTag = "AOG" | "PRIO";
+
+export function priorityTag(
+  priority: string | null | undefined,
+): PriorityTag | null {
+  const p = (priority || "").trim().toLowerCase();
+  if (p === "aog") return "AOG";
+  if (p === "yes" || p === "prio" || p === "priority") return "PRIO";
+  return null;
+}
+
+export function localDateKey(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 export function normalizeAssignedPersonTeam(
   assignedPersonTeam: string | null | undefined,
@@ -57,6 +97,30 @@ export function latestUpdate(system: string | null, manual: string | null): stri
   return new Date(system) > new Date(manual) ? system : manual;
 }
 
+export function getCorrectiveActionContext(order: CorrectiveActionOrder): {
+  action: string | null;
+  owner: string | null;
+  summary: string | null;
+} {
+  const action = order.required_next_action?.trim() || null;
+
+  if (!action) {
+    return {
+      action: null,
+      owner: null,
+      summary: null,
+    };
+  }
+
+  const owner = order.action_owner?.trim() || null;
+
+  return {
+    action,
+    owner,
+    summary: owner ? `Action: ${action} · Owner: ${owner}` : `Action: ${action}`,
+  };
+}
+
 export function formatDate(dateStr: string | null): string {
   if (!dateStr) return "–";
   const date = new Date(dateStr);
@@ -72,6 +136,37 @@ export function isStale(dateStr: string | null): boolean {
   const twoWeeksAgo = new Date();
   twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
   return new Date(dateStr) < twoWeeksAgo;
+}
+
+export function applyTodayQualificationBlocks<T extends QualifiableOrder>(
+  orders: T[],
+  engineers: QualifiableEngineer[],
+  absences: DatedAbsence[],
+  today: string,
+): T[] {
+  const absentEngineerIds = new Set(
+    absences
+      .filter((a) => a.absence_date === today)
+      .map((a) => a.engineer_id),
+  );
+  const presentEngineers = engineers.filter(
+    (e) => !absentEngineerIds.has(e.id),
+  );
+
+  return orders.map((order) => {
+    if (isBlocked(order) || !order.current_process_step) return order;
+
+    const hasQualifiedEngineer = presentEngineers.some((e) =>
+      canPerformStep(e.restrictions, order.current_process_step!),
+    );
+
+    if (hasQualifiedEngineer) return order;
+
+    return {
+      ...order,
+      hold_reason: NO_QUALIFIED_ENGINEER_REASON,
+    };
+  });
 }
 
 export function blockReason(

@@ -761,7 +761,7 @@ export default function OfficeUpdatePage() {
                             style={inputStyle}
                           >
                             <option value="No">No</option>
-                            <option value="Yes">Yes</option>
+                            <option value="Yes">PRIO</option>
                             <option value="AOG">AOG</option>
                           </select>
                         </div>
