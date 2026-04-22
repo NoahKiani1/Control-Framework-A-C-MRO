@@ -8,11 +8,15 @@ import {
   hasOptionalSteps,
   READY_TO_CLOSE_STEP,
 } from "@/lib/process-steps";
-import { autoAssignForStep } from "@/lib/auto-assign";
+import {
+  applySuggestedAssignmentsForCurrentStep,
+  autoAssignForStep,
+} from "@/lib/auto-assign";
 import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
 import { normalizeAssignedPersonTeam } from "@/lib/work-order-rules";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 import { SearchableSelect } from "@/app/components/searchable-select";
+import { PageHeader } from "@/app/components/page-header";
 
 type WorkOrder = {
   work_order_id: string;
@@ -34,6 +38,7 @@ type StaffMember = {
   id: number;
   name: string;
   restrictions: string[] | null;
+  employment_start_date?: string | null;
 };
 
 type Absence = {
@@ -51,23 +56,24 @@ function localDateKey(date = new Date()): string {
 
 const COLORS = {
   pageBg: "#f2efe9",
-  panelBg: "#fcfaf6",
-  cardBg: "#ffffff",
-  border: "#ddd3c3",
-  borderStrong: "#cdbfa9",
+  panelBg: "#ffffff",
+  cardBg: "#faf8f3",
+  border: "#e2ddd1",
+  borderStrong: "#ccc4b4",
   text: "#1f2937",
-  textSoft: "#6b7280",
-  textMuted: "#8b857a",
-  heading: "#1d2a3a",
-  blue: "#2f5fd7",
-  blueSoft: "#eef4ff",
-  green: "#18794e",
-  greenSoft: "#eefbf3",
-  amber: "#b7791f",
-  amberSoft: "#fff7e8",
-  red: "#c2410c",
-  redSoft: "#fff1eb",
+  textSoft: "#5f6b7c",
+  textMuted: "#8590a0",
+  heading: "#1f2937",
+  blue: "#2555c7",
+  blueSoft: "#eef3ff",
+  green: "#166534",
+  greenSoft: "#eef9f1",
+  amber: "#b45309",
+  amberSoft: "#fff6e8",
+  red: "#b42318",
+  redSoft: "#fff2ef",
   inputBg: "#fffdf9",
+  shadow: "0 1px 2px rgba(31, 41, 55, 0.04), 0 4px 12px rgba(31, 41, 55, 0.04)",
 };
 
 const FONT_STACK = 'var(--font-inter), var(--font-geist-sans), sans-serif';
@@ -101,6 +107,7 @@ export default function ShopUpdatePage() {
           select: "id, name, restrictions",
           isActive: true,
           role: "shop",
+          startedOn: today,
           orderBy: { column: "name" },
         }),
         getEngineerAbsences<Absence>({
@@ -109,7 +116,23 @@ export default function ShopUpdatePage() {
         }),
       ]);
 
-      setOrders(data.filter((order) => order.current_process_step !== READY_TO_CLOSE_STEP));
+      setOrders(
+        applySuggestedAssignmentsForCurrentStep(
+          data.filter((order) => order.current_process_step !== READY_TO_CLOSE_STEP),
+          staffData,
+          new Set(
+            staffData
+              .filter((engineer) =>
+                absenceData.some(
+                  (absence) =>
+                    absence.absence_date === today &&
+                    absence.engineer_id === engineer.id,
+                ),
+              )
+              .map((engineer) => engineer.name),
+          ),
+        ),
+      );
       setShopStaff(staffData);
       setTodayAbsentEngineerIds(
         absenceData
@@ -316,23 +339,22 @@ export default function ShopUpdatePage() {
   };
 
   const shellStyle: React.CSSProperties = {
-    maxWidth: "1220px",
+    maxWidth: "1440px",
   };
 
   const sectionCard: React.CSSProperties = {
     backgroundColor: COLORS.panelBg,
-    border: `1px solid ${COLORS.borderStrong}`,
-    borderRadius: "18px",
-    padding: "18px",
-    boxShadow: "0 8px 24px rgba(73, 52, 18, 0.05)",
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: "14px",
+    padding: "16px 18px",
+    boxShadow: COLORS.shadow,
   };
 
   const innerCard: React.CSSProperties = {
     backgroundColor: COLORS.cardBg,
     border: `1px solid ${COLORS.border}`,
     borderRadius: "14px",
-    padding: "16px",
-    boxShadow: "0 2px 6px rgba(0,0,0,0.03)",
+    padding: "15px",
   };
 
   const inputStyle: React.CSSProperties = {
@@ -355,10 +377,11 @@ export default function ShopUpdatePage() {
   };
 
   const fieldTitleStyle: React.CSSProperties = {
-    fontSize: "15px",
-    fontWeight: 700,
+    fontSize: "16px",
+    fontWeight: 650,
     color: COLORS.heading,
     margin: 0,
+    letterSpacing: "-0.015em",
   };
 
   const eyebrowStyle: React.CSSProperties = {
@@ -374,87 +397,34 @@ export default function ShopUpdatePage() {
     flex: 1,
     padding: "10px 12px",
     borderRadius: "10px",
-    border: active
-      ? `2px solid ${COLORS.blue}`
-      : `1px solid ${COLORS.borderStrong}`,
-    backgroundColor: active ? COLORS.blueSoft : COLORS.cardBg,
+    border: `1px solid ${active ? "#d7e3ff" : COLORS.border}`,
+    backgroundColor: active ? COLORS.blueSoft : COLORS.panelBg,
     color: active ? COLORS.blue : COLORS.textSoft,
     fontWeight: 700,
-    fontSize: "14px",
+    fontSize: "13px",
     cursor: "pointer",
-    transition: "all 0.15s ease",
+    boxShadow: active ? "0 1px 2px rgba(31, 41, 55, 0.04)" : "none",
   });
 
   const primaryBtn: React.CSSProperties = {
-    padding: "12px 28px",
+    padding: "11px 18px",
     backgroundColor: COLORS.blue,
     color: "white",
-    border: "none",
-    borderRadius: "12px",
+    border: `1px solid ${COLORS.blue}`,
+    borderRadius: "10px",
     cursor: "pointer",
     fontWeight: 700,
-    fontSize: "15px",
-    boxShadow: "0 8px 20px rgba(47,95,215,0.22)",
+    fontSize: "14px",
+    boxShadow: "0 8px 20px rgba(37, 85, 199, 0.18)",
   };
 
   return (
-    <div style={pageStyle}>
+    <main style={pageStyle}>
       <div style={shellStyle}>
-        <div
-          style={{
-            marginBottom: "20px",
-            display: "flex",
-            alignItems: "center",
-            gap: "16px",
-          }}
-        >
-          <div
-            style={{
-              width: "68px",
-              height: "68px",
-              borderRadius: "18px",
-              backgroundColor: "#fffdfa",
-              border: "1px solid #d6cbb8",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 6px 18px rgba(73, 52, 18, 0.08)",
-              flexShrink: 0,
-              fontSize: "34px",
-              lineHeight: 1,
-            }}
-          >
-            🛠️
-          </div>
-
-          <div>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "34px",
-                lineHeight: 1.05,
-                fontWeight: 800,
-                color: COLORS.heading,
-                letterSpacing: "-0.03em",
-              }}
-            >
-              Shop Update
-            </h1>
-
-            <p
-              style={{
-                margin: "10px 0 0",
-                fontSize: "15px",
-                color: COLORS.textSoft,
-                maxWidth: "720px",
-              }}
-            >
-              Select a work order, confirm the current details, then save the
-              completed step or, if applicable, indicate why you cannot proceed with
-              the work order.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          title="Shop Update"
+          description="Select a work order, confirm the current details, then save the completed step or, if applicable, indicate why you cannot proceed with the work order."
+        />
 
         {/* SELECT WORK ORDER */}
         <section style={sectionCard}>
@@ -559,10 +529,6 @@ export default function ShopUpdatePage() {
                   >
                     Completed Step
                   </h2>
-                  <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
-                    Choose the completed step. The next step will be set
-                    automatically.
-                  </p>
 
                   {showMagneticTestOption && (
                     <label
@@ -763,7 +729,7 @@ export default function ShopUpdatePage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -772,8 +738,8 @@ function InfoBox({ label, value }: { label: string; value: string }) {
     <div
       style={{
         padding: "14px 14px 13px",
-        backgroundColor: "#fffdfa",
-        border: "1px solid #ddd3c3",
+        backgroundColor: "#faf8f3",
+        border: "1px solid #e2ddd1",
         borderRadius: "12px",
       }}
     >

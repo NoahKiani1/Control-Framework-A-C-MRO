@@ -9,6 +9,7 @@ type GetEngineersOptions = {
   select?: string;
   isActive?: boolean;
   role?: string;
+  startedOn?: string;
   orderBy?: OrderBy | OrderBy[];
 };
 
@@ -23,6 +24,31 @@ type OrderableQuery = {
 };
 
 const STAFF_PHOTOS_BUCKET = "staff-photos";
+
+type EmploymentDatedEngineer = {
+  employment_start_date?: string | null;
+};
+
+function ensureEmploymentStartDateSelected(select: string): string {
+  if (select.trim() === "*") return select;
+  if (/\bemployment_start_date\b/.test(select)) return select;
+  return `${select}, employment_start_date`;
+}
+
+export function isEngineerStartedOnDateKey<T extends EmploymentDatedEngineer>(
+  engineer: T,
+  dateKey: string,
+): boolean {
+  const employmentStartDate = engineer.employment_start_date?.trim();
+  return !employmentStartDate || employmentStartDate <= dateKey;
+}
+
+export function filterEngineersStartedOnDateKey<T extends EmploymentDatedEngineer>(
+  engineers: T[],
+  dateKey: string,
+): T[] {
+  return engineers.filter((engineer) => isEngineerStartedOnDateKey(engineer, dateKey));
+}
 
 function applyOrderBy<T>(query: T, orderBy?: OrderBy | OrderBy[]): T {
   const orders = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
@@ -42,9 +68,12 @@ export async function getEngineers<T = unknown>({
   select = "*",
   isActive,
   role,
+  startedOn,
   orderBy,
 }: GetEngineersOptions = {}): Promise<T[]> {
-  let query = supabase.from("engineers").select(select);
+  let query = supabase
+    .from("engineers")
+    .select(startedOn ? ensureEmploymentStartDateSelected(select) : select);
 
   if (typeof isActive === "boolean") {
     query = query.eq("is_active", isActive);
@@ -63,7 +92,13 @@ export async function getEngineers<T = unknown>({
     return [];
   }
 
-  return (data as T[]) || [];
+  const engineers = ((data as T[]) || []) as Array<T & EmploymentDatedEngineer>;
+
+  if (!startedOn) {
+    return engineers as T[];
+  }
+
+  return filterEngineersStartedOnDateKey(engineers, startedOn) as T[];
 }
 
 export async function insertEngineer(payload: Record<string, unknown>) {

@@ -11,8 +11,11 @@ type SortableOrder = BlockableOrder & {
 };
 
 type CorrectiveActionOrder = {
+  hold_reason?: string | null;
   required_next_action?: string | null;
   action_owner?: string | null;
+  action_status?: string | null;
+  action_closed?: boolean | null;
 };
 
 type QualifiableOrder = BlockableOrder & {
@@ -97,14 +100,17 @@ export function latestUpdate(system: string | null, manual: string | null): stri
   return new Date(system) > new Date(manual) ? system : manual;
 }
 
+export function hasActiveCorrectiveAction(order: CorrectiveActionOrder): boolean {
+  const action = order.required_next_action?.trim();
+  return Boolean(action) && order.action_status !== "Done" && !order.action_closed;
+}
+
 export function getCorrectiveActionContext(order: CorrectiveActionOrder): {
   action: string | null;
   owner: string | null;
   summary: string | null;
 } {
-  const action = order.required_next_action?.trim() || null;
-
-  if (!action) {
+  if (!hasActiveCorrectiveAction(order)) {
     return {
       action: null,
       owner: null,
@@ -112,12 +118,34 @@ export function getCorrectiveActionContext(order: CorrectiveActionOrder): {
     };
   }
 
+  const action = order.required_next_action?.trim() || null;
+
   const owner = order.action_owner?.trim() || null;
 
   return {
     action,
     owner,
     summary: owner ? `Action: ${action} · Owner: ${owner}` : `Action: ${action}`,
+  };
+}
+
+export function isAutoResolvingBlock(order: CorrectiveActionOrder): boolean {
+  return (
+    order.hold_reason?.trim() === NO_QUALIFIED_ENGINEER_REASON &&
+    !hasActiveCorrectiveAction(order)
+  );
+}
+
+export function getCorrectiveActionCompletionPayload(
+  timestamp = new Date().toISOString(),
+) {
+  return {
+    action_status: "Done",
+    action_closed: true,
+    hold_reason: null,
+    required_next_action: null,
+    action_owner: null,
+    last_manual_update: timestamp,
   };
 }
 

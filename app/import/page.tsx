@@ -20,6 +20,7 @@ import {
   insertWorkOrders,
   upsertWorkOrders,
 } from "@/lib/work-orders";
+import { PageHeader } from "@/app/components/page-header";
 
 type ParsedRow = {
   work_order_id: string;
@@ -35,6 +36,7 @@ type StaffMember = {
   id: number;
   name: string;
   role: string | null;
+  employment_start_date?: string | null;
 };
 
 type NewOrderSetup = {
@@ -166,6 +168,7 @@ export default function ImportPage() {
       getEngineers<StaffMember>({
         select: "id, name, role",
         isActive: true,
+        startedOn: new Date().toISOString().split("T")[0],
         orderBy: { column: "name" },
       }),
     ]);
@@ -506,16 +509,15 @@ export default function ImportPage() {
   };
 
   return (
-    <main style={{ minHeight: "100vh", backgroundColor: "#f2efe9", padding: "32px 40px 40px", fontFamily: "sans-serif" }}>
+    <main style={{ minHeight: "100vh", backgroundColor: "#f2efe9", padding: "32px 40px 40px", fontFamily: "var(--font-inter), var(--font-geist-sans), sans-serif" }}>
       <div style={{ maxWidth: "1240px" }}>
-      <h1>AcMP Import</h1>
+      <PageHeader
+        title="AcMP Import"
+        description="Upload an AcMP Excel export (.xlsx). Closed and old orders will be automatically skipped and removed."
+      />
 
       {step === "upload" && (
         <>
-          <p>
-            Upload an AcMP Excel export (.xlsx). Closed and old orders will be
-            automatically skipped and removed.
-          </p>
           <label
             style={{
               display: "inline-block",

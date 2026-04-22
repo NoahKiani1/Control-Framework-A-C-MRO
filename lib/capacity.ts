@@ -1,4 +1,5 @@
 import { PROCESS_STEPS, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
+import { filterEngineersStartedOnDateKey } from "@/lib/engineers";
 import { isRfqBlockedState } from "@/lib/work-order-rules";
 import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
 
@@ -180,6 +181,17 @@ export type OrderCapacity = {
   is_overdue: boolean;
 };
 
+type CapacityEngineer = {
+  employment_start_date?: string | null;
+};
+
+function toLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function calculateWeekCapacity(
   orders: {
     work_order_id: string;
@@ -191,7 +203,7 @@ export function calculateWeekCapacity(
     hold_reason: string | null;
     rfq_state: string | null;
   }[],
-  engineerCount: number,
+  engineersOrCount: number | CapacityEngineer[],
   absenceDates: Date[],
 ): { weeks: WeekCapacity[]; orderDetails: OrderCapacity[]; overdueOrders: OrderCapacity[] } {
   const today = new Date();
@@ -228,7 +240,10 @@ export function calculateWeekCapacity(
       const absentCount = absenceDates.filter(
         (a) => a.getTime() === day.getTime()
       ).length;
-      const activeEngineers = Math.max(0, engineerCount - absentCount);
+      const plannedEngineerCount = Array.isArray(engineersOrCount)
+        ? filterEngineersStartedOnDateKey(engineersOrCount, toLocalDateKey(day)).length
+        : engineersOrCount;
+      const activeEngineers = Math.max(0, plannedEngineerCount - absentCount);
       available += hoursPerEngineer * activeEngineers;
     }
 

@@ -107,7 +107,7 @@ export function Navigation() {
           aria-label="Dashboard home"
           className="flex flex-col items-center gap-3 px-5 pb-6 pt-7"
         >
-          <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10">
+          <div className="flex h-28 w-28 shrink-0 items-center justify-center">
             <Image
               src="/company-logo.png"
               alt="Aircraft & Component"
@@ -118,7 +118,7 @@ export function Navigation() {
             />
           </div>
           <div className="flex flex-col items-center leading-tight">
-            <span className="text-2xl font-semibold tracking-tight text-white">A&amp;C MRO</span>
+            <span className="text-xl font-semibold tracking-tight text-white">Aircraft &amp; Component</span>
             <span className="text-[13px] text-[#8a8374]">Control Board</span>
           </div>
         </Link>

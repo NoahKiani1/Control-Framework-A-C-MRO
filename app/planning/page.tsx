@@ -3,13 +3,22 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Pencil } from "lucide-react";
-import { READY_TO_CLOSE_STEP } from "@/lib/process-steps";
+import { PageHeader } from "@/app/components/page-header";
+import {
+  PROCESS_STEP_SHORT_LABELS,
+  READY_TO_CLOSE_STEP,
+  getActiveStepsForType,
+  getShortProcessStepLabel,
+} from "@/lib/process-steps";
+import { STEP_WEIGHTS } from "@/lib/capacity";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
   applyTodayQualificationBlocks,
   blockReason,
   formatDate,
+  getCorrectiveActionCompletionPayload,
   getCorrectiveActionContext,
+  hasActiveCorrectiveAction,
   isBlocked,
   isStale,
   latestUpdate,
@@ -18,6 +27,7 @@ import {
   priorityTag,
   sortOrders,
 } from "@/lib/work-order-rules";
+import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
 import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
 import { getWorkOrders, updateWorkOrderAndFetch } from "@/lib/work-orders";
 
@@ -25,6 +35,7 @@ type WorkOrder = {
   work_order_id: string;
   customer: string | null;
   part_number: string | null;
+  work_order_type: string | null;
   due_date: string | null;
   priority: string | null;
   assigned_person_team: string | null;
@@ -33,6 +44,8 @@ type WorkOrder = {
   rfq_state: string | null;
   required_next_action: string | null;
   action_owner: string | null;
+  action_status: string | null;
+  action_closed: boolean | null;
   last_manual_update: string | null;
   last_system_update: string | null;
 };
@@ -41,6 +54,7 @@ type StaffMember = {
   id: number;
   name: string;
   restrictions: string[] | null;
+  employment_start_date?: string | null;
 };
 
 type QuickEditState = {
@@ -60,7 +74,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, last_manual_update, last_system_update";
+  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update";
 
 const ui = {
   pageBg: "#f2efe9",
@@ -196,6 +210,14 @@ const prioBadgeStyle: React.CSSProperties = {
   borderColor: ui.orangeBorder,
 };
 
+const typeBadgeStyle: React.CSSProperties = {
+  ...woBadgeBase,
+  color: ui.muted,
+  backgroundColor: ui.surfaceSoft,
+  borderColor: ui.border,
+  textTransform: "uppercase",
+};
+
 const tableWrapStyle: React.CSSProperties = {
   overflowX: "auto",
   borderRadius: "10px",
@@ -263,6 +285,21 @@ const inlineEditButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const inlineActionButtonStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  marginTop: "8px",
+  padding: "7px 10px",
+  borderRadius: "999px",
+  border: `1px solid ${ui.redBorder}`,
+  backgroundColor: ui.redSoft,
+  color: ui.red,
+  fontSize: "12px",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
 const modalBackdropStyle: React.CSSProperties = {
   position: "fixed",
   inset: 0,
@@ -320,13 +357,6 @@ const modalTitleStyle: React.CSSProperties = {
   letterSpacing: "-0.025em",
   color: ui.text,
   lineHeight: 1.1,
-};
-
-const modalSubtitleStyle: React.CSSProperties = {
-  margin: "8px 0 0",
-  fontSize: "14px",
-  lineHeight: 1.5,
-  color: ui.muted,
 };
 
 const modalActionButtonStyle: React.CSSProperties = {
@@ -399,18 +429,477 @@ function LastUpdateCell({ value }: { value: string | null }) {
   );
 }
 
+type TimelineSegment = {
+  name: string;
+  shortName: string;
+  weight: number;
+  share: number;
+  state: "completed" | "current" | "upcoming";
+};
+
+/** Labels stay selective so the timeline reads as an operational control, not a caption list. */
+const SEGMENT_LABEL_MIN_SHARE = 0.03;
+const EDGE_SEGMENT_LABEL_MIN_SHARE = 0.025;
+const CURRENT_SEGMENT_LABEL_MIN_SHARE = 0.03;
+
+function buildTimelineSegments(order: WorkOrder): TimelineSegment[] {
+  if (!order.work_order_type) return [];
+  const steps = getActiveStepsForType(order.work_order_type, true);
+  if (steps.length === 0) return [];
+  const weights = STEP_WEIGHTS[order.work_order_type] || {};
+  const currentIdx = order.current_process_step
+    ? steps.indexOf(order.current_process_step)
+    : -1;
+
+  const resolved = steps.map((step) => {
+    const rawWeight = weights[step];
+    const weight = rawWeight && rawWeight > 0 ? rawWeight : 0.03;
+    return { step, weight };
+  });
+  const totalWeight = resolved.reduce((sum, s) => sum + s.weight, 0) || 1;
+
+  return resolved.map(({ step, weight }, idx) => {
+    const state: TimelineSegment["state"] =
+      currentIdx === -1
+        ? "upcoming"
+        : idx < currentIdx
+          ? "completed"
+          : idx === currentIdx
+            ? "current"
+            : "upcoming";
+    return {
+      name: step,
+      shortName: getShortProcessStepLabel(step),
+      weight,
+      share: weight / totalWeight,
+      state,
+    };
+  });
+}
+
+const timelineCompletedBg = "#d5e8db";
+const timelineCompletedBorder = "#b1d2bb";
+const timelineCompletedInk = "#166534";
+const timelineLegendEntries = [
+  "Intake",
+  "Disassembly",
+  "Cleaning",
+  "Paint Stripping",
+  "Penetrant Testing",
+  "Magnetic Test",
+  "Eddy Current",
+  "Inspection",
+  "Painting",
+  "Assembly",
+].map((step) => ({
+  step,
+  shortLabel: PROCESS_STEP_SHORT_LABELS[step] || step,
+}));
+
+const timelineRowBaseStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "minmax(210px, 238px) minmax(0, 1fr)",
+  columnGap: "16px",
+  rowGap: "8px",
+  padding: "11px 14px",
+  borderRadius: "10px",
+  border: `1px solid ${ui.border}`,
+  backgroundColor: ui.surface,
+  alignItems: "center",
+};
+
+const timelineRowBlockedStyle: React.CSSProperties = {
+  ...timelineRowBaseStyle,
+  borderColor: ui.redBorder,
+  backgroundColor: "#fff9f7",
+};
+
+function shouldShowTimelineLabel(
+  segment: TimelineSegment,
+  index: number,
+  total: number,
+): boolean {
+  if (segment.shortName.length <= 3) {
+    return segment.share >= 0.02 || total <= 12;
+  }
+
+  if (segment.state === "current") {
+    return segment.share >= CURRENT_SEGMENT_LABEL_MIN_SHARE || total <= 5;
+  }
+
+  if (segment.share >= SEGMENT_LABEL_MIN_SHARE) {
+    return true;
+  }
+
+  return (
+    (index === 0 || index === total - 1) &&
+    segment.share >= EDGE_SEGMENT_LABEL_MIN_SHARE
+  );
+}
+
+function WorkOrderTimelineRow({
+  order,
+  blocked,
+}: {
+  order: WorkOrder;
+  blocked: boolean;
+}) {
+  const segments = buildTimelineSegments(order);
+  const priority = priorityTag(order.priority);
+  const overdue = isOverdue(order.due_date);
+
+  const reason = blocked
+    ? blockReason(order, { rfqSentLabel: "Waiting for RFQ Approval" })
+    : null;
+  const correctiveAction = getCorrectiveActionContext(order);
+  const hasCorrective = hasActiveCorrectiveAction(order);
+  const currentInk = blocked ? ui.red : ui.blue;
+
+  return (
+    <article
+      className="planning-timeline-row"
+      style={blocked ? timelineRowBlockedStyle : timelineRowBaseStyle}
+    >
+      {/* Left column: metadata */}
+      <div
+        style={{
+          display: "grid",
+          gap: "3px",
+          minWidth: 0,
+          alignContent: "center",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            fontSize: "14px",
+            fontWeight: 650,
+            color: ui.text,
+            letterSpacing: "-0.01em",
+          }}
+        >
+          <span>{order.work_order_id}</span>
+          {priority === "AOG" && <span style={aogBadgeStyle}>AOG</span>}
+          {priority === "PRIO" && <span style={prioBadgeStyle}>PRIO</span>}
+        </div>
+        <div style={{ fontSize: "12px", color: ui.text, overflowWrap: "anywhere" }}>
+          {order.customer || "–"}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            flexWrap: "wrap",
+            fontSize: "11px",
+            color: ui.muted,
+            fontVariantNumeric: "tabular-nums",
+            overflowWrap: "anywhere",
+          }}
+        >
+          PN {order.part_number || "–"}
+        </div>
+        {order.work_order_type && (
+          <div style={{ marginTop: "1px" }}>
+            <span style={typeBadgeStyle}>{order.work_order_type}</span>
+          </div>
+        )}
+        <div
+          style={{
+            fontSize: "12px",
+            color: overdue ? ui.red : ui.muted,
+            fontWeight: overdue ? 650 : 500,
+            marginTop: order.work_order_type ? "1px" : 0,
+          }}
+        >
+          Due {formatDate(order.due_date)}
+        </div>
+      </div>
+
+      {/* Right column: timeline */}
+      <div
+        style={{
+          display: "grid",
+          gap: "4px",
+          minWidth: 0,
+          alignContent: "center",
+          paddingLeft: "14px",
+          borderLeft: `1px solid ${blocked ? ui.redBorder : ui.border}`,
+        }}
+      >
+        {segments.length > 0 ? (
+          <>
+            <div
+              style={{
+                display: "flex",
+                gap: "3px",
+                width: "100%",
+                alignItems: "stretch",
+              }}
+            >
+              {segments.map((segment) => {
+                let backgroundColor = ui.surfaceSoft;
+                let borderStyle = `1px dashed ${ui.border}`;
+                if (segment.state === "completed") {
+                  backgroundColor = timelineCompletedBg;
+                  borderStyle = `1px solid ${timelineCompletedBorder}`;
+                } else if (segment.state === "current") {
+                  backgroundColor = currentInk;
+                  borderStyle = `1px solid ${currentInk}`;
+                }
+
+                return (
+                  <div
+                    key={segment.name}
+                    title={segment.name}
+                    aria-label={segment.name}
+                    style={{
+                      flexGrow: segment.weight,
+                      flexBasis: 0,
+                      minWidth: 0,
+                      height: segment.state === "current" ? "14px" : "12px",
+                      borderRadius: "4px",
+                      backgroundColor,
+                      border: borderStyle,
+                      boxShadow:
+                        segment.state === "current"
+                          ? `0 0 0 2px ${blocked ? ui.redSoft : ui.blueSoft}, 0 3px 10px ${
+                              blocked ? "rgba(180, 35, 24, 0.16)" : "rgba(37, 85, 199, 0.18)"
+                            }`
+                          : undefined,
+                      transition: "background-color 180ms ease",
+                    }}
+                  />
+                );
+              })}
+            </div>
+
+            <div style={{ display: "flex", gap: "3px", width: "100%" }}>
+              {segments.map((segment, index) => {
+                const color =
+                  segment.state === "current"
+                    ? currentInk
+                    : segment.state === "completed"
+                      ? timelineCompletedInk
+                      : ui.mutedSoft;
+                const showLabel = shouldShowTimelineLabel(segment, index, segments.length);
+                return (
+                  <div
+                    key={segment.name}
+                    title={segment.name}
+                    aria-label={segment.name}
+                    style={{
+                      flexGrow: segment.weight,
+                      flexBasis: 0,
+                      minWidth: 0,
+                      fontSize: "10px",
+                      lineHeight: 1.2,
+                      color,
+                      fontWeight: segment.state === "current" ? 700 : 500,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "clip",
+                      textAlign: "center",
+                      padding: "0 1px",
+                    }}
+                  >
+                    {showLabel ? (
+                      segment.state === "current" ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            maxWidth: "100%",
+                            padding: "1px 6px",
+                            borderRadius: "999px",
+                            border: `1px solid ${blocked ? ui.redBorder : ui.blueBorder}`,
+                            backgroundColor: blocked ? ui.redSoft : ui.blueSoft,
+                          }}
+                        >
+                          {segment.name}
+                        </span>
+                      ) : (
+                        segment.shortName
+                      )
+                    ) : (
+                      ""
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: "12px", color: ui.mutedSoft, fontStyle: "italic" }}>
+            No process flow available for this work order type.
+          </div>
+        )}
+
+        {blocked && reason && (
+          <div
+            style={{
+              display: "grid",
+              gap: "3px",
+              marginTop: "4px",
+              paddingTop: "10px",
+              borderTop: `1px solid ${ui.redBorder}`,
+            }}
+          >
+            <span
+              style={{
+                fontSize: "10px",
+                fontWeight: 700,
+                color: ui.red,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              Hold reason
+            </span>
+            <div
+              style={{
+                fontSize: "13px",
+                fontWeight: 600,
+                color: ui.red,
+                lineHeight: 1.4,
+              }}
+            >
+              {reason}
+            </div>
+            {hasCorrective && correctiveAction.action && (
+              <div
+                style={{
+                  marginTop: "2px",
+                  fontSize: "12px",
+                  color: ui.muted,
+                  lineHeight: 1.4,
+                }}
+              >
+                Corrective action: {correctiveAction.action}
+              </div>
+            )}
+            {hasCorrective && correctiveAction.owner && (
+              <div style={{ fontSize: "12px", color: ui.muted, lineHeight: 1.4 }}>
+                Owner: {correctiveAction.owner}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function TimelineLegend() {
+  return (
+    <details
+      style={{
+        position: "relative",
+      }}
+    >
+      <summary
+        style={{
+          cursor: "pointer",
+          listStyle: "none",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "36px",
+          padding: "8px 12px",
+          borderRadius: "10px",
+          border: `1px solid ${ui.border}`,
+          backgroundColor: ui.surface,
+          fontSize: "12px",
+          fontWeight: 700,
+          color: ui.muted,
+          whiteSpace: "nowrap",
+        }}
+      >
+        Legend
+      </summary>
+      <div
+        style={{
+          position: "absolute",
+          top: "calc(100% + 8px)",
+          right: 0,
+          zIndex: 5,
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: "8px 10px",
+          width: "min(320px, 70vw)",
+          padding: "12px",
+          borderRadius: "12px",
+          border: `1px solid ${ui.border}`,
+          backgroundColor: ui.surface,
+          boxShadow: ui.shadow,
+        }}
+      >
+        {timelineLegendEntries.map((entry) => (
+          <div
+            key={entry.step}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              minWidth: 0,
+            }}
+          >
+            <span
+              style={{
+                flex: "0 0 auto",
+                minWidth: entry.shortLabel === "EASA Form 1" ? "78px" : "34px",
+                padding: entry.shortLabel === "EASA Form 1" ? "2px 8px" : "2px 6px",
+                borderRadius: "999px",
+                border: `1px solid ${ui.border}`,
+                backgroundColor: ui.surfaceSoft,
+                fontSize: "10px",
+                fontWeight: 700,
+                color: ui.text,
+                textAlign: "center",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {entry.shortLabel}
+            </span>
+            <span
+              style={{
+                minWidth: 0,
+                fontSize: "12px",
+                color: ui.muted,
+                lineHeight: 1.35,
+              }}
+            >
+              {entry.step}
+            </span>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+type PlanningTab = "list" | "timeline";
+
 export default function PlanningPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
   const [todayAbsentEngineerIds, setTodayAbsentEngineerIds] = useState<number[]>([]);
   const [quickEdit, setQuickEdit] = useState<QuickEditState | null>(null);
+  const [actionConfirmationWorkOrderId, setActionConfirmationWorkOrderId] = useState<string | null>(null);
   const [quickEditForm, setQuickEditForm] = useState<QuickEditForm>({
     due_date: "",
     assigned_person_team: "",
   });
   const [quickEditStatus, setQuickEditStatus] = useState("");
+  const [actionStatus, setActionStatus] = useState("");
   const [isSavingQuickEdit, setIsSavingQuickEdit] = useState(false);
+  const [isCompletingAction, setIsCompletingAction] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<PlanningTab>("list");
+  const today = localDateKey();
 
   const todayAbsentEngineerIdSet = useMemo(
     () => new Set(todayAbsentEngineerIds),
@@ -427,10 +916,26 @@ export default function PlanningPage() {
     [shopStaff, todayAbsentEngineerIdSet],
   );
 
+  function applySharedPlanningBlocks(nextOrders: WorkOrder[]) {
+    return sortOrders(
+      applySuggestedAssignmentsForCurrentStep(
+        applyTodayQualificationBlocks(
+          nextOrders,
+          shopStaff,
+          todayAbsentEngineerIds.map((engineerId) => ({
+            engineer_id: engineerId,
+            absence_date: today,
+          })),
+          today,
+        ),
+        shopStaff,
+        todayAbsentShopEngineerNames,
+      ),
+    );
+  }
+
   useEffect(() => {
     async function load() {
-      const today = localDateKey();
-
       const [data, engineers, absences] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select: WORK_ORDER_SELECT,
@@ -441,6 +946,7 @@ export default function PlanningPage() {
           select: "id, name, restrictions",
           isActive: true,
           role: "shop",
+          startedOn: today,
           orderBy: { column: "name" },
         }),
         getEngineerAbsences<Absence>({
@@ -466,12 +972,30 @@ export default function PlanningPage() {
           .filter((absence) => absence.absence_date === today)
           .map((absence) => absence.engineer_id),
       );
-      setOrders(sortOrders(withQualificationBlocks));
+      setOrders(
+        sortOrders(
+          applySuggestedAssignmentsForCurrentStep(
+            withQualificationBlocks,
+            engineers,
+            new Set(
+              engineers
+                .filter((engineer) =>
+                  absences.some(
+                    (absence) =>
+                      absence.absence_date === today &&
+                      absence.engineer_id === engineer.id,
+                  ),
+                )
+                .map((engineer) => engineer.name),
+            ),
+          ),
+        ),
+      );
       setLoading(false);
     }
 
     void load();
-  }, []);
+  }, [today]);
 
   if (loading) {
     return <p style={{ padding: "2rem" }}>Loading...</p>;
@@ -479,6 +1003,9 @@ export default function PlanningPage() {
 
   const quickEditOrder = quickEdit
     ? orders.find((order) => order.work_order_id === quickEdit.workOrderId) || null
+    : null;
+  const actionConfirmationOrder = actionConfirmationWorkOrderId
+    ? orders.find((order) => order.work_order_id === actionConfirmationWorkOrderId) || null
     : null;
 
   const dueDateRequired =
@@ -516,6 +1043,17 @@ export default function PlanningPage() {
     setQuickEdit(null);
     setQuickEditStatus("");
     setIsSavingQuickEdit(false);
+  }
+
+  function openCompleteActionConfirmation(order: WorkOrder) {
+    setActionConfirmationWorkOrderId(order.work_order_id);
+    setActionStatus("");
+    setIsCompletingAction(false);
+  }
+
+  function closeCompleteActionConfirmation() {
+    if (isCompletingAction) return;
+    setActionConfirmationWorkOrderId(null);
   }
 
   async function saveQuickEdit() {
@@ -567,7 +1105,7 @@ export default function PlanningPage() {
     }
 
     setOrders((prev) =>
-      sortOrders(
+      applySharedPlanningBlocks(
         prev.map((order) =>
           order.work_order_id === quickEdit.workOrderId ? savedOrder : order,
         ),
@@ -575,6 +1113,38 @@ export default function PlanningPage() {
     );
 
     closeQuickEdit();
+  }
+
+  async function completeCorrectiveAction() {
+    if (!actionConfirmationOrder) return;
+
+    setIsCompletingAction(true);
+    setActionStatus("Saving...");
+
+    const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
+      actionConfirmationOrder.work_order_id,
+      getCorrectiveActionCompletionPayload(),
+      WORK_ORDER_SELECT,
+    );
+
+    if (error || !savedOrder) {
+      setActionStatus(`Error: ${error?.message || "Unable to complete the corrective action."}`);
+      setIsCompletingAction(false);
+      return;
+    }
+
+    setOrders((prev) =>
+      applySharedPlanningBlocks(
+        prev.map((order) =>
+          order.work_order_id === actionConfirmationOrder.work_order_id
+            ? savedOrder
+            : order,
+        ),
+      ),
+    );
+    setActionConfirmationWorkOrderId(null);
+    setActionStatus(`Corrective action completed for ${actionConfirmationOrder.work_order_id}.`);
+    setIsCompletingAction(false);
   }
 
   return (
@@ -588,42 +1158,68 @@ export default function PlanningPage() {
       }}
     >
       <div style={{ maxWidth: "1440px" }}>
-        <header
-          style={{
-            marginBottom: "22px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "16px",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ minWidth: 0 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "36px",
-                fontWeight: 800,
-                letterSpacing: "-0.035em",
-                color: ui.text,
-                lineHeight: 1.02,
-              }}
-            >
-              Shared Planning
-            </h1>
-            <p
-              style={{
-                margin: "8px 0 0",
-                fontSize: "14px",
-                lineHeight: 1.45,
-                color: ui.muted,
-              }}
-            >
-              Overview of active work orders, current next steps, assignments and blocking reasons.
-            </p>
-          </div>
-        </header>
+        <PageHeader
+          title="Shared Planning"
+          description="Overview of active work orders, current next steps, assignments and blocking reasons."
+          tabs={
+            <>
+              <div
+                role="tablist"
+                aria-label="Shared Planning views"
+                style={{
+                  display: "inline-flex",
+                  padding: "4px",
+                  borderRadius: "12px",
+                  backgroundColor: ui.surfaceSoft,
+                  border: `1px solid ${ui.border}`,
+                  gap: "2px",
+                }}
+              >
+                {(
+                  [
+                    { id: "list", label: "List" },
+                    { id: "timeline", label: "Timeline" },
+                  ] as const
+                ).map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      onClick={() => setActiveTab(tab.id)}
+                      style={{
+                        padding: "7px 16px",
+                        borderRadius: "8px",
+                        border: "1px solid transparent",
+                        backgroundColor: isActive ? ui.surface : "transparent",
+                        borderColor: isActive ? ui.border : "transparent",
+                        color: isActive ? ui.text : ui.muted,
+                        fontSize: "13px",
+                        fontWeight: 650,
+                        letterSpacing: "0.005em",
+                        cursor: "pointer",
+                        boxShadow: isActive
+                          ? "0 1px 2px rgba(31, 41, 55, 0.06)"
+                          : "none",
+                        transition:
+                          "background-color 140ms ease, color 140ms ease, box-shadow 140ms ease",
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
 
+              {activeTab === "timeline" && <TimelineLegend />}
+            </>
+          }
+        />
+
+        {activeTab === "list" && (
+        <>
         <section style={{ ...sectionCardStyle, marginBottom: "24px" }}>
           <div style={sectionHeaderStyle}>
             <div>
@@ -754,6 +1350,24 @@ export default function PlanningPage() {
             </span>
           </div>
 
+          {actionStatus && (
+            <div
+              style={{
+                marginBottom: "14px",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                border: `1px solid ${actionStatus.startsWith("Error:") ? ui.redBorder : ui.border}`,
+                backgroundColor: actionStatus.startsWith("Error:") ? ui.redSoft : ui.surface,
+                color: actionStatus.startsWith("Error:") ? ui.red : ui.muted,
+                fontSize: "13px",
+                lineHeight: 1.5,
+                fontWeight: 600,
+              }}
+            >
+              {actionStatus}
+            </div>
+          )}
+
           {blockedOrders.length > 0 ? (
             <div style={blockedTableWrapStyle}>
               <table style={{ ...tableBaseStyle, minWidth: "1120px" }}>
@@ -777,6 +1391,7 @@ export default function PlanningPage() {
                     const reason = blockReason(o, {
                       rfqSentLabel: "Waiting for RFQ Approval",
                     });
+                    const hasCorrectiveAction = hasActiveCorrectiveAction(o);
                     const correctiveAction = getCorrectiveActionContext(o);
                     const isLast = idx === blockedOrders.length - 1;
                     const cell = isLast
@@ -826,7 +1441,7 @@ export default function PlanningPage() {
                           >
                             {reason}
                           </div>
-                          {correctiveAction.summary && (
+                          {hasCorrectiveAction && correctiveAction.action && (
                             <div
                               style={{
                                 marginTop: "3px",
@@ -836,8 +1451,30 @@ export default function PlanningPage() {
                                 lineHeight: 1.4,
                               }}
                             >
-                              {correctiveAction.summary}
+                              Corrective action: {correctiveAction.action}
                             </div>
+                          )}
+                          {hasCorrectiveAction && correctiveAction.owner && (
+                            <div
+                              style={{
+                                marginTop: "2px",
+                                color: ui.muted,
+                                fontSize: "12px",
+                                fontWeight: 500,
+                                lineHeight: 1.4,
+                              }}
+                            >
+                              Owner: {correctiveAction.owner}
+                            </div>
+                          )}
+                          {hasCorrectiveAction && (
+                            <button
+                              type="button"
+                              onClick={() => openCompleteActionConfirmation(o)}
+                              style={inlineActionButtonStyle}
+                            >
+                              Mark corrective action as completed
+                            </button>
                           )}
                         </td>
                         <td style={mCell}>
@@ -864,6 +1501,108 @@ export default function PlanningPage() {
             </div>
           )}
         </section>
+        </>
+        )}
+
+        {activeTab === "timeline" && (
+        <>
+        <section style={{ ...sectionCardStyle, marginBottom: "24px" }}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Open work orders</h2>
+              <p style={sectionDescriptionStyle}>
+                Process timelines for active work orders, sized by each step&apos;s relative expected duration.
+              </p>
+            </div>
+            <span
+              style={
+                openOrders.length > 0 ? countBadgeOpenStyle : countBadgeMutedStyle
+              }
+            >
+              {openOrders.length} order{openOrders.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+
+          {openOrders.length > 0 ? (
+            <div style={{ display: "grid", gap: "10px" }}>
+              {openOrders.map((o) => (
+                <WorkOrderTimelineRow
+                  key={o.work_order_id}
+                  order={o}
+                  blocked={false}
+                />
+              ))}
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: "14px",
+                borderRadius: "10px",
+                backgroundColor: ui.surface,
+                border: `1px dashed ${ui.borderStrong}`,
+                color: ui.muted,
+                fontSize: "13px",
+              }}
+            >
+              No open work orders.
+            </div>
+          )}
+        </section>
+
+        <section
+          style={{
+            ...secondarySectionStyle,
+            borderColor: ui.redBorder,
+            backgroundColor: "#fff7f4",
+            boxShadow:
+              "0 1px 2px rgba(180, 35, 24, 0.04), 0 6px 18px rgba(180, 35, 24, 0.06)",
+          }}
+        >
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={{ ...sectionTitleStyle, color: ui.red }}>
+                Blocked work orders
+              </h2>
+              <p style={{ ...sectionDescriptionStyle, color: "#8f332a" }}>
+                Timelines showing where each blocked work order is currently stuck.
+              </p>
+            </div>
+            <span
+              style={
+                blockedOrders.length > 0 ? countBadgeRedStyle : countBadgeMutedStyle
+              }
+            >
+              {blockedOrders.length} order{blockedOrders.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+
+          {blockedOrders.length > 0 ? (
+            <div style={{ display: "grid", gap: "10px" }}>
+              {blockedOrders.map((o) => (
+                <WorkOrderTimelineRow
+                  key={o.work_order_id}
+                  order={o}
+                  blocked={true}
+                />
+              ))}
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: "14px",
+                borderRadius: "10px",
+                backgroundColor: ui.surface,
+                border: `1px dashed ${ui.borderStrong}`,
+                color: ui.muted,
+                fontSize: "13px",
+              }}
+            >
+              No blocked work orders.
+            </div>
+          )}
+        </section>
+        </>
+        )}
       </div>
 
       {quickEditOrder && quickEdit && (
@@ -875,13 +1614,6 @@ export default function PlanningPage() {
             <div style={{ marginBottom: "14px" }}>
               <div style={modalEyebrowStyle}>Quick edit</div>
               <h2 style={modalTitleStyle}>{quickEditOrder.work_order_id}</h2>
-              <p style={modalSubtitleStyle}>
-                {quickEdit.blocked
-                  ? "Update the due date here. Use Office Update for corrective action or status changes."
-                  : quickEdit.field === "due_date"
-                    ? "Update the due date here. Use Office Update for full work order editing."
-                    : "Update the assigned person here. Use Office Update for full work order editing."}
-              </p>
             </div>
 
             <div style={{ ...modalInnerCardStyle, display: "grid", gap: "12px" }}>
@@ -1039,6 +1771,82 @@ export default function PlanningPage() {
                   Save
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {actionConfirmationOrder && (
+        <div style={modalBackdropStyle} onMouseDown={closeCompleteActionConfirmation}>
+          <div
+            style={modalCardStyle}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div style={{ marginBottom: "14px" }}>
+              <div style={modalEyebrowStyle}>Confirm action</div>
+              <h2 style={modalTitleStyle}>
+                Complete corrective action for {actionConfirmationOrder.work_order_id}?
+              </h2>
+            </div>
+
+            <div style={{ ...modalInnerCardStyle, display: "grid", gap: "10px" }}>
+              <div>
+                <div style={modalEyebrowStyle}>Hold reason</div>
+                <div style={{ fontSize: "14px", color: ui.text }}>
+                  {blockReason(actionConfirmationOrder, {
+                    rfqSentLabel: "Waiting for RFQ Approval",
+                  })}
+                </div>
+              </div>
+              <div>
+                <div style={modalEyebrowStyle}>Active corrective action</div>
+                <div style={{ fontSize: "14px", color: ui.text }}>
+                  {getCorrectiveActionContext(actionConfirmationOrder).summary || "No active corrective action"}
+                </div>
+              </div>
+
+              {actionStatus && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    border: `1px solid ${actionStatus.startsWith("Error:") ? ui.redBorder : ui.border}`,
+                    backgroundColor: actionStatus.startsWith("Error:") ? ui.redSoft : ui.surfaceSoft,
+                    color: actionStatus.startsWith("Error:") ? ui.red : ui.muted,
+                    fontSize: "13px",
+                    lineHeight: 1.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  {actionStatus}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+                marginTop: "14px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={closeCompleteActionConfirmation}
+                style={modalActionButtonStyle}
+                disabled={isCompletingAction}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void completeCorrectiveAction()}
+                style={modalPrimaryButtonStyle}
+                disabled={isCompletingAction}
+              >
+                Confirm
+              </button>
             </div>
           </div>
         </div>

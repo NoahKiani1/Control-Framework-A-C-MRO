@@ -4,9 +4,13 @@ import Image from "next/image";
 import { Public_Sans } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
 import { READY_TO_CLOSE_STEP } from "@/lib/process-steps";
+import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
 import {
+  DEFAULT_ASSIGNED_PERSON_TEAM,
   applyTodayQualificationBlocks,
   formatDate,
+  getCorrectiveActionContext,
+  hasActiveCorrectiveAction,
   isBlocked,
   localDateKey,
   normalizeAssignedPersonTeam,
@@ -33,6 +37,9 @@ type WorkOrder = {
   hold_reason: string | null;
   rfq_state: string | null;
   required_next_action: string | null;
+  action_owner: string | null;
+  action_status: string | null;
+  action_closed: boolean | null;
   last_manual_update: string | null;
   last_system_update: string | null;
 };
@@ -42,6 +49,7 @@ type Engineer = {
   name: string;
   photo_path: string | null;
   restrictions: string[] | null;
+  employment_start_date?: string | null;
 };
 
 type Absence = {
@@ -58,6 +66,8 @@ const AUTO_SCROLL_SPEED_PX_PER_SECOND = 18;
 const AUTO_SCROLL_TOP_PAUSE_MS = 7000;
 const AUTO_SCROLL_SECTION_PAUSE_MS = 5000;
 const AUTO_SCROLL_BOTTOM_PAUSE_MS = 9000;
+const AUTO_SCROLL_SECTION_TOP_OFFSET_PX = 18;
+const AUTO_SCROLL_BOTTOM_SPACER_PX = 12;
 
 const COLORS = {
   pageBg: "#e3e7ee",
@@ -81,6 +91,8 @@ const CARD_OPEN_BG = "#f1f6f2";
 const CARD_OPEN_BORDER = "#cedbd2";
 const CARD_BLOCKED_BG = "#f7ece9";
 const CARD_BLOCKED_BORDER = "#e4c9c3";
+const CARD_ACTION_BG = "#f5ecd7";
+const CARD_ACTION_BORDER = "#e5cf9a";
 
 const HEADER_BG = "#1b2230";
 const HEADER_BORDER = "#0f141d";
@@ -88,6 +100,29 @@ const HEADER_INK = "#eef2f7";
 const HEADER_MUTED = "rgba(238, 242, 247, 0.6)";
 const HEADER_TILE_BG = "rgba(255, 255, 255, 0.06)";
 const HEADER_TILE_BORDER = "rgba(255, 255, 255, 0.12)";
+
+function sanitizeActiveShopAssignments<T extends { assigned_person_team: string | null }>(
+  orders: T[],
+  engineers: Engineer[],
+): T[] {
+  const activeEngineerNames = new Set(engineers.map((engineer) => engineer.name));
+
+  return orders.map((order) => {
+    const assignedPersonTeam = normalizeAssignedPersonTeam(order.assigned_person_team);
+
+    if (
+      assignedPersonTeam === DEFAULT_ASSIGNED_PERSON_TEAM ||
+      activeEngineerNames.has(assignedPersonTeam)
+    ) {
+      return order;
+    }
+
+    return {
+      ...order,
+      assigned_person_team: DEFAULT_ASSIGNED_PERSON_TEAM,
+    };
+  });
+}
 
 function isOverdue(dateStr: string | null): boolean {
   if (!dateStr) return false;
@@ -181,8 +216,10 @@ export default function ShopPage() {
   const [loading, setLoading] = useState(true);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const activeSectionRef = useRef<HTMLElement | null>(null);
+  const openSectionRef = useRef<HTMLElement | null>(null);
   const blockedSectionRef = useRef<HTMLElement | null>(null);
+  const actionsSectionRef = useRef<HTMLElement | null>(null);
+  const bottomSpacerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -190,7 +227,7 @@ export default function ShopPage() {
       const [data, engineerData, absenceData] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select:
-            "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, last_manual_update, last_system_update",
+            "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update",
           isOpen: true,
           isActive: true,
         }),
@@ -198,6 +235,7 @@ export default function ShopPage() {
           select: "id, name, photo_path, restrictions",
           isActive: true,
           role: "shop",
+          startedOn: today,
         }),
         getEngineerAbsences<Absence>({
           select: "engineer_id, absence_date",
@@ -215,7 +253,25 @@ export default function ShopPage() {
         today,
       );
 
-      setOrders(sortOrders(qualifiedFiltered));
+      const suggestedOrders = applySuggestedAssignmentsForCurrentStep(
+        qualifiedFiltered,
+        engineerData,
+        new Set(
+          engineerData
+            .filter((engineer) =>
+              absenceData.some(
+                (absence) =>
+                  absence.absence_date === today &&
+                  absence.engineer_id === engineer.id,
+              ),
+            )
+            .map((engineer) => engineer.name),
+        ),
+      );
+
+      setOrders(
+        sortOrders(sanitizeActiveShopAssignments(suggestedOrders, engineerData)),
+      );
       setEngineers(engineerData);
       setLoading(false);
     }
@@ -265,12 +321,19 @@ export default function ShopPage() {
 
     function getPauseTargets() {
       const maxScroll = getMaxScroll();
-      const sectionTargets = [activeSectionRef.current, blockedSectionRef.current]
+      const sectionTargets = [
+        openSectionRef.current,
+        blockedSectionRef.current,
+        actionsSectionRef.current,
+      ]
         .map((section) => {
           if (!section) return null;
-          return Math.max(0, section.offsetTop - 18);
+          return Math.min(
+            maxScroll,
+            Math.max(0, section.offsetTop - AUTO_SCROLL_SECTION_TOP_OFFSET_PX),
+          );
         })
-        .filter((target): target is number => target !== null && target <= maxScroll);
+        .filter((target): target is number => target !== null);
 
       return [...new Set([0, ...sectionTargets, maxScroll])].sort((a, b) => a - b);
     }
@@ -378,6 +441,7 @@ export default function ShopPage() {
 
   const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
   const blockedOrders = orders.filter((o) => isBlocked(o));
+  const actionOrders = orders.filter((o) => hasActiveCorrectiveAction(o));
   const engineerByName = new Map(engineers.map((e) => [e.name, e]));
   const aogCount = orders.filter((o) => priorityTag(o.priority) === "AOG").length;
 
@@ -457,6 +521,93 @@ export default function ShopPage() {
     if (rfqState === "rfq rejected") return "RFQ Rejected";
     if (rfqState === "rfq send") return "Waiting for RFQ Approval";
     return "-";
+  }
+
+  function renderMetaRail({
+    name,
+    photoUrl,
+    dueDate,
+    overdue,
+    assignedLabel = "Assigned",
+    dueLabel = "Work order due on",
+    hideAssigned = false,
+  }: {
+    name: string | null;
+    photoUrl: string | null;
+    dueDate: string | null;
+    overdue: boolean;
+    assignedLabel?: string;
+    dueLabel?: string;
+    hideAssigned?: boolean;
+  }) {
+    return (
+      <div
+        style={{
+          alignSelf: "stretch",
+          display: "grid",
+          gridTemplateColumns: "84px minmax(132px, 1fr)",
+          gridTemplateRows: "auto auto",
+          columnGap: "12px",
+          rowGap: "4px",
+          paddingLeft: "14px",
+          borderLeft: `1px solid ${COLORS.border}`,
+          minWidth: 0,
+        }}
+      >
+        <div
+          style={{
+            ...labelStyle,
+            visibility: hideAssigned ? "hidden" : "visible",
+          }}
+        >
+          {assignedLabel}
+        </div>
+        <div
+          style={{
+            ...labelStyle,
+            textAlign: "right",
+          }}
+        >
+          {dueLabel}
+        </div>
+        <div
+          style={{
+            visibility: hideAssigned ? "hidden" : "visible",
+            display: "grid",
+            placeItems: "center",
+            width: "84px",
+            height: "84px",
+            gridRow: 2,
+          }}
+        >
+          <AssignedPerson name={name} photoUrl={photoUrl} />
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gap: "1px",
+            alignContent: "center",
+            justifyItems: "end",
+            minWidth: 0,
+            gridRow: 2,
+          }}
+        >
+          <div
+            style={{
+              color: overdue ? COLORS.red : COLORS.ink,
+              fontSize: "24px",
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              fontVariantNumeric: "tabular-nums",
+              lineHeight: 1,
+              letterSpacing: "-0.015em",
+            }}
+          >
+            {formatDate(dueDate)}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   function renderOrderCard(order: WorkOrder, blocked = false) {
@@ -652,76 +803,161 @@ export default function ShopPage() {
           )}
         </div>
 
-        {/* COL 4: compact meta rail - owner + due date */}
+        {renderMetaRail({
+          name: assignedPersonTeam,
+          photoUrl: getEngineerPhotoUrl(engineer?.photo_path),
+          dueDate: order.due_date,
+          overdue,
+          hideAssigned: blocked,
+        })}
+      </article>
+    );
+  }
+
+  function renderActionCard(order: WorkOrder) {
+    const correctiveAction = getCorrectiveActionContext(order);
+    const actionOwner = normalizeAssignedPersonTeam(correctiveAction.owner);
+    const ownerEngineer = engineerByName.get(actionOwner);
+    const overdue = isOverdue(order.due_date);
+
+    return (
+      <article
+        key={order.work_order_id}
+        style={{
+          ...cardStyle,
+          backgroundColor: CARD_ACTION_BG,
+          borderColor: CARD_ACTION_BORDER,
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: "5px",
+            backgroundColor: COLORS.amber,
+          }}
+        />
+
         <div
           style={{
-            alignSelf: "stretch",
             display: "grid",
-            gridTemplateColumns: "84px minmax(132px, 1fr)",
-            gridTemplateRows: "auto auto",
-            columnGap: "12px",
-            rowGap: "4px",
-            paddingLeft: "14px",
-            borderLeft: `1px solid ${COLORS.border}`,
+            alignContent: "center",
+            gap: "4px",
             minWidth: 0,
           }}
         >
           <div
             style={{
-              ...labelStyle,
-              visibility: blocked ? "hidden" : "visible",
-            }}
-          >
-            Assigned
-          </div>
-          <div
-            style={{
-              ...labelStyle,
-              textAlign: "right",
-            }}
-          >
-            Work order due on
-          </div>
-          <div
-            style={{
-              visibility: blocked ? "hidden" : "visible",
-              display: "grid",
-              placeItems: "center",
-              width: "84px",
-              height: "84px",
-              gridRow: 2,
-            }}
-          >
-            <AssignedPerson
-              name={assignedPersonTeam}
-              photoUrl={getEngineerPhotoUrl(engineer?.photo_path)}
-            />
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gap: "1px",
-              alignContent: "center",
-              justifyItems: "end",
-              minWidth: 0,
-              gridRow: 2,
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              flexWrap: "wrap",
+              rowGap: "4px",
             }}
           >
             <div
               style={{
-                color: overdue ? COLORS.red : COLORS.ink,
-                fontSize: "24px",
-                fontWeight: 700,
-                whiteSpace: "nowrap",
-                fontVariantNumeric: "tabular-nums",
-                lineHeight: 1.0,
+                color: COLORS.ink,
+                fontSize: "36px",
+                fontWeight: 650,
+                lineHeight: 0.98,
                 letterSpacing: "-0.015em",
+                fontVariantNumeric: "tabular-nums",
+                overflowWrap: "anywhere",
               }}
             >
-              {formatDate(order.due_date)}
+              {order.work_order_id}
+            </div>
+            {prioLabel(order) && (
+              <span style={priorityStyle(order)}>{prioLabel(order)}</span>
+            )}
+          </div>
+          <div
+            style={{
+              color: COLORS.muted,
+              fontSize: "16px",
+              fontWeight: 600,
+              lineHeight: 1.2,
+              letterSpacing: "0.01em",
+              overflowWrap: "anywhere",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {`PN: ${order.part_number || "-"}`}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            alignContent: "center",
+            gap: "2px",
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              color: COLORS.ink,
+              fontSize: "20px",
+              fontWeight: 550,
+              lineHeight: 1.15,
+              letterSpacing: "0.002em",
+              overflowWrap: "anywhere",
+            }}
+          >
+            {order.customer || "-"}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            alignContent: "center",
+            minWidth: 0,
+            borderLeft: `1px solid ${COLORS.border}`,
+            paddingLeft: "16px",
+          }}
+        >
+          <div style={{ minWidth: 0, display: "grid", gap: "4px" }}>
+            <div style={labelStyle}>Action</div>
+            <div
+              style={{
+                color: COLORS.ink,
+                fontSize: "25px",
+                fontWeight: 650,
+                lineHeight: 1.08,
+                letterSpacing: "-0.012em",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {correctiveAction.action || "-"}
+            </div>
+            <div
+              style={{
+                color: isBlocked(order) ? COLORS.red : COLORS.muted,
+                fontSize: "16px",
+                fontWeight: 550,
+                lineHeight: 1.2,
+                overflowWrap: "anywhere",
+              }}
+            >
+              {isBlocked(order)
+                ? `Blocking reason: ${holdReasonDisplay(order)}`
+                : `Current step: ${order.current_process_step || "-"}`}
             </div>
           </div>
         </div>
+
+        {renderMetaRail({
+          name: actionOwner,
+          photoUrl: getEngineerPhotoUrl(ownerEngineer?.photo_path),
+          dueDate: order.due_date,
+          overdue,
+          dueLabel: "Work Order Due on",
+        })}
       </article>
     );
   }
@@ -730,13 +966,21 @@ export default function ShopPage() {
     title: string,
     subtitle: string,
     list: WorkOrder[],
-    blocked = false,
-    ref?: React.Ref<HTMLElement>,
+    options?: {
+      blocked?: boolean;
+      accent?: string;
+      emptyLabel?: string;
+      renderCard?: (order: WorkOrder) => React.ReactNode;
+      sectionRef?: React.Ref<HTMLElement>;
+    },
   ) {
-    const accent = blocked ? COLORS.red : COLORS.green;
+    const blocked = options?.blocked ?? false;
+    const accent = options?.accent ?? (blocked ? COLORS.red : COLORS.green);
+    const renderCard =
+      options?.renderCard ?? ((order: WorkOrder) => renderOrderCard(order, blocked));
 
     return (
-      <section ref={ref}>
+      <section ref={options?.sectionRef}>
         <div
           style={{
             display: "flex",
@@ -808,7 +1052,7 @@ export default function ShopPage() {
               letterSpacing: "0.01em",
             }}
           >
-            Nothing here right now.
+            {options?.emptyLabel || "Nothing here right now."}
           </div>
         ) : (
           <div
@@ -819,7 +1063,7 @@ export default function ShopPage() {
               marginTop: "10px",
             }}
           >
-            {list.map((order) => renderOrderCard(order, blocked))}
+            {list.map((order) => renderCard(order))}
           </div>
         )}
       </section>
@@ -829,6 +1073,7 @@ export default function ShopPage() {
   const stats = [
     { label: "Open", value: nonBlockedOrders.length, tone: "#7fd1a4" },
     { label: "Blocked", value: blockedOrders.length, tone: "#f0a39b" },
+    { label: "Actions", value: actionOrders.length, tone: "#aebfd9" },
     { label: "AOG", value: aogCount, tone: aogCount > 0 ? "#ff7a6d" : HEADER_INK },
   ];
 
@@ -935,30 +1180,62 @@ export default function ShopPage() {
           flex: "1 1 auto",
           overflowY: "hidden",
           padding: "18px 22px",
+          minHeight: 0,
         }}
       >
         <div
-          ref={contentRef}
           style={{
-            display: "grid",
-            gap: "18px",
-            willChange: "transform",
+            height: "100%",
           }}
         >
-          {renderOrderSection(
-            "Open",
-            "Work orders that can be worked on",
-            nonBlockedOrders,
-            false,
-            activeSectionRef,
-          )}
-          {renderOrderSection(
-            "Blocked",
-            "Work orders that cannot be worked on",
-            blockedOrders,
-            true,
-            blockedSectionRef,
-          )}
+          <div
+            ref={contentRef}
+            style={{
+              display: "grid",
+              gap: "18px",
+              willChange: "transform",
+            }}
+          >
+            {renderOrderSection(
+              "Open",
+              "Work orders that can be worked on",
+              nonBlockedOrders,
+              {
+                accent: COLORS.green,
+                emptyLabel: "No open work orders right now.",
+                sectionRef: openSectionRef,
+              },
+            )}
+            {renderOrderSection(
+              "Blocked",
+              "Work orders that cannot be worked on",
+              blockedOrders,
+              {
+                blocked: true,
+                accent: COLORS.red,
+                emptyLabel: "No blocked work orders right now.",
+                sectionRef: blockedSectionRef,
+              },
+            )}
+            {renderOrderSection(
+              "Extra Actions",
+              "Assigned corrective actions",
+              actionOrders,
+              {
+                accent: COLORS.amber,
+                emptyLabel: "No active corrective actions right now.",
+                renderCard: renderActionCard,
+                sectionRef: actionsSectionRef,
+              },
+            )}
+            <div
+              ref={bottomSpacerRef}
+              aria-hidden
+              style={{
+                height: `${AUTO_SCROLL_BOTTOM_SPACER_PX}px`,
+              }}
+            />
+          </div>
         </div>
       </div>
     </main>

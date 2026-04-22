@@ -212,3 +212,33 @@ export function getLastCompletedStep(
 
   return completable[currentIndex - 1];
 }
+
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Intentional short labels for space-constrained UIs (e.g. the shared planning
+ * timeline segments). The full step name stays authoritative — these are only
+ * for display. Consumers should keep the full name available via tooltip /
+ * aria-label rather than relying on ellipsis truncation.
+ */
+export const PROCESS_STEP_SHORT_LABELS: Record<string, string> = {
+  Intake: "INT",
+  Disassembly: "DIS",
+  Cleaning: "CLN",
+  "Paint Stripping": "PST",
+  "Penetrant Testing": "PT",
+  "Magnetic Test": "MT",
+  "Eddy Current": "ET",
+  Inspection: "INSP",
+  Painting: "PNT",
+  Assembly: "ASS",
+  "EASA-Form 1": "EASA Form 1",
+};
+
+export function getShortProcessStepLabel(step: string | null | undefined): string {
+  if (!step) return "";
+  if (step === "EASA Form 1") return "EASA Form 1";
+  return PROCESS_STEP_SHORT_LABELS[step] || step;
+}

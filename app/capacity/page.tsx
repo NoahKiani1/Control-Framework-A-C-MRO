@@ -2,21 +2,29 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
+  filterEngineersStartedOnDateKey,
   deletePastEngineerAbsences,
   getEngineerAbsences,
   getEngineers,
+  isEngineerStartedOnDateKey,
 } from "@/lib/engineers";
 import { getWorkOrders } from "@/lib/work-orders";
 import { calculateWeekCapacity, type WeekCapacity, type OrderCapacity } from "@/lib/capacity";
 import { isRfqBlockedState } from "@/lib/work-order-rules";
-import { RESTRICTION_LABELS, RESTRICTION_BLOCKED_STEPS } from "@/lib/restrictions";
+import {
+  RESTRICTION_LABELS,
+  RESTRICTION_BLOCKED_STEPS,
+  hasRestriction,
+} from "@/lib/restrictions";
 import { PROCESS_STEPS, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
+import { PageHeader } from "@/app/components/page-header";
 
 type Engineer = {
   id: number;
   name: string;
   is_active: boolean;
   restrictions: string[] | null;
+  employment_start_date: string | null;
 };
 
 type Absence = {
@@ -125,25 +133,6 @@ function ChevronIcon() {
   );
 }
 
-function InfoIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      width="14"
-      height="14"
-      viewBox="0 0 20 20"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      style={{ flexShrink: 0 }}
-    >
-      <circle cx="10" cy="10" r="7.5" />
-      <path d="M10 13.5V9.25" strokeLinecap="round" />
-      <circle cx="10" cy="6.75" r="0.9" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
 export default function CapacityPage() {
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
@@ -153,8 +142,6 @@ export default function CapacityPage() {
   const [weeks, setWeeks] = useState<WeekCapacity[]>([]);
   const [orderDetails, setOrderDetails] = useState<OrderCapacity[]>([]);
   const [overdueOrders, setOverdueOrders] = useState<OrderCapacity[]>([]);
-  const [showInfoBanner, setShowInfoBanner] = useState(false);
-  const infoPopoverRef = useRef<HTMLDivElement | null>(null);
 
   function formatLocalDateKey(date: Date): string {
     const year = date.getFullYear();
@@ -195,12 +182,16 @@ export default function CapacityPage() {
     setAllOrders(woData);
 
     const absenceDates = absData.map((a) => {
+      const engineer = engData.find((candidate) => candidate.id === a.engineer_id);
+      if (!engineer || !isEngineerStartedOnDateKey(engineer, a.absence_date)) {
+        return null;
+      }
       const d = new Date(a.absence_date);
       d.setHours(0, 0, 0, 0);
       return d;
-    });
+    }).filter(Boolean) as Date[];
 
-    const result = calculateWeekCapacity(woData, engData.length, absenceDates);
+    const result = calculateWeekCapacity(woData, engData, absenceDates);
     setWeeks(result.weeks);
     setOrderDetails(result.orderDetails);
     setOverdueOrders(result.overdueOrders);
@@ -210,30 +201,6 @@ export default function CapacityPage() {
   useEffect(() => {
     void loadData();
   }, []);
-
-  useEffect(() => {
-    if (!showInfoBanner) return;
-
-    function handlePointerDown(event: MouseEvent) {
-      if (!infoPopoverRef.current?.contains(event.target as Node)) {
-        setShowInfoBanner(false);
-      }
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setShowInfoBanner(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [showInfoBanner]);
 
   if (loading) return <p style={{ padding: "2rem" }}>Loading...</p>;
 
@@ -295,11 +262,15 @@ export default function CapacityPage() {
       for (const day of allDays) {
         if (day < today) continue;
         const dayStr = formatLocalDateKey(day);
+        const activeEngineers = filterEngineersStartedOnDateKey(engineers, dayStr);
+        const activeEngineerIdSet = new Set(activeEngineers.map((engineer) => engineer.id));
 
         const absentIds = new Set(
-          absences.filter((a) => a.absence_date === dayStr).map((a) => a.engineer_id),
+          absences
+            .filter((a) => a.absence_date === dayStr && activeEngineerIdSet.has(a.engineer_id))
+            .map((a) => a.engineer_id),
         );
-        const presentEngineers = engineers.filter((e) => !absentIds.has(e.id));
+        const presentEngineers = activeEngineers.filter((e) => !absentIds.has(e.id));
 
         if (presentEngineers.length === 0) {
           unavailableDates.push(dayStr);
@@ -307,7 +278,7 @@ export default function CapacityPage() {
         }
 
         const anyoneCanDo = presentEngineers.some(
-          (e) => !(e.restrictions || []).includes(restriction),
+          (e) => !hasRestriction(e.restrictions, restriction),
         );
 
         if (!anyoneCanDo) {
@@ -355,16 +326,27 @@ export default function CapacityPage() {
   })();
 
   function getActiveEngineersForWeek(week: WeekCapacity): number {
-    const absentIds = new Set<number>();
-    for (const day of week.workDays) {
+    return week.workDays.reduce((highestCount, day) => {
       const dayStr = formatLocalDateKey(day);
-      for (const a of absences) {
-        if (a.absence_date === dayStr) {
-          absentIds.add(a.engineer_id);
-        }
-      }
-    }
-    return Math.max(0, engineers.length - absentIds.size);
+      const activeEngineers = filterEngineersStartedOnDateKey(engineers, dayStr);
+      const absentIds = new Set(
+        absences
+          .filter((absence) => absence.absence_date === dayStr)
+          .map((absence) => absence.engineer_id),
+      );
+      const presentCount = activeEngineers.filter((engineer) => !absentIds.has(engineer.id)).length;
+      return Math.max(highestCount, presentCount);
+    }, 0);
+  }
+
+  function getPlannedEngineersForWeek(week: WeekCapacity): number {
+    return week.workDays.reduce((highestCount, day) => {
+      const dayStr = formatLocalDateKey(day);
+      return Math.max(
+        highestCount,
+        filterEngineersStartedOnDateKey(engineers, dayStr).length,
+      );
+    }, 0);
   }
 
   function getOrderCountForWeek(week: WeekCapacity): number {
@@ -539,15 +521,6 @@ export default function CapacityPage() {
 
   function restrictionWarningTitle(warning: RestrictionWarning): string {
     const dayLabel = `${warning.unavailableDates.length} day${warning.unavailableDates.length !== 1 ? "s" : ""}`;
-
-    if (warning.restriction === "ndt") {
-      return `No NDT coverage on ${dayLabel}`;
-    }
-
-    if (warning.restriction === "certification") {
-      return `No certification coverage on ${dayLabel}`;
-    }
-
     return `${warning.label} unavailable on ${dayLabel}`;
   }
 
@@ -716,16 +689,6 @@ export default function CapacityPage() {
     color: ui.text,
   };
 
-  const infoBlockStyle: React.CSSProperties = {
-    padding: "13px 14px",
-    borderRadius: "10px",
-    border: `1px solid ${ui.border}`,
-    backgroundColor: ui.surface,
-    fontSize: "13px",
-    lineHeight: 1.65,
-    color: ui.text,
-  };
-
   return (
     <main
       style={{
@@ -787,79 +750,13 @@ export default function CapacityPage() {
           border-bottom: 0;
         }
 
-        .capacity-info-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 11px;
-          border-radius: 999px;
-          border: 1px solid ${ui.border};
-          background-color: ${ui.surface};
-          color: ${ui.muted};
-          font-size: 12px;
-          font-weight: 600;
-          line-height: 1.2;
-          cursor: pointer;
-          transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
-          font-family: inherit;
-        }
-
-        .capacity-info-btn:hover {
-          background-color: ${ui.surfaceSoft};
-          border-color: ${ui.borderStrong};
-          color: ${ui.text};
-        }
-
-        .capacity-info-btn[aria-expanded="true"] {
-          background-color: ${ui.surfaceSoft};
-          border-color: ${ui.borderStrong};
-          color: ${ui.text};
-        }
-
-        .capacity-info-btn:focus-visible {
-          outline: 2px solid #4a68b3;
-          outline-offset: 2px;
-        }
-
       `}</style>
 
       <div style={{ maxWidth: "1280px" }}>
-        <header
-          style={{
-            marginBottom: "18px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "16px",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ minWidth: 0 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "36px",
-                fontWeight: 800,
-                letterSpacing: "-0.035em",
-                color: ui.text,
-                lineHeight: 1.02,
-              }}
-            >
-              Capacity Management
-            </h1>
-            <p
-              style={{
-                margin: "8px 0 0",
-                fontSize: "14px",
-                lineHeight: 1.45,
-                color: ui.muted,
-                whiteSpace: "nowrap",
-              }}
-            >
-              Monitor near-term shop capacity, see which orders are driving weekly load, and review issues that need timely attention.
-            </p>
-          </div>
-        </header>
+        <PageHeader
+          title="Capacity Management"
+          description="Monitor near-term shop capacity, see which orders are driving weekly load, and review issues that need timely attention."
+        />
 
         <section style={{ ...sectionCardStyle, marginBottom: "14px" }}>
           <div style={{ ...sectionHeaderStyle, marginBottom: "12px" }}>
@@ -870,86 +767,6 @@ export default function CapacityPage() {
               </p>
             </div>
 
-            <div
-              ref={infoPopoverRef}
-              style={{ position: "relative", flexShrink: 0 }}
-            >
-              <button
-                type="button"
-                className="capacity-info-btn"
-                aria-label="How capacity is calculated"
-                aria-expanded={showInfoBanner}
-                aria-controls="capacity-help-popover"
-                onClick={() => setShowInfoBanner((current) => !current)}
-              >
-                <InfoIcon />
-                <span>How it works</span>
-              </button>
-
-              {showInfoBanner && (
-                <div
-                  id="capacity-help-popover"
-                  role="dialog"
-                  aria-label="How capacity is calculated"
-                  style={{
-                    position: "absolute",
-                    top: "calc(100% + 8px)",
-                    right: 0,
-                    zIndex: 20,
-                    width: "min(460px, calc(100vw - 48px))",
-                    padding: "14px",
-                    borderRadius: "12px",
-                    border: `1px solid ${ui.border}`,
-                    backgroundColor: ui.surface,
-                    boxShadow: "0 18px 40px rgba(31, 41, 55, 0.12)",
-                    display: "grid",
-                    gap: "10px",
-                  }}
-                >
-                  <div>
-                    <h3 style={{ ...sectionTitleStyle, fontSize: "15px" }}>How capacity is calculated</h3>
-                  </div>
-
-                  <div style={{ display: "grid", gap: "8px" }}>
-                    <div style={infoBlockStyle}>
-                      <strong style={{ display: "block", marginBottom: "4px" }}>Included in Calculation</strong>
-                      Only active work orders are included when they have a due date, are not blocked, and are not ready to close.
-                    </div>
-
-                    <div
-                      style={{
-                        ...infoBlockStyle,
-                        border: `1px solid ${toneStyles("orange").borderColor}`,
-                        backgroundColor: toneStyles("orange").backgroundColor,
-                      }}
-                    >
-                      <strong style={{ display: "block", marginBottom: "4px", color: ui.orange }}>Excluded from Calculation</strong>
-                      Work orders are excluded when they have no due date, are blocked, or are already ready to close.
-                    </div>
-
-                    <div style={infoBlockStyle}>
-                      <strong style={{ display: "block", marginBottom: "4px" }}>Planned hours</strong>
-                      Each included work order gets estimated remaining hours based on its type, part history, and current process step.
-                    </div>
-
-                    <div style={infoBlockStyle}>
-                      <strong style={{ display: "block", marginBottom: "4px" }}>Available hours</strong>
-                      Available hours are based on active shop engineers, standard working hours, and planned absences.
-                    </div>
-
-                    <div style={infoBlockStyle}>
-                      <strong style={{ display: "block", marginBottom: "4px" }}>Utilization</strong>
-                      Utilization = planned hours / available hours.
-                    </div>
-
-                    <div style={infoBlockStyle}>
-                      <strong style={{ display: "block", marginBottom: "4px" }}>Overdue orders</strong>
-                      If an included work order is overdue, all remaining hours count in this week.
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
 
           <div
@@ -961,6 +778,7 @@ export default function CapacityPage() {
           >
             {weeks.map((w, i) => {
               const activeEngs = getActiveEngineersForWeek(w);
+              const plannedEngs = getPlannedEngineersForWeek(w);
               const orderCount = getOrderCountForWeek(w);
               const tone = w.status === "red" ? "red" : w.status === "orange" ? "orange" : "green";
               const toneStyle = toneStyles(tone);
@@ -1044,7 +862,7 @@ export default function CapacityPage() {
                     <div>
                       <p style={labelStyle}>Engineers</p>
                       <p style={metricValueStyle}>
-                        <AnimatedNumber value={activeEngs} />/{engineers.length}
+                        <AnimatedNumber value={activeEngs} />/{plannedEngs}
                       </p>
                     </div>
                     <div>

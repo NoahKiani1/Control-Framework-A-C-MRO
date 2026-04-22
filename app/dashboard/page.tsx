@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { PageHeader } from "@/app/components/page-header";
+import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
 import {
   formatDate,
   isBlocked,
@@ -13,12 +15,14 @@ import {
 } from "@/lib/work-order-rules";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 import {
+  filterEngineersStartedOnDateKey,
   getEngineers,
   getEngineerAbsences,
   deletePastEngineerAbsences,
+  isEngineerStartedOnDateKey,
 } from "@/lib/engineers";
 import { calculateWeekCapacity } from "@/lib/capacity";
-import { RESTRICTION_BLOCKED_STEPS } from "@/lib/restrictions";
+import { RESTRICTION_BLOCKED_STEPS, hasRestriction } from "@/lib/restrictions";
 import {
   getProcessStepsForType,
   READY_TO_CLOSE_STEP,
@@ -50,6 +54,7 @@ type Engineer = {
   name: string;
   is_active: boolean;
   restrictions: string[] | null;
+  employment_start_date: string | null;
 };
 
 type Absence = {
@@ -172,8 +177,7 @@ function hasOpenAction(o: WorkOrder): boolean {
 }
 
 function engineerCanDoRestriction(eng: Engineer, restriction: string): boolean {
-  if (!eng.restrictions || eng.restrictions.length === 0) return true;
-  return !eng.restrictions.includes(restriction);
+  return !hasRestriction(eng.restrictions, restriction);
 }
 
 function blockedReason(order: WorkOrder): string {
@@ -337,7 +341,6 @@ function ProcessStepDisplay({ order }: { order: WorkOrder }) {
           cursor: "help",
         }}
       >
-        <span aria-hidden="true">▲</span>
         <span>Blocked</span>
         <span className="blocked-step-tooltip-text">{blockedReason(order)}</span>
       </span>
@@ -350,6 +353,7 @@ function ProcessStepDisplay({ order }: { order: WorkOrder }) {
 function KpiCard({ label, value, color, active, onClick }: CardProps) {
   return (
     <button
+      className="dashboard-kpi-card"
       onClick={onClick}
       style={{
         position: "relative",
@@ -366,6 +370,10 @@ function KpiCard({ label, value, color, active, onClick }: CardProps) {
           : "0 1px 2px rgba(15, 23, 42, 0.04)",
         overflow: "hidden",
         fontFamily: FONT_STACK,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-start",
+        minHeight: "84px",
       }}
       onMouseEnter={(e) => {
         if (!active) {
@@ -394,26 +402,41 @@ function KpiCard({ label, value, color, active, onClick }: CardProps) {
 
       <div
         style={{
-          fontSize: "32px",
-          fontWeight: 700,
-          color: active ? "white" : color,
-          lineHeight: 1,
-          letterSpacing: "-0.03em",
-          fontVariantNumeric: "tabular-nums",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "flex-start",
+          gap: "10px",
+          paddingLeft: "8px",
+          maxWidth: "100%",
         }}
       >
-        <AnimatedNumber value={value} />
-      </div>
+        <div
+          className="dashboard-kpi-value"
+          style={{
+            fontSize: "32px",
+            fontWeight: 700,
+            color: active ? "white" : color,
+            lineHeight: 1,
+            letterSpacing: "-0.03em",
+            fontVariantNumeric: "tabular-nums",
+            flexShrink: 0,
+          }}
+        >
+          <AnimatedNumber value={value} />
+        </div>
 
-      <div
-        style={{
-          fontSize: "13px",
-          color: active ? "rgba(255,255,255,0.95)" : COLORS.textSoft,
-          marginTop: "10px",
-          fontWeight: 500,
-        }}
-      >
-        {label}
+        <div
+          className="dashboard-kpi-label"
+          style={{
+            color: active ? "rgba(255,255,255,0.95)" : COLORS.textSoft,
+            fontSize: "14px",
+            fontWeight: 550,
+            lineHeight: 1.35,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {label}
+        </div>
       </div>
     </button>
   );
@@ -447,11 +470,8 @@ function StatTile({
       }}
     >
       <div
+        className="dashboard-meta-label"
         style={{
-          fontSize: "11px",
-          fontWeight: 600,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
           color: COLORS.textMuted,
           marginBottom: "10px",
         }}
@@ -468,7 +488,7 @@ export default function DashboardPage() {
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activePanel, setActivePanel] = useState<DetailPanel>("due");
+  const [activePanel, setActivePanel] = useState<DetailPanel>(null);
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -494,7 +514,27 @@ export default function DashboardPage() {
         }),
       ]);
 
-      setOrders(sortOrders(wo));
+      const startedTodayEngineers = filterEngineersStartedOnDateKey(eng, today);
+
+      setOrders(
+        sortOrders(
+          applySuggestedAssignmentsForCurrentStep(
+            wo,
+            startedTodayEngineers,
+            new Set(
+              startedTodayEngineers
+                .filter((engineer) =>
+                  abs.some(
+                    (absence) =>
+                      absence.absence_date === today &&
+                      absence.engineer_id === engineer.id,
+                  ),
+                )
+                .map((engineer) => engineer.name),
+            ),
+          ),
+        ),
+      );
 
       const shopIds = new Set(eng.map((e) => e.id));
       setEngineers(eng);
@@ -538,8 +578,14 @@ export default function DashboardPage() {
   });
 
   const todayStr = toLocalDateKey(new Date());
+  const engineerMap = new Map(engineers.map((e) => [e.id, e]));
+  const todayStartedEngineers = filterEngineersStartedOnDateKey(engineers, todayStr);
   const absenceDates = absences
     .filter((a) => a.absence_date >= todayStr)
+    .filter((a) => {
+      const engineer = engineerMap.get(a.engineer_id);
+      return engineer ? isEngineerStartedOnDateKey(engineer, a.absence_date) : false;
+    })
     .map((a) => parseLocalDateKey(a.absence_date));
 
   const { weeks } = calculateWeekCapacity(
@@ -553,10 +599,9 @@ export default function DashboardPage() {
       hold_reason: o.hold_reason,
       rfq_state: o.rfq_state,
     })),
-    engineers.length,
+    engineers,
     absenceDates,
   );
-
   const thisWeek = weeks[0];
   const capacityColor =
     thisWeek?.status === "red"
@@ -570,8 +615,6 @@ export default function DashboardPage() {
       : thisWeek?.status === "orange"
         ? COLORS.amberSoft
         : COLORS.greenSoft;
-
-  const engineerMap = new Map(engineers.map((e) => [e.id, e]));
 
   const todayDate = new Date();
   todayDate.setHours(0, 0, 0, 0);
@@ -601,10 +644,12 @@ export default function DashboardPage() {
   const absenceDayImpacts: AbsenceDayImpact[] = remainingWorkDays
     .map((day) => {
       const dayStr = toLocalDateKey(day);
+      const activeEngineers = filterEngineersStartedOnDateKey(engineers, dayStr);
+      const activeEngineerIdSet = new Set(activeEngineers.map((engineer) => engineer.id));
 
       const absentIds = new Set(
         absences
-          .filter((a) => a.absence_date === dayStr)
+          .filter((a) => a.absence_date === dayStr && activeEngineerIdSet.has(a.engineer_id))
           .map((a) => a.engineer_id),
       );
 
@@ -617,7 +662,7 @@ export default function DashboardPage() {
 
       const unavailableSteps: string[] = [];
       for (const [restriction, steps] of allRestrictedSteps) {
-        const qualifiedEngineers = engineers.filter((e) =>
+        const qualifiedEngineers = activeEngineers.filter((e) =>
           engineerCanDoRestriction(e, restriction),
         );
         const availableQualified = qualifiedEngineers.filter(
@@ -838,6 +883,27 @@ export default function DashboardPage() {
     fontVariantNumeric: "tabular-nums",
   };
 
+  function renderWorkOrderIdentifier(order: WorkOrder) {
+    return (
+      <div>
+        <Link href={`/office-update?wo=${order.work_order_id}`} style={woLinkStyle}>
+          {order.work_order_id}
+        </Link>
+        <div
+          style={{
+            marginTop: "4px",
+            fontSize: "11px",
+            fontWeight: 500,
+            color: COLORS.textMuted,
+            lineHeight: 1.3,
+          }}
+        >
+          PN: {order.part_number || "â€“"}
+        </div>
+      </div>
+    );
+  }
+
   const sectionCard: React.CSSProperties = {
     backgroundColor: COLORS.surface,
     border: `1px solid ${COLORS.border}`,
@@ -891,9 +957,7 @@ export default function DashboardPage() {
               }}
             >
               <td style={{ ...cellStyle, fontWeight: 600 }}>
-                <Link href={`/office-update?wo=${o.work_order_id}`} style={woLinkStyle}>
-                  {o.work_order_id}
-                </Link>
+                {renderWorkOrderIdentifier(o)}
               </td>
               <td style={cellStyle}>{o.customer || "–"}</td>
               <td style={cellStyle}>{o.work_order_type || "–"}</td>
@@ -974,9 +1038,7 @@ export default function DashboardPage() {
                 }}
               >
                 <td style={{ ...cellStyle, fontWeight: 600 }}>
-                  <Link href={`/office-update?wo=${o.work_order_id}`} style={woLinkStyle}>
-                    {o.work_order_id}
-                  </Link>
+                  {renderWorkOrderIdentifier(o)}
                 </td>
                 <td style={cellStyle}>{o.customer || "–"}</td>
                 <td style={{ ...cellStyle, fontWeight: o.hold_reason ? 600 : 400 }}>
@@ -1068,9 +1130,7 @@ export default function DashboardPage() {
               }}
             >
               <td style={{ ...cellStyle, fontWeight: 600 }}>
-                <Link href={`/office-update?wo=${o.work_order_id}`} style={woLinkStyle}>
-                  {o.work_order_id}
-                </Link>
+                {renderWorkOrderIdentifier(o)}
               </td>
               <td style={cellStyle}>{o.customer || "–"}</td>
               <td style={cellStyle}>{o.work_order_type || "–"}</td>
@@ -1116,9 +1176,7 @@ export default function DashboardPage() {
                 }}
               >
                 <td style={{ ...cellStyle, fontWeight: 600 }}>
-                  <Link href={`/office-update?wo=${o.work_order_id}`} style={woLinkStyle}>
-                    {o.work_order_id}
-                  </Link>
+                  {renderWorkOrderIdentifier(o)}
                 </td>
                 <td style={cellStyle}>{o.customer || "–"}</td>
                 <td style={cellStyle}>
@@ -1210,98 +1268,53 @@ export default function DashboardPage() {
       }}
     >
       <div style={{ maxWidth: "1400px" }}>
-        {/* HEADER */}
-        <header
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: "20px",
-            marginBottom: "24px",
-          }}
-        >
-          <div>
-            <div
+        <PageHeader
+          eyebrow="Aircraft & Component MRO's Wheels & Brake Shop"
+          title="Planning & Monitoring Tool"
+          description="Live control of work order flow, blockers, readiness, and capacity."
+          actions={
+            <button
+              type="button"
+              aria-label={`${health.label}: ${health.reason}`}
+              onClick={() => {
+                if (health.panel) {
+                  setActivePanel(health.panel);
+                }
+              }}
               style={{
-                fontSize: "11px",
+                position: "relative",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 14px",
+                borderRadius: "8px",
+                backgroundColor: health.bg,
+                color: health.color,
+                border: `1px solid ${health.color}33`,
+                fontSize: "13px",
                 fontWeight: 600,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: COLORS.textMuted,
-                marginBottom: "8px",
+                whiteSpace: "nowrap",
+                cursor: health.panel ? "pointer" : "help",
+                fontFamily: FONT_STACK,
               }}
+              className="health-status"
             >
-              Aircraft & Component MRO&apos;s Wheels & Brake Shop
-            </div>
-
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "32px",
-                lineHeight: 1.1,
-                fontWeight: 700,
-                color: COLORS.heading,
-                letterSpacing: "-0.025em",
-              }}
-            >
-              Planning & Monitoring Tool
-            </h1>
-
-            <p
-              style={{
-                margin: "8px 0 0",
-                fontSize: "14px",
-                color: COLORS.textSoft,
-                lineHeight: 1.5,
-              }}
-            >
-              Live control of work order flow, blockers, readiness, and capacity.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            aria-label={`${health.label}: ${health.reason}`}
-            onClick={() => {
-              if (health.panel) {
-                setActivePanel(health.panel);
-              }
-            }}
-            style={{
-              position: "relative",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "8px 14px",
-              borderRadius: "8px",
-              backgroundColor: health.bg,
-              color: health.color,
-              border: `1px solid ${health.color}33`,
-              fontSize: "13px",
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-              cursor: health.panel ? "pointer" : "help",
-              fontFamily: FONT_STACK,
-            }}
-            className="health-status"
-          >
-            <span
-              style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                backgroundColor: health.color,
-                display: "inline-block",
-              }}
-            />
-            {health.label}
-            <span className="health-status-tooltip">
-              {health.reason}
-              {health.panel ? " Click to view the affected work orders." : ""}
-            </span>
-          </button>
-        </header>
+              <span
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  backgroundColor: health.color,
+                  display: "inline-block",
+                }}
+              />
+              {health.label}
+              <span className="health-status-tooltip">
+                {health.reason}
+              </span>
+            </button>
+          }
+        />
 
         {/* TOP STATS STRIP — capacity (prominent), active, engineers */}
         <section
@@ -1334,11 +1347,8 @@ export default function DashboardPage() {
             >
               <div>
                 <div
+                  className="dashboard-meta-label"
                   style={{
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
                     color: COLORS.textMuted,
                     marginBottom: "8px",
                   }}
@@ -1366,8 +1376,8 @@ export default function DashboardPage() {
                     <AnimatedNumber value={thisWeek?.percentage ?? 0} />%
                   </div>
                   <div
+                    className="dashboard-capacity-detail"
                     style={{
-                      fontSize: "13px",
                       color: COLORS.textSoft,
                       fontVariantNumeric: "tabular-nums",
                     }}
@@ -1441,7 +1451,7 @@ export default function DashboardPage() {
                 color: COLORS.blue,
               }}
             >
-              <AnimatedNumber value={engineers.length} />
+              <AnimatedNumber value={todayStartedEngineers.length} />
             </div>
           </StatTile>
         </section>
@@ -1449,11 +1459,8 @@ export default function DashboardPage() {
         {/* KPI GRID — 6 clickable cards */}
         <section style={{ marginBottom: "20px" }}>
           <div
+            className="dashboard-meta-label"
             style={{
-              fontSize: "11px",
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
               color: COLORS.textMuted,
               marginBottom: "10px",
               paddingLeft: "4px",
@@ -1483,7 +1490,7 @@ export default function DashboardPage() {
               onClick={() => togglePanel("overdue")}
             />
             <KpiCard
-              label="Open actions"
+              label={openActions.length === 1 ? "Open action" : "Open actions"}
               value={openActions.length}
               color={COLORS.amber}
               active={activePanel === "actions"}

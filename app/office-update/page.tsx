@@ -3,13 +3,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
 import { getWorkOrders, updateWorkOrderAndFetch } from "@/lib/work-orders";
-import { autoAssignForStep } from "@/lib/auto-assign";
-import { getInitialProcessStep } from "@/lib/process-steps";
+import {
+  applySuggestedAssignmentsForCurrentStep,
+  autoAssignForStep,
+} from "@/lib/auto-assign";
+import {
+  getCompletableStepsForType,
+  getInitialProcessStep,
+} from "@/lib/process-steps";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
   normalizeAssignedPersonTeam,
 } from "@/lib/work-order-rules";
 import { SearchableSelect } from "@/app/components/searchable-select";
+import { PageHeader } from "@/app/components/page-header";
 
 type WorkOrder = {
   work_order_id: string;
@@ -33,6 +40,7 @@ type StaffMember = {
   name: string;
   role: string | null;
   restrictions: string[] | null;
+  employment_start_date?: string | null;
 };
 
 type FormState = {
@@ -42,6 +50,7 @@ type FormState = {
   hold_reason: string;
   required_next_action: string;
   action_owner: string;
+  activation_process_step: string;
   is_active: boolean;
 };
 
@@ -54,6 +63,7 @@ const EMPTY_FORM: FormState = {
   hold_reason: "",
   required_next_action: "",
   action_owner: "",
+  activation_process_step: "",
   is_active: true,
 };
 
@@ -75,23 +85,24 @@ function localDateKey(date = new Date()): string {
 
 const COLORS = {
   pageBg: "#f2efe9",
-  panelBg: "#fcfaf6",
-  cardBg: "#ffffff",
-  border: "#ddd3c3",
-  borderStrong: "#cdbfa9",
+  panelBg: "#ffffff",
+  cardBg: "#faf8f3",
+  border: "#e2ddd1",
+  borderStrong: "#ccc4b4",
   text: "#1f2937",
-  textSoft: "#6b7280",
-  textMuted: "#8b857a",
-  heading: "#1d2a3a",
-  blue: "#2f5fd7",
-  blueSoft: "#eef4ff",
-  green: "#18794e",
-  greenSoft: "#eefbf3",
-  amber: "#b7791f",
-  amberSoft: "#fff7e8",
-  red: "#c2410c",
-  redSoft: "#fff1eb",
+  textSoft: "#5f6b7c",
+  textMuted: "#8590a0",
+  heading: "#1f2937",
+  blue: "#2555c7",
+  blueSoft: "#eef3ff",
+  green: "#166534",
+  greenSoft: "#eef9f1",
+  amber: "#b45309",
+  amberSoft: "#fff6e8",
+  red: "#b42318",
+  redSoft: "#fff2ef",
   inputBg: "#fffdf9",
+  shadow: "0 1px 2px rgba(31, 41, 55, 0.04), 0 4px 12px rgba(31, 41, 55, 0.04)",
 };
 
 const FONT_STACK = 'var(--font-inter), var(--font-geist-sans), sans-serif';
@@ -105,6 +116,7 @@ export default function OfficeUpdatePage() {
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [isBlockedUpdate, setIsBlockedUpdate] = useState(false);
+  const [showInactiveActivationForm, setShowInactiveActivationForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState("");
 
@@ -124,6 +136,9 @@ export default function OfficeUpdatePage() {
         ? order.required_next_action || ""
         : "",
       action_owner: order.hold_reason?.trim() ? order.action_owner || "" : "",
+      activation_process_step:
+        order.current_process_step?.trim() ||
+        getInitialProcessStep(order.work_order_type),
       is_active: order.is_active,
     };
   }, []);
@@ -133,6 +148,7 @@ export default function OfficeUpdatePage() {
       setSelectedId(order.work_order_id);
       setForm(buildFormFromOrder(order));
       setIsBlockedUpdate(Boolean(order.hold_reason?.trim()));
+      setShowInactiveActivationForm(false);
       setSaveStatus("");
     },
     [buildFormFromOrder],
@@ -150,6 +166,7 @@ export default function OfficeUpdatePage() {
         getEngineers<StaffMember>({
           select: "id, name, role, restrictions",
           isActive: true,
+          startedOn: today,
           orderBy: { column: "name" },
         }),
         getEngineerAbsences<Absence>({
@@ -165,7 +182,25 @@ export default function OfficeUpdatePage() {
           .filter((absence) => absence.absence_date === today)
           .map((absence) => absence.engineer_id),
       );
-      setOrders(wo);
+      setOrders(
+        applySuggestedAssignmentsForCurrentStep(
+          wo,
+          staffData.filter((staffMember) => staffMember.role === "shop"),
+          new Set(
+            staffData
+              .filter(
+                (staffMember) =>
+                  staffMember.role === "shop" &&
+                  absenceData.some(
+                    (absence) =>
+                      absence.absence_date === today &&
+                      absence.engineer_id === staffMember.id,
+                  ),
+              )
+              .map((staffMember) => staffMember.name),
+          ),
+        ),
+      );
       setLoading(false);
 
       const woParam = new URLSearchParams(window.location.search).get("wo");
@@ -218,6 +253,13 @@ export default function OfficeUpdatePage() {
   );
 
   const dueDateRequired = form.priority === "Yes" || form.priority === "AOG";
+  const inactiveActivationStepOptions = useMemo(
+    () =>
+      selectedOrder
+        ? getCompletableStepsForType(selectedOrder.work_order_type)
+        : [],
+    [selectedOrder],
+  );
 
   function displayDate(value: string | null): string {
     if (!value) return "—";
@@ -236,6 +278,7 @@ export default function OfficeUpdatePage() {
     setSelectedId("");
     setForm(EMPTY_FORM);
     setIsBlockedUpdate(false);
+    setShowInactiveActivationForm(false);
   }
 
   function selectOrder(id: string) {
@@ -249,6 +292,18 @@ export default function OfficeUpdatePage() {
     setSelectedId("");
     setForm(EMPTY_FORM);
     setIsBlockedUpdate(false);
+    setShowInactiveActivationForm(false);
+    setSaveStatus("");
+  }
+
+  function startInactiveActivation() {
+    if (!selectedOrder || selectedOrder.is_active) return;
+
+    setForm((prev) => ({
+      ...prev,
+      is_active: true,
+    }));
+    setShowInactiveActivationForm(true);
     setSaveStatus("");
   }
 
@@ -265,7 +320,7 @@ export default function OfficeUpdatePage() {
     }
   }
 
-  async function saveActiveOrder() {
+  async function saveWorkOrder() {
     if (!selectedId || !selectedOrder) return;
 
     if (dueDateRequired && !form.due_date) {
@@ -294,10 +349,24 @@ export default function OfficeUpdatePage() {
 
     setSaveStatus("Saving...");
 
+    const isActivating = !selectedOrder.is_active && form.is_active;
+    const preservedStep = selectedOrder.current_process_step?.trim() || "";
+    const nextProcessStep =
+      (isActivating ? form.activation_process_step.trim() : "") ||
+      preservedStep ||
+      getInitialProcessStep(selectedOrder.work_order_type);
+
     const payload = {
       due_date: form.due_date || null,
       priority: form.priority,
-      assigned_person_team: normalizedAssigned,
+      assigned_person_team: isActivating
+        ? autoAssignForStep(
+            normalizedAssigned,
+            nextProcessStep,
+            shopStaff,
+            todayAbsentShopEngineerNames,
+          )
+        : normalizedAssigned,
       hold_reason: isBlockedUpdate ? normalizedHoldReason : null,
       required_next_action:
         isBlockedUpdate && normalizedRequiredAction
@@ -308,48 +377,7 @@ export default function OfficeUpdatePage() {
       action_status: isBlockedUpdate ? "Open" : null,
       action_closed: false,
       is_active: form.is_active,
-      last_manual_update: new Date().toISOString(),
-    };
-
-    const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
-      selectedId,
-      payload,
-      WORK_ORDER_SELECT,
-    );
-
-    if (error) {
-      setSaveStatus(`Error: ${error.message}`);
-      return;
-    }
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.work_order_id === selectedId && savedOrder ? savedOrder : o,
-      ),
-    );
-
-    clearPageAfterSave();
-    setSaveStatus("Saved.");
-  }
-
-  async function activateInactiveOrder() {
-    if (!selectedId || !selectedOrder) return;
-
-    const preservedStep = selectedOrder.current_process_step?.trim() || "";
-    const nextProcessStep =
-      preservedStep || getInitialProcessStep(selectedOrder.work_order_type);
-
-    setSaveStatus("Activating...");
-
-    const payload = {
-      is_active: true,
-      current_process_step: nextProcessStep,
-      assigned_person_team: autoAssignForStep(
-        selectedOrder.assigned_person_team,
-        nextProcessStep,
-        shopStaff,
-        todayAbsentShopEngineerNames,
-      ),
+      current_process_step: isActivating ? nextProcessStep : selectedOrder.current_process_step,
       last_manual_update: new Date().toISOString(),
     };
 
@@ -399,23 +427,22 @@ export default function OfficeUpdatePage() {
   };
 
   const shellStyle: React.CSSProperties = {
-    maxWidth: "1220px",
+    maxWidth: "1440px",
   };
 
   const sectionCard: React.CSSProperties = {
     backgroundColor: COLORS.panelBg,
-    border: `1px solid ${COLORS.borderStrong}`,
-    borderRadius: "18px",
-    padding: "18px",
-    boxShadow: "0 8px 24px rgba(73, 52, 18, 0.05)",
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: "14px",
+    padding: "16px 18px",
+    boxShadow: COLORS.shadow,
   };
 
   const innerCard: React.CSSProperties = {
     backgroundColor: COLORS.cardBg,
     border: `1px solid ${COLORS.border}`,
     borderRadius: "14px",
-    padding: "16px",
-    boxShadow: "0 2px 6px rgba(0,0,0,0.03)",
+    padding: "15px",
   };
 
   const inputStyle: React.CSSProperties = {
@@ -431,17 +458,12 @@ export default function OfficeUpdatePage() {
     outline: "none",
   };
 
-  const subtitleStyle: React.CSSProperties = {
-    margin: "4px 0 0",
-    fontSize: "14px",
-    color: COLORS.textSoft,
-  };
-
   const fieldTitleStyle: React.CSSProperties = {
-    fontSize: "15px",
-    fontWeight: 700,
+    fontSize: "16px",
+    fontWeight: 650,
     color: COLORS.heading,
     margin: 0,
+    letterSpacing: "-0.015em",
   };
 
   const eyebrowStyle: React.CSSProperties = {
@@ -457,198 +479,139 @@ export default function OfficeUpdatePage() {
     kind: "active" | "inactive",
     active: boolean,
   ): React.CSSProperties => ({
-    padding: "11px 16px",
-    borderRadius: "12px",
-    border: active
-      ? `2px solid ${kind === "active" ? COLORS.blue : COLORS.amber}`
-      : `1px solid ${COLORS.borderStrong}`,
+    padding: "10px 16px",
+    borderRadius: "10px",
+    border: `1px solid ${active ? (kind === "active" ? "#d7e3ff" : "#ead1a6") : COLORS.border}`,
     backgroundColor: active
       ? kind === "active"
         ? COLORS.blueSoft
         : COLORS.amberSoft
-      : COLORS.cardBg,
-    color: active
-      ? kind === "active"
-        ? COLORS.blue
-        : COLORS.amber
-      : COLORS.textSoft,
-    fontWeight: 800,
-    fontSize: "14px",
+      : COLORS.panelBg,
+    color: active ? (kind === "active" ? COLORS.blue : COLORS.amber) : COLORS.textSoft,
+    fontWeight: 700,
+    fontSize: "13px",
     cursor: "pointer",
-    transition: "all 0.15s ease",
+    boxShadow: active ? "0 1px 2px rgba(31, 41, 55, 0.04)" : "none",
   });
 
   const choiceBtn = (active: boolean): React.CSSProperties => ({
     flex: 1,
     padding: "10px 12px",
     borderRadius: "10px",
-    border: active
-      ? `2px solid ${COLORS.blue}`
-      : `1px solid ${COLORS.borderStrong}`,
-    backgroundColor: active ? COLORS.blueSoft : COLORS.cardBg,
+    border: `1px solid ${active ? "#d7e3ff" : COLORS.border}`,
+    backgroundColor: active ? COLORS.blueSoft : COLORS.panelBg,
     color: active ? COLORS.blue : COLORS.textSoft,
     fontWeight: 700,
-    fontSize: "14px",
+    fontSize: "13px",
     cursor: "pointer",
   });
 
   const primaryBtn: React.CSSProperties = {
-    padding: "12px 28px",
+    padding: "11px 18px",
     backgroundColor: COLORS.blue,
     color: "white",
-    border: "none",
-    borderRadius: "12px",
+    border: `1px solid ${COLORS.blue}`,
+    borderRadius: "10px",
     cursor: "pointer",
     fontWeight: 700,
-    fontSize: "15px",
-    boxShadow: "0 8px 20px rgba(47,95,215,0.22)",
+    fontSize: "14px",
+    boxShadow: "0 8px 20px rgba(37, 85, 199, 0.18)",
   };
 
+  const secondaryBtn: React.CSSProperties = {
+    padding: "11px 18px",
+    backgroundColor: COLORS.panelBg,
+    color: COLORS.textSoft,
+    border: `1px solid ${COLORS.borderStrong}`,
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: "14px",
+  };
+
+  const showEditor = selectedOrder
+    ? selectedOrder.is_active || showInactiveActivationForm
+    : false;
+
   return (
-    <div style={pageStyle}>
+    <main style={pageStyle}>
       <div style={shellStyle}>
-        <div
-          style={{
-            marginBottom: "20px",
-            display: "flex",
-            alignItems: "center",
-            gap: "16px",
-          }}
-        >
-          <div
-            style={{
-              width: "68px",
-              height: "68px",
-              borderRadius: "18px",
-              backgroundColor: "#fffdfa",
-              border: "1px solid #d6cbb8",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 6px 18px rgba(73, 52, 18, 0.08)",
-              flexShrink: 0,
-              fontSize: "34px",
-              lineHeight: 1,
-            }}
-          >
-            💻
-          </div>
+        <PageHeader
+          title="Office Update"
+          description="Manage work order planning, add additional tasks when a work order is blocked, and activate or deactivate work orders as needed."
+          tabs={
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => changeMode("active")}
+                style={modeBtn("active", mode === "active")}
+              >
+                Active ({activeOrders.length})
+              </button>
 
-          <div>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "34px",
-                lineHeight: 1.05,
-                fontWeight: 800,
-                color: COLORS.heading,
-                letterSpacing: "-0.03em",
-              }}
+              <button
+                type="button"
+                onClick={() => changeMode("inactive")}
+                style={modeBtn("inactive", mode === "inactive")}
+              >
+                Inactive ({inactiveOrders.length})
+              </button>
+            </div>
+          }
+        />
+
+        {mode && (
+          <section style={sectionCard}>
+            <div style={eyebrowStyle}>
+              {mode === "active" ? "Active work orders" : "Inactive work orders"}
+            </div>
+
+            <h2
+              style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "4px" }}
             >
-              Office Update
-            </h1>
+              Select work order
+            </h2>
 
-            <p
-              style={{
-                margin: "10px 0 0",
-                fontSize: "15px",
-                color: COLORS.textSoft,
-                maxWidth: "760px",
-              }}
-            >
-              Here you can manage the work order planning, add additional tasks
-              when a work order is blocked, and activate or deactivate work
-              orders as needed.
-            </p>
-          </div>
-        </div>
-
-        <section style={sectionCard}>
-          <h2 style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "10px" }}>
-            Choose an active or inactive work order to update
-          </h2>
-
-          <div style={{ display: "flex", gap: "12px" }}>
-            <button
-              type="button"
-              onClick={() => changeMode("active")}
-              style={modeBtn("active", mode === "active")}
-            >
-              Active ({activeOrders.length})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => changeMode("inactive")}
-              style={modeBtn("inactive", mode === "inactive")}
-            >
-              Inactive ({inactiveOrders.length})
-            </button>
-          </div>
-
-          {mode && (
             <div
               style={{
-                marginTop: "18px",
-                paddingTop: "18px",
-                borderTop: `1px solid ${COLORS.border}`,
+                display: "grid",
+                gridTemplateColumns: "1.65fr 1fr",
+                gap: "14px",
               }}
             >
-              <div style={eyebrowStyle}>
-                {mode === "active" ? "Active work orders" : "Inactive work orders"}
+              <div style={innerCard}>
+                <div style={eyebrowStyle}>Search</div>
+                <SearchableSelect
+                  options={visibleOrders.map((o) => ({
+                    value: o.work_order_id,
+                    label: `${o.work_order_id} — ${o.customer || "No customer"} — ${o.part_number || "No PN"} — ${o.work_order_type || "Unknown type"}${aogPrioritySuffix(o)}`,
+                  }))}
+                  value={selectedId}
+                  onChange={(v) => selectOrder(v)}
+                  placeholder="Search by work order, customer or part number..."
+                  style={{ marginTop: "2px" }}
+                />
               </div>
 
-              <h2
-                style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "4px" }}
-              >
-                Select work order
-              </h2>
-
-              <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
-                Search or browse only within the currently selected group.
-              </p>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1.65fr 1fr",
-                  gap: "14px",
-                }}
-              >
-                <div style={innerCard}>
-                  <div style={eyebrowStyle}>Search</div>
-                  <SearchableSelect
-                    options={visibleOrders.map((o) => ({
-                      value: o.work_order_id,
-                      label: `${o.work_order_id} — ${o.customer || "No customer"} — ${o.part_number || "No PN"} — ${o.work_order_type || "Unknown type"}${aogPrioritySuffix(o)}`,
-                    }))}
-                    value={selectedId}
-                    onChange={(v) => selectOrder(v)}
-                    placeholder="Search by work order, customer or part number..."
-                    style={{ marginTop: "2px" }}
-                  />
-                </div>
-
-                <div style={innerCard}>
-                  <div style={eyebrowStyle}>Browse list</div>
-                  <select
-                    value={selectedId}
-                    onChange={(e) => selectOrder(e.target.value)}
-                    style={inputStyle}
-                  >
-                    <option value="">Select from list...</option>
-                    {visibleOrders.map((o) => (
-                      <option key={o.work_order_id} value={o.work_order_id}>
-                        {o.work_order_id} — {o.customer || "No customer"} —{" "}
-                        {o.part_number || "No PN"}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div style={innerCard}>
+                <div style={eyebrowStyle}>Browse list</div>
+                <select
+                  value={selectedId}
+                  onChange={(e) => selectOrder(e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Select from list...</option>
+                  {visibleOrders.map((o) => (
+                    <option key={o.work_order_id} value={o.work_order_id}>
+                      {o.work_order_id} — {o.customer || "No customer"} —{" "}
+                      {o.part_number || "No PN"}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
-          )}
-        </section>
+          </section>
+        )}
 
         {selectedOrder && (
           <>
@@ -689,7 +652,78 @@ export default function OfficeUpdatePage() {
               </div>
             </section>
 
-            {mode === "active" ? (
+            {!showEditor && (
+              <section style={{ ...sectionCard, marginTop: "18px" }}>
+                <div style={eyebrowStyle}>Activation</div>
+                <h2 style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "6px" }}>
+                  Activate work order
+                </h2>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1.2fr 1fr",
+                    gap: "14px",
+                    alignItems: "start",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "14px",
+                      backgroundColor: "#fffdfa",
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: "12px",
+                    }}
+                  >
+                    <div style={eyebrowStyle}>What happens next</div>
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        color: COLORS.text,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Klik op <strong>Activate</strong> om hetzelfde update-menu te openen als bij
+                      actieve work orders. Daar kun je daarna due date, priority, assignment en
+                      blocked-informatie invullen voordat je opslaat.
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: "14px",
+                        backgroundColor: COLORS.blueSoft,
+                        border: "1px solid #d7e5ff",
+                        borderRadius: "12px",
+                        color: COLORS.blue,
+                        fontWeight: 700,
+                        fontSize: "13px",
+                      }}
+                    >
+                      Step on activation:{" "}
+                      <strong>
+                        {form.activation_process_step ||
+                          selectedOrder.current_process_step ||
+                          getInitialProcessStep(selectedOrder.work_order_type)}
+                      </strong>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <button type="button" onClick={startInactiveActivation} style={primaryBtn}>
+                        Activate
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {showEditor && (
               <>
                 <section style={{ marginTop: "18px" }}>
                   <div
@@ -710,10 +744,6 @@ export default function OfficeUpdatePage() {
                       >
                         Planning details
                       </h2>
-                      <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
-                        Update due date, priority, and assignment.
-                      </p>
-
                       <div style={{ display: "grid", gap: "10px" }}>
                         <div>
                           <div style={eyebrowStyle}>Due Date</div>
@@ -807,10 +837,6 @@ export default function OfficeUpdatePage() {
                       >
                         Blocked?
                       </h2>
-                      <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
-                        Only use this when the work order cannot continue.
-                      </p>
-
                       <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
                         <button
                           type="button"
@@ -940,10 +966,27 @@ export default function OfficeUpdatePage() {
                       >
                         Active status
                       </h2>
-                      <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
-                        Keep this work order active or move it back to Inactive.
-                      </p>
-
+                      {!selectedOrder.is_active && (
+                        <div style={{ marginBottom: "10px" }}>
+                          <div style={eyebrowStyle}>Next Process Step On Activation</div>
+                          <select
+                            value={form.activation_process_step}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                activation_process_step: e.target.value,
+                              }))
+                            }
+                            style={inputStyle}
+                          >
+                            {inactiveActivationStepOptions.map((step) => (
+                              <option key={step} value={step}>
+                                {step}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <select
                         value={String(form.is_active)}
                         onChange={(e) =>
@@ -974,9 +1017,26 @@ export default function OfficeUpdatePage() {
                           fontSize: "13px",
                         }}
                       >
-                        {form.is_active
-                          ? "This work order will remain active."
-                          : "This work order will be moved to Inactive after saving."}
+                        {selectedOrder.is_active ? (
+                          form.is_active ? (
+                            "This work order will remain active."
+                          ) : (
+                            "This work order will be moved to Inactive after saving."
+                          )
+                        ) : form.is_active ? (
+                          <>
+                            This work order will be activated after saving.
+                            <br />
+                            Step on activation:{" "}
+                            <strong>
+                              {form.activation_process_step ||
+                                selectedOrder.current_process_step ||
+                                getInitialProcessStep(selectedOrder.work_order_type)}
+                            </strong>
+                          </>
+                        ) : (
+                          "This work order will remain inactive after saving."
+                        )}
                       </div>
                     </div>
                   </div>
@@ -986,89 +1046,21 @@ export default function OfficeUpdatePage() {
                   style={{
                     display: "flex",
                     justifyContent: "flex-end",
+                    gap: "10px",
                     marginTop: "18px",
                   }}
                 >
-                  <button onClick={() => void saveActiveOrder()} style={primaryBtn}>
-                    Save Work Order
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <section style={{ ...sectionCard, marginTop: "18px" }}>
-                  <div style={eyebrowStyle}>Activation</div>
-                  <h2
-                    style={{
-                      ...fieldTitleStyle,
-                      fontSize: "20px",
-                      marginBottom: "6px",
-                    }}
-                  >
-                    Activate work order
-                  </h2>
-                  <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
-                    This inactive work order can be activated and moved back into
-                    the live flow.
-                  </p>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1.2fr 1fr",
-                      gap: "14px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        padding: "14px",
-                        backgroundColor: "#fffdfa",
-                        border: `1px solid ${COLORS.border}`,
-                        borderRadius: "12px",
-                      }}
+                  {!selectedOrder.is_active && (
+                    <button
+                      type="button"
+                      onClick={() => setShowInactiveActivationForm(false)}
+                      style={secondaryBtn}
                     >
-                      <div style={eyebrowStyle}>What happens on activation</div>
-                      <div
-                        style={{
-                          fontSize: "14px",
-                          color: COLORS.text,
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        If the work order already has a process step, that step
-                        is kept. Otherwise it starts at <strong>Disassembly</strong>.
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        padding: "14px",
-                        backgroundColor: COLORS.blueSoft,
-                        border: "1px solid #d7e5ff",
-                        borderRadius: "12px",
-                        color: COLORS.blue,
-                        fontWeight: 700,
-                        fontSize: "13px",
-                      }}
-                    >
-                      Current stored step:{" "}
-                      <strong>
-                        {selectedOrder.current_process_step ||
-                          getInitialProcessStep(selectedOrder.work_order_type)}
-                      </strong>
-                    </div>
-                  </div>
-                </section>
-
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    marginTop: "18px",
-                  }}
-                >
-                  <button onClick={() => void activateInactiveOrder()} style={primaryBtn}>
-                    Activate Work Order
+                      Cancel
+                    </button>
+                  )}
+                  <button onClick={() => void saveWorkOrder()} style={primaryBtn}>
+                    {selectedOrder.is_active ? "Save Work Order" : "Activate Work Order"}
                   </button>
                 </div>
               </>
@@ -1092,7 +1084,7 @@ export default function OfficeUpdatePage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -1101,8 +1093,8 @@ function InfoBox({ label, value }: { label: string; value: string }) {
     <div
       style={{
         padding: "14px 14px 13px",
-        backgroundColor: "#fffdfa",
-        border: "1px solid #ddd3c3",
+        backgroundColor: "#faf8f3",
+        border: "1px solid #e2ddd1",
         borderRadius: "12px",
       }}
     >
