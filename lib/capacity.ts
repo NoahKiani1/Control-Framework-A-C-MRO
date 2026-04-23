@@ -1,4 +1,4 @@
-import { PROCESS_STEPS, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
+import { getActiveStepsForType, PROCESS_STEPS, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
 import { filterEngineersStartedOnDateKey } from "@/lib/engineers";
 import { isRfqBlockedState } from "@/lib/work-order-rules";
 import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
@@ -7,61 +7,58 @@ import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
 // Weight = percentage of total hours this step takes
 
 // === STEP WEIGHTS - gebaseerd op representatieve tijden per stap ===
-// Repair  totaal: 210 min  (Intake 10 + Disassembly 10 + Cleaning 20 + Magnetic Test 0 +
+// Repair  totaal: 255 min  (Intake 10 + Disassembly 10 + Cleaning 20 + Magnetic Test 45 +
 //                           Eddy Current 60 + Inspection 20 + Assembly 60 + EASA 30)
-// Overhaul totaal: 350 min (Intake 10 + Disassembly 10 + Cleaning 20 + Paint Stripping 20 +
-//                           Magnetic Test 0 + Penetrant 60 + Eddy Current 60 +
+// Overhaul totaal: 535 min (Intake 10 + Disassembly 10 + Paint Stripping 120 +
+//                           Magnetic Test 45 + Penetrant 120 + Eddy Current 60 +
 //                           Inspection 20 + Painting 60 + Assembly 60 + EASA 30)
-// Magnetic Test heeft weight 0: de stap bestaat in de flow maar telt niet mee in uren
-// (wordt optioneel uitgevoerd, zelden van toepassing)
+// Magnetic Test is optioneel en telt alleen mee als magnetic_test_required aan staat.
 // "Repair" stap is vervallen: valt samen met Assembly
 
 export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
   "Wheel Repair": {
-    "Intake":          0.05, // 10/210
-    "Disassembly":     0.05, // 10/210
-    "Cleaning":        0.10, // 20/210
-    "Magnetic Test": 0.00, // optioneel, geen vaste tijd
-    "Eddy Current":    0.28, // 60/210
-    "Inspection":      0.10, // 20/210
-    "Assembly":        0.28, // 60/210 (inclusief repair)
-    "EASA-Form 1":     0.14, // 30/210
+    "Intake":          0.04, // 10/255
+    "Disassembly":     0.04, // 10/255
+    "Cleaning":        0.08, // 20/255
+    "Magnetic Test":   0.18, // 45/255
+    "Eddy Current":    0.24, // 60/255
+    "Inspection":      0.08, // 20/255
+    "Assembly":        0.24, // 60/255 (inclusief repair)
+    "EASA-Form 1":     0.12, // 30/255
   },
   "Wheel Overhaul": {
-    "Intake":                  0.03, // 10/350
-    "Disassembly":             0.03, // 10/350
-    "Cleaning":                0.06, // 20/350
-    "Paint Stripping":         0.06, // 20/350
-    "Magnetic Test": 0.00, // optioneel, geen vaste tijd
-    "Penetrant Testing":0.17, // 60/350
-    "Eddy Current":            0.17, // 60/350
-    "Inspection":              0.06, // 20/350
-    "Painting":                0.17, // 60/350
-    "Assembly":                0.17, // 60/350 (inclusief repair)
-    "EASA-Form 1":             0.08, // 30/350
+    "Intake":                  0.019, // 10/535
+    "Disassembly":             0.019, // 10/535
+    "Paint Stripping":         0.224, // 120/535
+    "Magnetic Test":           0.084, // 45/535
+    "Penetrant Testing":       0.224, // 120/535
+    "Eddy Current":            0.112, // 60/535
+    "Inspection":              0.037, // 20/535
+    "Painting":                0.112, // 60/535
+    "Assembly":                0.112, // 60/535 (inclusief repair)
+    "EASA-Form 1":             0.056, // 30/535
   },
   "Brake Repair": {
-    "Intake":          0.05,
-    "Disassembly":     0.05,
-    "Cleaning":        0.10,
-    "Magnetic Test": 0.00,
-    "Eddy Current":    0.28,
-    "Inspection":      0.10,
-    "Assembly":        0.28,
-    "EASA-Form 1":     0.14,
+    "Intake":          0.04,
+    "Disassembly":     0.04,
+    "Cleaning":        0.08,
+    "Magnetic Test":   0.18,
+    "Eddy Current":    0.24,
+    "Inspection":      0.08,
+    "Assembly":        0.24,
+    "EASA-Form 1":     0.12,
   },
   "Brake Overhaul": {
-    "Intake":                  0.03,
-    "Disassembly":             0.03,
-    "Cleaning":                0.06,
-    "Paint Stripping":         0.06,
-    "Magnetic Test": 0.00,
-    "Penetrant Testing":0.17,
-    "Eddy Current":            0.17,
-    "Inspection":              0.06,
-    "Painting":                0.17,
-    "Assembly":                0.17,
-    "EASA-Form 1":             0.08,
+    "Intake":                  0.019, // 10/535
+    "Disassembly":             0.019, // 10/535
+    "Paint Stripping":         0.224, // 120/535
+    "Magnetic Test":           0.084, // 45/535
+    "Penetrant Testing":       0.224, // 120/535
+    "Eddy Current":            0.112, // 60/535
+    "Inspection":              0.037, // 20/535
+    "Painting":                0.112, // 60/535
+    "Assembly":                0.112, // 60/535 (inclusief repair)
+    "EASA-Form 1":             0.056, // 30/535
   },
   "Battery": {
     "Disassembly":  0.10,
@@ -78,28 +75,51 @@ export const STEP_ORDER: Record<string, string[]> = PROCESS_STEPS;
 
 // === BEREKENINGEN ===
 
+function normalizeCurrentStepForCapacity(
+  workOrderType: string | null,
+  currentStep: string | null,
+): string | null {
+  if (workOrderType?.includes("Overhaul") && currentStep === "Cleaning") {
+    return "Paint Stripping";
+  }
+
+  return currentStep;
+}
+
 export function getRemainingHours(
   workOrderType: string | null,
   currentStep: string | null,
-  partNumber?: string | null, // ← nieuw
+  partNumber?: string | null,
+  magneticTestRequired = false,
 ): number {
   if (!workOrderType || !FALLBACK_HOURS[workOrderType]) return 0;
 
   const total = getTotalHoursForPart(workOrderType, partNumber);
-
-  const steps = STEP_ORDER[workOrderType];
+  const steps = getActiveStepsForType(workOrderType, magneticTestRequired);
   const weights = STEP_WEIGHTS[workOrderType];
+  const normalizedCurrentStep = normalizeCurrentStepForCapacity(
+    workOrderType,
+    currentStep,
+  );
+  const activeTotalWeight = steps.reduce(
+    (sum, step) => sum + (weights[step] || 0),
+    0,
+  );
 
-  if (!currentStep || !steps.includes(currentStep)) return total;
+  if (activeTotalWeight <= 0) return 0;
 
-  // Sum weights of all steps AFTER the current step (including current)
-  const currentIndex = steps.indexOf(currentStep);
+  if (!normalizedCurrentStep || !steps.includes(normalizedCurrentStep)) {
+    return Math.round(total * activeTotalWeight * 10) / 10;
+  }
+
+  const currentIndex = steps.indexOf(normalizedCurrentStep);
   let completedWeight = 0;
   for (let i = 0; i < currentIndex; i++) {
     completedWeight += weights[steps[i]] || 0;
   }
 
-  return Math.round(total * (1 - completedWeight) * 10) / 10;
+  const remainingWeight = Math.max(0, activeTotalWeight - completedWeight);
+  return Math.round(total * remainingWeight * 10) / 10;
 }
 
 export function isWeekend(date: Date): boolean {
@@ -199,6 +219,7 @@ export function calculateWeekCapacity(
     work_order_type: string | null;
     part_number: string | null;
     current_process_step: string | null;
+    magnetic_test_required?: boolean | null;
     due_date: string | null;
     hold_reason: string | null;
     rfq_state: string | null;
@@ -238,7 +259,7 @@ export function calculateWeekCapacity(
     for (const day of workDays) {
       const hoursPerEngineer = getHoursForDay(day);
       const absentCount = absenceDates.filter(
-        (a) => a.getTime() === day.getTime()
+        (a) => a.getTime() === day.getTime(),
       ).length;
       const plannedEngineerCount = Array.isArray(engineersOrCount)
         ? filterEngineersStartedOnDateKey(engineersOrCount, toLocalDateKey(day)).length
@@ -268,8 +289,12 @@ export function calculateWeekCapacity(
   });
 
   for (const order of filteredOrders) {
-    // ↓ enige wijziging: geef part_number mee
-    const remaining = getRemainingHours(order.work_order_type, order.current_process_step, order.part_number);
+    const remaining = getRemainingHours(
+      order.work_order_type,
+      order.current_process_step,
+      order.part_number,
+      order.magnetic_test_required ?? false,
+    );
     if (remaining <= 0) continue;
 
     const dueDate = new Date(order.due_date!);

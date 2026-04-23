@@ -13,8 +13,14 @@ import {
   autoAssignForStep,
 } from "@/lib/auto-assign";
 import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
-import { normalizeAssignedPersonTeam } from "@/lib/work-order-rules";
+import { formatDate, normalizeAssignedPersonTeam } from "@/lib/work-order-rules";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
+import {
+  ExtraAction,
+  deleteExtraAction,
+  getExtraActions,
+  sortExtraActionsByDueDate,
+} from "@/lib/extra-actions";
 import { SearchableSelect } from "@/app/components/searchable-select";
 import { PageHeader } from "@/app/components/page-header";
 
@@ -91,11 +97,15 @@ export default function ShopUpdatePage() {
   const [todayAbsentEngineerIds, setTodayAbsentEngineerIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState("");
+  const [extraActions, setExtraActions] = useState<ExtraAction[]>([]);
+  const [extraActionToClose, setExtraActionToClose] = useState<ExtraAction | null>(null);
+  const [extraActionCloseStatus, setExtraActionCloseStatus] = useState("");
+  const [isClosingExtraAction, setIsClosingExtraAction] = useState(false);
 
   useEffect(() => {
     async function load() {
       const today = localDateKey();
-      const [data, staffData, absenceData] = await Promise.all([
+      const [data, staffData, absenceData, extras] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select:
             "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, magnetic_test_required",
@@ -114,7 +124,9 @@ export default function ShopUpdatePage() {
           select: "engineer_id, absence_date",
           fromDate: today,
         }),
+        getExtraActions(),
       ]);
+      setExtraActions(sortExtraActionsByDueDate(extras));
 
       setOrders(
         applySuggestedAssignmentsForCurrentStep(
@@ -236,6 +248,39 @@ export default function ShopUpdatePage() {
       setHoldReason("");
       setRequiredNextAction("");
     }
+  }
+
+  function openCloseExtraActionConfirmation(action: ExtraAction) {
+    setExtraActionToClose(action);
+    setExtraActionCloseStatus("");
+    setIsClosingExtraAction(false);
+  }
+
+  function closeCloseExtraActionConfirmation() {
+    if (isClosingExtraAction) return;
+    setExtraActionToClose(null);
+    setExtraActionCloseStatus("");
+  }
+
+  async function confirmCloseExtraAction() {
+    if (!extraActionToClose) return;
+
+    setIsClosingExtraAction(true);
+    setExtraActionCloseStatus("Deleting...");
+
+    const { error } = await deleteExtraAction(extraActionToClose.id);
+
+    if (error) {
+      setExtraActionCloseStatus(`Error: ${error.message}`);
+      setIsClosingExtraAction(false);
+      return;
+    }
+
+    const closedId = extraActionToClose.id;
+    setExtraActions((prev) => prev.filter((a) => a.id !== closedId));
+    setExtraActionToClose(null);
+    setExtraActionCloseStatus("");
+    setIsClosingExtraAction(false);
   }
 
   async function saveUpdate() {
@@ -427,10 +472,9 @@ export default function ShopUpdatePage() {
         />
 
         {/* SELECT WORK ORDER */}
-        <section style={sectionCard}>
-          <div style={eyebrowStyle}>Select work order</div>
+        <section style={{ ...sectionCard, marginBottom: "18px" }}>
           <h2 style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "4px" }}>
-            Search or browse active work orders
+            Search for a work order to update
           </h2>
           <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
             {orders.length} active work orders available.
@@ -474,6 +518,64 @@ export default function ShopUpdatePage() {
               </select>
             </div>
           </div>
+        </section>
+
+        {/* ADDITIONAL TASKS */}
+        <section style={sectionCard}>
+          <h2 style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "4px" }}>
+            Complete an additional task
+          </h2>
+          <p style={{ ...subtitleStyle, marginBottom: "14px" }}>
+            {extraActions.length === 0
+              ? "No additional tasks outstanding."
+              : `${extraActions.length} additional task${extraActions.length !== 1 ? "s" : ""} outstanding.`}
+          </p>
+
+          {extraActions.length > 0 && (
+            <div style={{ display: "grid", gap: "10px" }}>
+              {extraActions.map((action) => (
+                <div
+                  key={action.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1.7fr 1fr 0.8fr auto",
+                    gap: "12px",
+                    alignItems: "center",
+                    padding: "12px 14px",
+                    borderRadius: "12px",
+                    border: `1px solid ${COLORS.border}`,
+                    backgroundColor: COLORS.cardBg,
+                  }}
+                >
+                  <div>
+                    <div style={eyebrowStyle}>Description</div>
+                    <div style={{ fontSize: "15px", fontWeight: 600, color: COLORS.text }}>
+                      {action.description}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={eyebrowStyle}>Responsible</div>
+                    <div style={{ fontSize: "14px", color: COLORS.text }}>
+                      {normalizeAssignedPersonTeam(action.responsible_person_team)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={eyebrowStyle}>Due date</div>
+                    <div style={{ fontSize: "14px", color: COLORS.text }}>
+                      {formatDate(action.due_date)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openCloseExtraActionConfirmation(action)}
+                    style={primaryBtn}
+                  >
+                    Complete
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {selectedOrder && (
@@ -729,6 +831,132 @@ export default function ShopUpdatePage() {
           </div>
         )}
       </div>
+
+      {extraActionToClose && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(31, 41, 55, 0.28)",
+            display: "grid",
+            placeItems: "center",
+            padding: "24px",
+            zIndex: 60,
+          }}
+          onMouseDown={closeCloseExtraActionConfirmation}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "520px",
+              backgroundColor: "#fcfaf6",
+              border: `1px solid ${COLORS.borderStrong}`,
+              borderRadius: "18px",
+              boxShadow: "0 20px 50px rgba(31, 41, 55, 0.18)",
+              padding: "18px",
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div style={{ marginBottom: "14px" }}>
+              <div style={eyebrowStyle}>Complete additional task</div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: "22px",
+                  fontWeight: 750,
+                  letterSpacing: "-0.025em",
+                  color: COLORS.text,
+                  lineHeight: 1.1,
+                }}
+              >
+                {extraActionToClose.description}
+              </h2>
+            </div>
+
+            <div style={{ ...innerCard, display: "grid", gap: "10px" }}>
+              <div>
+                <div style={eyebrowStyle}>Responsible</div>
+                <div style={{ fontSize: "14px", color: COLORS.text }}>
+                  {normalizeAssignedPersonTeam(extraActionToClose.responsible_person_team)}
+                </div>
+              </div>
+              <div>
+                <div style={eyebrowStyle}>Due date</div>
+                <div style={{ fontSize: "14px", color: COLORS.text }}>
+                  {formatDate(extraActionToClose.due_date)}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  border: "1px solid #f0c9ba",
+                  backgroundColor: COLORS.redSoft,
+                  color: COLORS.red,
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  lineHeight: 1.45,
+                }}
+              >
+                This cannot be undone. The task will be permanently removed.
+              </div>
+
+              {extraActionCloseStatus && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    border: `1px solid ${extraActionCloseStatus.startsWith("Error:") ? "#f0c9ba" : COLORS.border}`,
+                    backgroundColor: extraActionCloseStatus.startsWith("Error:") ? COLORS.redSoft : COLORS.cardBg,
+                    color: extraActionCloseStatus.startsWith("Error:") ? COLORS.red : COLORS.textSoft,
+                    fontSize: "13px",
+                    lineHeight: 1.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  {extraActionCloseStatus}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+                marginTop: "14px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={closeCloseExtraActionConfirmation}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  border: `1px solid ${COLORS.borderStrong}`,
+                  backgroundColor: COLORS.panelBg,
+                  color: COLORS.text,
+                  fontSize: "14px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+                disabled={isClosingExtraAction}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmCloseExtraAction()}
+                style={primaryBtn}
+                disabled={isClosingExtraAction}
+              >
+                Complete task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
 import { getWorkOrders, updateWorkOrderAndFetch } from "@/lib/work-orders";
+import { createExtraAction } from "@/lib/extra-actions";
 import {
   applySuggestedAssignmentsForCurrentStep,
   autoAssignForStep,
@@ -54,6 +55,12 @@ type FormState = {
   is_active: boolean;
 };
 
+type ExtraActionFormState = {
+  description: string;
+  responsible_person_team: string;
+  due_date: string;
+};
+
 type Mode = "active" | "inactive" | null;
 
 const EMPTY_FORM: FormState = {
@@ -65,6 +72,12 @@ const EMPTY_FORM: FormState = {
   action_owner: "",
   activation_process_step: "",
   is_active: true,
+};
+
+const EMPTY_EXTRA_ACTION_FORM: ExtraActionFormState = {
+  description: "",
+  responsible_person_team: "",
+  due_date: "",
 };
 
 type Absence = {
@@ -115,10 +128,14 @@ export default function OfficeUpdatePage() {
   const [mode, setMode] = useState<Mode>(null);
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [extraActionForm, setExtraActionForm] = useState<ExtraActionFormState>(
+    EMPTY_EXTRA_ACTION_FORM,
+  );
   const [isBlockedUpdate, setIsBlockedUpdate] = useState(false);
   const [showInactiveActivationForm, setShowInactiveActivationForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState("");
+  const [extraActionStatus, setExtraActionStatus] = useState("");
 
   const buildFormFromOrder = useCallback((order: WorkOrder): FormState => {
     const storedAssignedPersonTeam = order.assigned_person_team?.trim() || "";
@@ -402,6 +419,40 @@ export default function OfficeUpdatePage() {
     setSaveStatus("Saved.");
   }
 
+  async function saveExtraAction() {
+    const normalizedDescription = extraActionForm.description.trim();
+
+    if (!normalizedDescription) {
+      setExtraActionStatus("Please enter a description.");
+      return;
+    }
+
+    if (todayAbsentShopEngineerNames.has(extraActionForm.responsible_person_team)) {
+      setExtraActionStatus(
+        `${extraActionForm.responsible_person_team} is absent today. Choose another engineer or Shop (default).`,
+      );
+      return;
+    }
+
+    setExtraActionStatus("Saving...");
+
+    const { error } = await createExtraAction({
+      description: normalizedDescription,
+      responsible_person_team: normalizeAssignedPersonTeam(
+        extraActionForm.responsible_person_team,
+      ),
+      due_date: extraActionForm.due_date || null,
+    });
+
+    if (error) {
+      setExtraActionStatus(`Error: ${error.message}`);
+      return;
+    }
+
+    setExtraActionForm(EMPTY_EXTRA_ACTION_FORM);
+    setExtraActionStatus("Extra action saved.");
+  }
+
   if (loading) {
     return (
       <div
@@ -539,8 +590,43 @@ export default function OfficeUpdatePage() {
         <PageHeader
           title="Office Update"
           description="Manage work order planning, add additional tasks when a work order is blocked, and activate or deactivate work orders as needed."
-          tabs={
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+        />
+
+        <section style={{ ...sectionCard, marginTop: "18px" }}>
+          <h2 style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "6px" }}>
+            Work orders
+          </h2>
+          <div
+            style={{
+              fontSize: "14px",
+              lineHeight: 1.5,
+              color: COLORS.textSoft,
+              marginBottom: "16px",
+            }}
+          >
+            Choose whether you want to work with active or inactive work orders.
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: "16px",
+            }}
+          >
+            <div style={innerCard}>
+              <h2 style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "6px" }}>
+                Active work orders
+              </h2>
+              <div
+                style={{
+                  fontSize: "14px",
+                  lineHeight: 1.5,
+                  color: COLORS.textSoft,
+                  marginBottom: "14px",
+                }}
+              >
+                Open the update flow for work orders that are currently active in the shop.
+              </div>
               <button
                 type="button"
                 onClick={() => changeMode("active")}
@@ -548,7 +634,22 @@ export default function OfficeUpdatePage() {
               >
                 Active ({activeOrders.length})
               </button>
+            </div>
 
+            <div style={innerCard}>
+              <h2 style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "6px" }}>
+                Inactive work orders
+              </h2>
+              <div
+                style={{
+                  fontSize: "14px",
+                  lineHeight: 1.5,
+                  color: COLORS.textSoft,
+                  marginBottom: "14px",
+                }}
+              >
+                Review inactive work orders and activate them again when they are ready to work on.
+              </div>
               <button
                 type="button"
                 onClick={() => changeMode("inactive")}
@@ -557,19 +658,17 @@ export default function OfficeUpdatePage() {
                 Inactive ({inactiveOrders.length})
               </button>
             </div>
-          }
-        />
+          </div>
+        </section>
 
         {mode && (
-          <section style={sectionCard}>
-            <div style={eyebrowStyle}>
-              {mode === "active" ? "Active work orders" : "Inactive work orders"}
-            </div>
-
+          <section style={{ ...sectionCard, marginTop: "18px" }}>
             <h2
               style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "4px" }}
             >
-              Select work order
+              {mode === "active"
+                ? "Select active work order"
+                : "Select inactive work order"}
             </h2>
 
             <div
@@ -1068,6 +1167,84 @@ export default function OfficeUpdatePage() {
           </>
         )}
 
+        <section style={{ ...sectionCard, marginTop: "18px" }}>
+          <h2 style={{ ...fieldTitleStyle, fontSize: "20px", marginBottom: "6px" }}>
+            Add an additional task
+          </h2>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.5fr 1fr 0.8fr auto",
+              gap: "12px",
+              alignItems: "end",
+            }}
+          >
+            <div>
+              <div style={eyebrowStyle}>Description</div>
+              <input
+                value={extraActionForm.description}
+                onChange={(e) =>
+                  setExtraActionForm((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
+                }
+                placeholder="What has to be done?"
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <div style={eyebrowStyle}>Responsible Person / Team</div>
+              <select
+                value={extraActionForm.responsible_person_team}
+                onChange={(e) =>
+                  setExtraActionForm((prev) => ({
+                    ...prev,
+                    responsible_person_team: e.target.value,
+                  }))
+                }
+                style={inputStyle}
+              >
+                <option value="">Shop (default)</option>
+                {shopStaff.map((s) => (
+                  <option
+                    key={s.id}
+                    value={s.name}
+                    disabled={todayAbsentEngineerIdSet.has(s.id)}
+                  >
+                    {s.name}
+                    {todayAbsentEngineerIdSet.has(s.id) ? " (absent today)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <div style={eyebrowStyle}>Due Date</div>
+              <input
+                type="date"
+                value={extraActionForm.due_date}
+                onChange={(e) =>
+                  setExtraActionForm((prev) => ({
+                    ...prev,
+                    due_date: e.target.value,
+                  }))
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void saveExtraAction()}
+              style={primaryBtn}
+            >
+              Add action
+            </button>
+          </div>
+        </section>
+
         {saveStatus && (
           <div
             style={{
@@ -1081,6 +1258,22 @@ export default function OfficeUpdatePage() {
             }}
           >
             {saveStatus}
+          </div>
+        )}
+
+        {extraActionStatus && (
+          <div
+            style={{
+              marginTop: "16px",
+              padding: "12px 14px",
+              backgroundColor: COLORS.cardBg,
+              border: `1px solid ${COLORS.borderStrong}`,
+              borderRadius: "12px",
+              fontSize: "14px",
+              color: COLORS.textSoft,
+            }}
+          >
+            {extraActionStatus}
           </div>
         )}
       </div>

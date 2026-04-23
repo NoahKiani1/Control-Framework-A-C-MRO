@@ -40,7 +40,6 @@ export const PROCESS_STEPS: Record<string, string[]> = {
   "Wheel Overhaul": [
     "Intake",
     "Disassembly",
-    "Cleaning",
     "Paint Stripping",
     "Magnetic Test",
     "Penetrant Testing",
@@ -63,7 +62,6 @@ export const PROCESS_STEPS: Record<string, string[]> = {
   "Brake Overhaul": [
     "Intake",
     "Disassembly",
-    "Cleaning",
     "Paint Stripping",
     "Magnetic Test",
     "Penetrant Testing",

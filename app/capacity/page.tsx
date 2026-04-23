@@ -16,7 +16,7 @@ import {
   RESTRICTION_BLOCKED_STEPS,
   hasRestriction,
 } from "@/lib/restrictions";
-import { PROCESS_STEPS, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
+import { getActiveStepsForType, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
 import { PageHeader } from "@/app/components/page-header";
 
 type Engineer = {
@@ -41,6 +41,7 @@ type WorkOrder = {
   work_order_type: string | null;
   part_number: string | null;
   current_process_step: string | null;
+  magnetic_test_required: boolean | null;
   due_date: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
@@ -172,7 +173,7 @@ export default function CapacityPage() {
 
     const woData = await getWorkOrders<WorkOrder>({
       select:
-        "work_order_id, customer, work_order_type, part_number, current_process_step, due_date, hold_reason, rfq_state",
+        "work_order_id, customer, work_order_type, part_number, current_process_step, magnetic_test_required, due_date, hold_reason, rfq_state",
       isOpen: true,
       isActive: true,
     });
@@ -291,8 +292,10 @@ export default function CapacityPage() {
       const affected = allOrders
         .filter((o) => {
           if (!o.work_order_type || !o.current_process_step) return false;
-          const steps = PROCESS_STEPS[o.work_order_type];
-          if (!steps) return false;
+          const steps = getActiveStepsForType(
+            o.work_order_type,
+            o.magnetic_test_required ?? false,
+          );
 
           const currentIdx = steps.indexOf(o.current_process_step);
           if (currentIdx === -1) return false;

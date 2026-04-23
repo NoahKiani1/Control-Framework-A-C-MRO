@@ -24,6 +24,7 @@ import {
   getEngineers,
 } from "@/lib/engineers";
 import { getWorkOrders } from "@/lib/work-orders";
+import { ExtraAction, getExtraActions } from "@/lib/extra-actions";
 
 type WorkOrder = {
   work_order_id: string;
@@ -210,9 +211,23 @@ function AssignedPerson({
   );
 }
 
+type AdditionalTaskItem =
+  | { kind: "wo-action"; due: string | null; order: WorkOrder }
+  | { kind: "extra-action"; due: string | null; action: ExtraAction };
+
+function sortAdditionalTaskItems(items: AdditionalTaskItem[]): AdditionalTaskItem[] {
+  return [...items].sort((a, b) => {
+    if (!a.due && !b.due) return 0;
+    if (!a.due) return 1;
+    if (!b.due) return -1;
+    return a.due.localeCompare(b.due);
+  });
+}
+
 export default function ShopPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
+  const [extraActions, setExtraActions] = useState<ExtraAction[]>([]);
   const [loading, setLoading] = useState(true);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -224,7 +239,7 @@ export default function ShopPage() {
   useEffect(() => {
     async function load() {
       const today = localDateKey();
-      const [data, engineerData, absenceData] = await Promise.all([
+      const [data, engineerData, absenceData, extrasData] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select:
             "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update",
@@ -241,7 +256,9 @@ export default function ShopPage() {
           select: "engineer_id, absence_date",
           fromDate: today,
         }),
+        getExtraActions(),
       ]);
+      setExtraActions(extrasData);
 
       const filtered = data.filter(
         (o) => o.current_process_step !== READY_TO_CLOSE_STEP,
@@ -323,8 +340,8 @@ export default function ShopPage() {
       const maxScroll = getMaxScroll();
       const sectionTargets = [
         openSectionRef.current,
-        blockedSectionRef.current,
         actionsSectionRef.current,
+        blockedSectionRef.current,
       ]
         .map((section) => {
           if (!section) return null;
@@ -442,6 +459,18 @@ export default function ShopPage() {
   const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
   const blockedOrders = orders.filter((o) => isBlocked(o));
   const actionOrders = orders.filter((o) => hasActiveCorrectiveAction(o));
+  const additionalTasks: AdditionalTaskItem[] = sortAdditionalTaskItems([
+    ...actionOrders.map<AdditionalTaskItem>((order) => ({
+      kind: "wo-action",
+      due: order.due_date,
+      order,
+    })),
+    ...extraActions.map<AdditionalTaskItem>((action) => ({
+      kind: "extra-action",
+      due: action.due_date,
+      action,
+    })),
+  ]);
   const engineerByName = new Map(engineers.map((e) => [e.name, e]));
   const aogCount = orders.filter((o) => priorityTag(o.priority) === "AOG").length;
 
@@ -962,6 +991,122 @@ export default function ShopPage() {
     );
   }
 
+  function renderExtraActionCard(action: ExtraAction) {
+    const responsible = normalizeAssignedPersonTeam(action.responsible_person_team);
+    const ownerEngineer = engineerByName.get(responsible);
+    const overdue = isOverdue(action.due_date);
+
+    return (
+      <article
+        key={`extra-${action.id}`}
+        style={{
+          ...cardStyle,
+          backgroundColor: CARD_ACTION_BG,
+          borderColor: CARD_ACTION_BORDER,
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: "5px",
+            backgroundColor: COLORS.amber,
+          }}
+        />
+
+        <div
+          style={{
+            display: "grid",
+            alignContent: "center",
+            gap: "4px",
+            minWidth: 0,
+          }}
+        >
+          <div style={labelStyle}>Additional task</div>
+          <div
+            style={{
+              color: COLORS.ink,
+              fontSize: "24px",
+              fontWeight: 650,
+              lineHeight: 1.05,
+              letterSpacing: "-0.015em",
+              overflowWrap: "anywhere",
+            }}
+          >
+            Standalone
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            alignContent: "center",
+            gap: "2px",
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              color: COLORS.muted,
+              fontSize: "14px",
+              fontWeight: 500,
+              lineHeight: 1.2,
+              letterSpacing: "0.005em",
+              overflowWrap: "anywhere",
+            }}
+          >
+            No work order
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            alignContent: "center",
+            minWidth: 0,
+            borderLeft: `1px solid ${COLORS.border}`,
+            paddingLeft: "16px",
+          }}
+        >
+          <div style={{ minWidth: 0, display: "grid", gap: "4px" }}>
+            <div style={labelStyle}>Task</div>
+            <div
+              style={{
+                color: COLORS.ink,
+                fontSize: "25px",
+                fontWeight: 650,
+                lineHeight: 1.08,
+                letterSpacing: "-0.012em",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {action.description || "-"}
+            </div>
+          </div>
+        </div>
+
+        {renderMetaRail({
+          name: responsible,
+          photoUrl: getEngineerPhotoUrl(ownerEngineer?.photo_path),
+          dueDate: action.due_date,
+          overdue,
+          dueLabel: "Task Due on",
+        })}
+      </article>
+    );
+  }
+
+  function renderAdditionalTaskItem(item: AdditionalTaskItem) {
+    if (item.kind === "wo-action") {
+      return renderActionCard(item.order);
+    }
+
+    return renderExtraActionCard(item.action);
+  }
+
   function renderOrderSection(
     title: string,
     subtitle: string,
@@ -1070,10 +1215,102 @@ export default function ShopPage() {
     );
   }
 
+  function renderAdditionalTasksSection() {
+    return (
+      <section ref={actionsSectionRef}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: "14px",
+            padding: "2px 4px 10px 4px",
+            borderBottom: `1px solid ${COLORS.border}`,
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              width: "4px",
+              height: "22px",
+              borderRadius: "2px",
+              backgroundColor: COLORS.amber,
+              alignSelf: "center",
+            }}
+          />
+          <h2
+            style={{
+              margin: 0,
+              fontSize: "22px",
+              fontWeight: 700,
+              lineHeight: 1,
+              letterSpacing: "-0.015em",
+              color: COLORS.ink,
+            }}
+          >
+            Additional Tasks
+          </h2>
+          <div
+            style={{
+              fontSize: "22px",
+              fontWeight: 600,
+              lineHeight: 1,
+              color: COLORS.amber,
+              fontVariantNumeric: "tabular-nums",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {additionalTasks.length}
+          </div>
+          <div
+            style={{
+              marginLeft: "auto",
+              fontSize: "13px",
+              fontWeight: 500,
+              color: COLORS.muted,
+              letterSpacing: "0.005em",
+            }}
+          >
+            Corrective actions and standalone tasks
+          </div>
+        </div>
+
+        {additionalTasks.length === 0 ? (
+          <div
+            style={{
+              marginTop: "10px",
+              padding: "18px",
+              borderRadius: "10px",
+              backgroundColor: COLORS.panel,
+              border: `1px dashed ${COLORS.borderStrong}`,
+              color: COLORS.muted,
+              fontSize: "15px",
+              fontWeight: 500,
+              textAlign: "center",
+              letterSpacing: "0.01em",
+            }}
+          >
+            No additional tasks right now.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr",
+              gap: "8px",
+              marginTop: "10px",
+            }}
+          >
+            {additionalTasks.map((item) => renderAdditionalTaskItem(item))}
+          </div>
+        )}
+      </section>
+    );
+  }
+
   const stats = [
     { label: "Open", value: nonBlockedOrders.length, tone: "#7fd1a4" },
     { label: "Blocked", value: blockedOrders.length, tone: "#f0a39b" },
-    { label: "Actions", value: actionOrders.length, tone: "#aebfd9" },
+    { label: "Tasks", value: additionalTasks.length, tone: "#aebfd9" },
     { label: "AOG", value: aogCount, tone: aogCount > 0 ? "#ff7a6d" : HEADER_INK },
   ];
 
@@ -1206,6 +1443,7 @@ export default function ShopPage() {
                 sectionRef: openSectionRef,
               },
             )}
+            {renderAdditionalTasksSection()}
             {renderOrderSection(
               "Blocked",
               "Work orders that cannot be worked on",
@@ -1215,17 +1453,6 @@ export default function ShopPage() {
                 accent: COLORS.red,
                 emptyLabel: "No blocked work orders right now.",
                 sectionRef: blockedSectionRef,
-              },
-            )}
-            {renderOrderSection(
-              "Extra Actions",
-              "Assigned corrective actions",
-              actionOrders,
-              {
-                accent: COLORS.amber,
-                emptyLabel: "No active corrective actions right now.",
-                renderCard: renderActionCard,
-                sectionRef: actionsSectionRef,
               },
             )}
             <div

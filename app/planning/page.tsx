@@ -30,6 +30,13 @@ import {
 import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
 import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
 import { getWorkOrders, updateWorkOrderAndFetch } from "@/lib/work-orders";
+import {
+  ExtraAction,
+  deleteExtraAction,
+  getExtraActions,
+  sortExtraActionsByDueDate,
+  updateExtraActionAndFetch,
+} from "@/lib/extra-actions";
 
 type WorkOrder = {
   work_order_id: string;
@@ -298,6 +305,28 @@ const inlineActionButtonStyle: React.CSSProperties = {
   fontSize: "12px",
   fontWeight: 700,
   cursor: "pointer",
+};
+
+const extraActionsDescriptionColumnStyle: React.CSSProperties = {
+  width: "68%",
+};
+
+const extraActionsResponsibleColumnStyle: React.CSSProperties = {
+  width: "14%",
+};
+
+const extraActionsDueDateColumnStyle: React.CSSProperties = {
+  width: "10%",
+};
+
+const extraActionsActionColumnStyle: React.CSSProperties = {
+  width: "8%",
+};
+
+const extraActionsTextCellStyle: React.CSSProperties = {
+  overflowWrap: "normal",
+  wordBreak: "normal",
+  whiteSpace: "normal",
 };
 
 const modalBackdropStyle: React.CSSProperties = {
@@ -899,6 +928,20 @@ export default function PlanningPage() {
   const [isCompletingAction, setIsCompletingAction] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<PlanningTab>("list");
+  const [extraActions, setExtraActions] = useState<ExtraAction[]>([]);
+  const [extraActionToClose, setExtraActionToClose] = useState<ExtraAction | null>(null);
+  const [extraActionCloseStatus, setExtraActionCloseStatus] = useState("");
+  const [isClosingExtraAction, setIsClosingExtraAction] = useState(false);
+  const [extraActionEdit, setExtraActionEdit] = useState<
+    | { action: ExtraAction; field: "responsible_person_team" | "due_date" }
+    | null
+  >(null);
+  const [extraActionEditForm, setExtraActionEditForm] = useState<{
+    responsible_person_team: string;
+    due_date: string;
+  }>({ responsible_person_team: "", due_date: "" });
+  const [extraActionEditStatus, setExtraActionEditStatus] = useState("");
+  const [isSavingExtraActionEdit, setIsSavingExtraActionEdit] = useState(false);
   const today = localDateKey();
 
   const todayAbsentEngineerIdSet = useMemo(
@@ -936,7 +979,7 @@ export default function PlanningPage() {
 
   useEffect(() => {
     async function load() {
-      const [data, engineers, absences] = await Promise.all([
+      const [data, engineers, absences, extras] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select: WORK_ORDER_SELECT,
           isOpen: true,
@@ -953,7 +996,9 @@ export default function PlanningPage() {
           select: "engineer_id, absence_date",
           fromDate: today,
         }),
+        getExtraActions(),
       ]);
+      setExtraActions(sortExtraActionsByDueDate(extras));
 
       const filtered = data.filter(
         (o) => o.current_process_step !== READY_TO_CLOSE_STEP,
@@ -1113,6 +1158,108 @@ export default function PlanningPage() {
     );
 
     closeQuickEdit();
+  }
+
+  function openCloseExtraActionConfirmation(action: ExtraAction) {
+    setExtraActionToClose(action);
+    setExtraActionCloseStatus("");
+    setIsClosingExtraAction(false);
+  }
+
+  function closeCloseExtraActionConfirmation() {
+    if (isClosingExtraAction) return;
+    setExtraActionToClose(null);
+    setExtraActionCloseStatus("");
+  }
+
+  async function confirmCloseExtraAction() {
+    if (!extraActionToClose) return;
+
+    setIsClosingExtraAction(true);
+    setExtraActionCloseStatus("Deleting...");
+
+    const { error } = await deleteExtraAction(extraActionToClose.id);
+
+    if (error) {
+      setExtraActionCloseStatus(`Error: ${error.message}`);
+      setIsClosingExtraAction(false);
+      return;
+    }
+
+    const closedId = extraActionToClose.id;
+    setExtraActions((prev) => prev.filter((a) => a.id !== closedId));
+    setExtraActionToClose(null);
+    setExtraActionCloseStatus("");
+    setIsClosingExtraAction(false);
+  }
+
+  function openEditExtraAction(
+    action: ExtraAction,
+    field: "responsible_person_team" | "due_date",
+  ) {
+    const storedResponsible = action.responsible_person_team?.trim() || "";
+    const responsible =
+      storedResponsible === DEFAULT_ASSIGNED_PERSON_TEAM ? "" : storedResponsible;
+
+    setExtraActionEdit({ action, field });
+    setExtraActionEditForm({
+      responsible_person_team: responsible,
+      due_date: action.due_date || "",
+    });
+    setExtraActionEditStatus("");
+    setIsSavingExtraActionEdit(false);
+  }
+
+  function closeEditExtraAction() {
+    if (isSavingExtraActionEdit) return;
+    setExtraActionEdit(null);
+    setExtraActionEditStatus("");
+  }
+
+  async function saveExtraActionEdit() {
+    if (!extraActionEdit) return;
+
+    if (
+      extraActionEdit.field === "responsible_person_team" &&
+      todayAbsentShopEngineerNames.has(extraActionEditForm.responsible_person_team)
+    ) {
+      setExtraActionEditStatus(
+        `${extraActionEditForm.responsible_person_team} is absent today. Choose another engineer or Shop (default).`,
+      );
+      return;
+    }
+
+    setIsSavingExtraActionEdit(true);
+    setExtraActionEditStatus("Saving...");
+
+    const payload: { responsible_person_team?: string; due_date?: string | null } = {};
+    if (extraActionEdit.field === "responsible_person_team") {
+      payload.responsible_person_team = normalizeAssignedPersonTeam(
+        extraActionEditForm.responsible_person_team,
+      );
+    } else {
+      payload.due_date = extraActionEditForm.due_date || null;
+    }
+
+    const { data: saved, error } = await updateExtraActionAndFetch(
+      extraActionEdit.action.id,
+      payload,
+    );
+
+    if (error || !saved) {
+      setExtraActionEditStatus(`Error: ${error?.message || "Unable to save changes."}`);
+      setIsSavingExtraActionEdit(false);
+      return;
+    }
+
+    setExtraActions((prev) =>
+      sortExtraActionsByDueDate(
+        prev.map((a) => (a.id === saved.id ? (saved as ExtraAction) : a)),
+      ),
+    );
+    setExtraActionEdit(null);
+    setExtraActionEditStatus("");
+    setIsSavingExtraActionEdit(false);
   }
 
   async function completeCorrectiveAction() {
@@ -1501,6 +1648,131 @@ export default function PlanningPage() {
             </div>
           )}
         </section>
+
+        <section style={{ ...sectionCardStyle, marginTop: "24px" }}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Additional tasks</h2>
+              <p style={sectionDescriptionStyle}>
+                Additional tasks to be completed by the engineers. 
+              </p>
+            </div>
+            <span
+              style={
+                extraActions.length > 0 ? countBadgeOpenStyle : countBadgeMutedStyle
+              }
+            >
+              {extraActions.length} task{extraActions.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+
+          {extraActions.length > 0 ? (
+            <div style={tableWrapStyle}>
+              <table style={tableBaseStyle}>
+                <colgroup>
+                  <col style={extraActionsDescriptionColumnStyle} />
+                  <col style={extraActionsResponsibleColumnStyle} />
+                  <col style={extraActionsDueDateColumnStyle} />
+                  <col style={extraActionsActionColumnStyle} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th
+                      style={{
+                        ...tableHeaderCellStyle,
+                        ...roundedTableHeaderStyle("left"),
+                        ...extraActionsTextCellStyle,
+                      }}
+                    >
+                      Description
+                    </th>
+                    <th style={{ ...tableHeaderCellStyle, ...extraActionsTextCellStyle }}>
+                      Responsible
+                    </th>
+                    <th style={{ ...tableHeaderCellStyle, ...extraActionsTextCellStyle }}>
+                      Due date
+                    </th>
+                    <th
+                      style={{
+                        ...tableHeaderCellStyle,
+                        ...roundedTableHeaderStyle("right"),
+                        ...extraActionsTextCellStyle,
+                      }}
+                      aria-label="Actions"
+                    />
+                  </tr>
+                </thead>
+                <tbody>
+                  {extraActions.map((action, idx) => {
+                    const isLast = idx === extraActions.length - 1;
+                    const cell: React.CSSProperties = {
+                      ...tableCellStyle,
+                      verticalAlign: "middle",
+                      ...(isLast ? { borderBottom: 0 } : {}),
+                    };
+                    return (
+                      <tr key={action.id}>
+                        <td style={{ ...cell, ...extraActionsTextCellStyle, fontWeight: 600 }}>
+                          {action.description}
+                        </td>
+                        <td style={{ ...cell, ...extraActionsTextCellStyle }}>
+                          <span style={{ display: "inline-flex", alignItems: "center" }}>
+                            {normalizeAssignedPersonTeam(action.responsible_person_team)}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openEditExtraAction(action, "responsible_person_team")
+                              }
+                              style={inlineEditButtonStyle}
+                              aria-label={`Edit responsible for ${action.description}`}
+                            >
+                              <Pencil size={12} strokeWidth={2} />
+                            </button>
+                          </span>
+                        </td>
+                        <td style={{ ...cell, ...extraActionsTextCellStyle }}>
+                          <span style={{ display: "inline-flex", alignItems: "center" }}>
+                            <DueDateCell value={action.due_date} />
+                            <button
+                              type="button"
+                              onClick={() => openEditExtraAction(action, "due_date")}
+                              style={inlineEditButtonStyle}
+                              aria-label={`Edit due date for ${action.description}`}
+                            >
+                              <Pencil size={12} strokeWidth={2} />
+                            </button>
+                          </span>
+                        </td>
+                        <td style={{ ...cell, ...extraActionsTextCellStyle, textAlign: "right" }}>
+                          <button
+                            type="button"
+                            onClick={() => openCloseExtraActionConfirmation(action)}
+                            style={{ ...inlineActionButtonStyle, marginTop: 0 }}
+                          >
+                            Close task
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: "14px",
+                borderRadius: "10px",
+                backgroundColor: ui.surface,
+                border: `1px dashed ${ui.borderStrong}`,
+                color: ui.muted,
+                fontSize: "13px",
+              }}
+            >
+              No additional tasks.
+            </div>
+          )}
+        </section>
         </>
         )}
 
@@ -1846,6 +2118,201 @@ export default function PlanningPage() {
                 disabled={isCompletingAction}
               >
                 Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {extraActionEdit && (
+        <div style={modalBackdropStyle} onMouseDown={closeEditExtraAction}>
+          <div
+            style={modalCardStyle}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div style={{ marginBottom: "14px" }}>
+              <div style={modalEyebrowStyle}>Quick edit</div>
+              <h2 style={modalTitleStyle}>{extraActionEdit.action.description}</h2>
+            </div>
+
+            <div style={{ ...modalInnerCardStyle, display: "grid", gap: "12px" }}>
+              {extraActionEdit.field === "responsible_person_team" ? (
+                <div>
+                  <div style={modalEyebrowStyle}>Responsible Person / Team</div>
+                  <select
+                    value={extraActionEditForm.responsible_person_team}
+                    onChange={(event) =>
+                      setExtraActionEditForm((prev) => ({
+                        ...prev,
+                        responsible_person_team: event.target.value,
+                      }))
+                    }
+                    style={modalInputStyle}
+                    disabled={isSavingExtraActionEdit}
+                  >
+                    <option value="">Shop (default)</option>
+                    {shopStaff.map((staffMember) => (
+                      <option
+                        key={staffMember.id}
+                        value={staffMember.name}
+                        disabled={todayAbsentEngineerIdSet.has(staffMember.id)}
+                      >
+                        {staffMember.name}
+                        {todayAbsentEngineerIdSet.has(staffMember.id)
+                          ? " (absent today)"
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <div style={modalEyebrowStyle}>Due Date</div>
+                  <input
+                    type="date"
+                    value={extraActionEditForm.due_date}
+                    onChange={(event) =>
+                      setExtraActionEditForm((prev) => ({
+                        ...prev,
+                        due_date: event.target.value,
+                      }))
+                    }
+                    style={modalInputStyle}
+                    disabled={isSavingExtraActionEdit}
+                  />
+                </div>
+              )}
+
+              {extraActionEditStatus && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    border: `1px solid ${extraActionEditStatus.startsWith("Error:") ? ui.redBorder : ui.border}`,
+                    backgroundColor: extraActionEditStatus.startsWith("Error:") ? ui.redSoft : ui.surfaceSoft,
+                    color: extraActionEditStatus.startsWith("Error:") ? ui.red : ui.muted,
+                    fontSize: "13px",
+                    lineHeight: 1.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  {extraActionEditStatus}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+                marginTop: "14px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={closeEditExtraAction}
+                style={modalActionButtonStyle}
+                disabled={isSavingExtraActionEdit}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveExtraActionEdit()}
+                style={modalPrimaryButtonStyle}
+                disabled={isSavingExtraActionEdit}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {extraActionToClose && (
+        <div style={modalBackdropStyle} onMouseDown={closeCloseExtraActionConfirmation}>
+          <div
+            style={modalCardStyle}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div style={{ marginBottom: "14px" }}>
+              <div style={modalEyebrowStyle}>Close additional task</div>
+              <h2 style={modalTitleStyle}>
+                Close {extraActionToClose.description}?
+              </h2>
+            </div>
+
+            <div style={{ ...modalInnerCardStyle, display: "grid", gap: "10px" }}>
+              <div>
+                <div style={modalEyebrowStyle}>Responsible</div>
+                <div style={{ fontSize: "14px", color: ui.text }}>
+                  {normalizeAssignedPersonTeam(extraActionToClose.responsible_person_team)}
+                </div>
+              </div>
+              <div>
+                <div style={modalEyebrowStyle}>Due date</div>
+                <div style={{ fontSize: "14px", color: ui.text }}>
+                  {formatDate(extraActionToClose.due_date)}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  border: `1px solid ${ui.redBorder}`,
+                  backgroundColor: ui.redSoft,
+                  color: ui.red,
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  lineHeight: 1.45,
+                }}
+              >
+                This cannot be undone. The task will be permanently removed.
+              </div>
+
+              {extraActionCloseStatus && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    border: `1px solid ${extraActionCloseStatus.startsWith("Error:") ? ui.redBorder : ui.border}`,
+                    backgroundColor: extraActionCloseStatus.startsWith("Error:") ? ui.redSoft : ui.surfaceSoft,
+                    color: extraActionCloseStatus.startsWith("Error:") ? ui.red : ui.muted,
+                    fontSize: "13px",
+                    lineHeight: 1.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  {extraActionCloseStatus}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+                marginTop: "14px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={closeCloseExtraActionConfirmation}
+                style={modalActionButtonStyle}
+                disabled={isClosingExtraAction}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmCloseExtraAction()}
+                style={modalPrimaryButtonStyle}
+                disabled={isClosingExtraAction}
+              >
+                Close task
               </button>
             </div>
           </div>

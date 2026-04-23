@@ -24,7 +24,7 @@ import {
 import { calculateWeekCapacity } from "@/lib/capacity";
 import { RESTRICTION_BLOCKED_STEPS, hasRestriction } from "@/lib/restrictions";
 import {
-  getProcessStepsForType,
+  getActiveStepsForType,
   READY_TO_CLOSE_STEP,
 } from "@/lib/process-steps";
 
@@ -45,6 +45,7 @@ type WorkOrder = {
   last_manual_update: string | null;
   last_system_update: string | null;
   work_order_type: string | null;
+  magnetic_test_required: boolean | null;
   is_open: boolean;
   is_active: boolean;
 };
@@ -595,6 +596,7 @@ export default function DashboardPage() {
       work_order_type: o.work_order_type,
       part_number: o.part_number,
       current_process_step: o.current_process_step,
+      magnetic_test_required: o.magnetic_test_required,
       due_date: o.due_date,
       hold_reason: o.hold_reason,
       rfq_state: o.rfq_state,
@@ -632,7 +634,10 @@ export default function DashboardPage() {
 
   function getRemainingStepsForOrder(order: WorkOrder): string[] {
     if (!order.work_order_type || !order.current_process_step) return [];
-    const steps = getProcessStepsForType(order.work_order_type);
+    const steps = getActiveStepsForType(
+      order.work_order_type,
+      order.magnetic_test_required ?? false,
+    );
     const currentIdx = steps.indexOf(order.current_process_step);
     if (currentIdx === -1) return [];
     return steps.slice(currentIdx);
