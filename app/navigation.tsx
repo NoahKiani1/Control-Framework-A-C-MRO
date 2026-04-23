@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   Gauge,
   CalendarDays,
@@ -13,11 +13,13 @@ import {
   Users,
   Archive,
   Monitor,
-  Settings,
+  BriefcaseBusiness,
+  LogOut,
   Menu,
   X,
   type LucideIcon,
 } from "lucide-react";
+import { AppRole, getCurrentProfile, signOut } from "@/lib/auth";
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
 type NavGroup = { label: string; items: NavItem[] };
@@ -51,15 +53,46 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-const CURRENT_USER = { name: "Noah Kiani", role: "Developer", initials: "NK" };
-
 export function Navigation() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [role, setRole] = useState<AppRole | null>(null);
 
-  if (pathname === "/shop" || pathname === "/shop-form" || pathname === "/login") return null;
+  const hideSidebar =
+    pathname === "/shop" || pathname === "/shop-form" || pathname === "/login";
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRole() {
+      if (hideSidebar) {
+        setRole(null);
+        return;
+      }
+
+      const { profile } = await getCurrentProfile();
+
+      if (active) {
+        setRole(profile?.role ?? null);
+      }
+    }
+
+    void loadRole();
+
+    return () => {
+      active = false;
+    };
+  }, [hideSidebar]);
+
+  if (hideSidebar || role !== "office") return null;
 
   const close = () => setOpen(false);
+
+  async function handleLogout() {
+    await signOut();
+    router.replace("/login");
+  }
 
   return (
     <>
@@ -174,23 +207,21 @@ export function Navigation() {
 
         <div className="mt-auto border-t border-white/5 p-3">
           <div className="flex items-center gap-3 rounded-md px-2 py-2">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#dc2626]/15 text-[13px] font-semibold text-[#f87171] ring-1 ring-[#dc2626]/25">
-              {CURRENT_USER.initials}
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#dc2626]/15 text-[#f87171] ring-1 ring-[#dc2626]/25">
+              <BriefcaseBusiness size={16} />
             </div>
             <div className="flex min-w-0 flex-1 flex-col leading-tight">
               <span className="truncate text-[13px] font-medium text-white">
-                {CURRENT_USER.name}
-              </span>
-              <span className="truncate text-[11px] text-[#8a8374]">
-                {CURRENT_USER.role}
+                Office
               </span>
             </div>
             <button
               type="button"
-              aria-label="Settings"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[#8a8374] hover:bg-white/5 hover:text-[#c9bfae]"
+              onClick={handleLogout}
+              aria-label="Log out"
+              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-[#8a8374] hover:bg-white/5 hover:text-[#c9bfae]"
             >
-              <Settings size={16} />
+              <LogOut size={16} />
             </button>
           </div>
         </div>
