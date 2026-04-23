@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import { formatDate, latestUpdate, rfqDisplay } from "@/lib/work-order-rules";
 import { getWorkOrders } from "@/lib/work-orders";
@@ -32,7 +33,7 @@ const ui = {
 
 const FONT_STACK = 'var(--font-inter), var(--font-geist-sans), sans-serif';
 
-export default function BacklogPage() {
+function BacklogPageContent() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -266,5 +267,13 @@ export default function BacklogPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function BacklogPage() {
+  return (
+    <RequireRole allowedRoles={["office"]}>
+      <BacklogPageContent />
+    </RequireRole>
   );
 }

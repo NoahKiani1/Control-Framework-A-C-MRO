@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import * as XLSX from "xlsx";
+import { RequireRole } from "@/app/components/require-role";
 import { getInitialProcessStep } from "@/lib/process-steps";
 import {
   isOlderThanOneYear,
@@ -71,7 +72,7 @@ function isRfqApprovedState(state: string | null | undefined): boolean {
   );
 }
 
-export default function ImportPage() {
+function ImportPageContent() {
   const [status, setStatus] = useState("");
   const [step, setStep] = useState<"upload" | "review" | "done">("upload");
   const [newOrders, setNewOrders] = useState<ParsedRow[]>([]);
@@ -883,5 +884,13 @@ export default function ImportPage() {
 
       </div>
     </main>
+  );
+}
+
+export default function ImportPage() {
+  return (
+    <RequireRole allowedRoles={["office"]}>
+      <ImportPageContent />
+    </RequireRole>
   );
 }

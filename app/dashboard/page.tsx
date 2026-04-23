@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
 import {
@@ -484,7 +485,7 @@ function StatTile({
   );
 }
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
@@ -1877,5 +1878,13 @@ export default function DashboardPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <RequireRole allowedRoles={["office"]}>
+      <DashboardPageContent />
+    </RequireRole>
   );
 }

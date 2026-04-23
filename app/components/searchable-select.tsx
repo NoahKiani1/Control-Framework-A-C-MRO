@@ -13,6 +13,8 @@ type SearchableSelectProps = {
   onChange: (value: string) => void;
   placeholder?: string;
   style?: React.CSSProperties;
+  inputStyle?: React.CSSProperties;
+  optionStyle?: React.CSSProperties;
 };
 
 export function SearchableSelect({
@@ -21,6 +23,8 @@ export function SearchableSelect({
   onChange,
   placeholder = "Type to search...",
   style,
+  inputStyle,
+  optionStyle,
 }: SearchableSelectProps) {
   const [query, setQuery] = useState("");
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -108,6 +112,7 @@ export function SearchableSelect({
           backgroundColor: "white",
           color: "#1e293b",
           minHeight: "36px",
+          ...inputStyle,
         }}
       />
 
@@ -161,8 +166,9 @@ export function SearchableSelect({
                     ? "#eff6ff"
                     : option.value === value
                       ? "#f8fafc"
-                      : "white",
+                    : "white",
                 borderBottom: "1px solid #f1f5f9",
+                ...optionStyle,
               }}
             >
               {option.label}

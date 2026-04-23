@@ -57,7 +57,7 @@ export function Navigation() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  if (pathname === "/shop") return null;
+  if (pathname === "/shop" || pathname === "/shop-form" || pathname === "/login") return null;
 
   const close = () => setOpen(false);
 

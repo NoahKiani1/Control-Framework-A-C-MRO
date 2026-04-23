@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { RequireRole } from "@/app/components/require-role";
 import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
 import { getWorkOrders, updateWorkOrderAndFetch } from "@/lib/work-orders";
 import { createExtraAction } from "@/lib/extra-actions";
@@ -120,7 +121,7 @@ const COLORS = {
 
 const FONT_STACK = 'var(--font-inter), var(--font-geist-sans), sans-serif';
 
-export default function OfficeUpdatePage() {
+function OfficeUpdatePageContent() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
   const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
@@ -1278,6 +1279,14 @@ export default function OfficeUpdatePage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function OfficeUpdatePage() {
+  return (
+    <RequireRole allowedRoles={["office"]}>
+      <OfficeUpdatePageContent />
+    </RequireRole>
   );
 }
 

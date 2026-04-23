@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { Public_Sans } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
+import { RequireRole } from "@/app/components/require-role";
 import { READY_TO_CLOSE_STEP } from "@/lib/process-steps";
 import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
 import {
@@ -224,7 +225,7 @@ function sortAdditionalTaskItems(items: AdditionalTaskItem[]): AdditionalTaskIte
   });
 }
 
-export default function ShopPage() {
+function ShopPageContent() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [extraActions, setExtraActions] = useState<ExtraAction[]>([]);
@@ -1466,5 +1467,13 @@ export default function ShopPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function ShopPage() {
+  return (
+    <RequireRole allowedRoles={["office", "wall"]}>
+      <ShopPageContent />
+    </RequireRole>
   );
 }

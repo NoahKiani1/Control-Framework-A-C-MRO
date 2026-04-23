@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
+import { RequireRole } from "@/app/components/require-role";
 import {
   deleteEngineer,
   deleteEngineerAbsenceGroup,
@@ -89,7 +90,7 @@ function getMondayOfWeek(date: Date): Date {
   return d;
 }
 
-export default function StaffPage() {
+function StaffPageContent() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1522,5 +1523,13 @@ export default function StaffPage() {
         {renderRestrictionEditor()}
       </div>
     </main>
+  );
+}
+
+export default function StaffPage() {
+  return (
+    <RequireRole allowedRoles={["office"]}>
+      <StaffPageContent />
+    </RequireRole>
   );
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Pencil } from "lucide-react";
+import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import {
   PROCESS_STEP_SHORT_LABELS,
@@ -912,7 +913,7 @@ function TimelineLegend() {
 
 type PlanningTab = "list" | "timeline";
 
-export default function PlanningPage() {
+function PlanningPageContent() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
   const [todayAbsentEngineerIds, setTodayAbsentEngineerIds] = useState<number[]>([]);
@@ -2319,5 +2320,13 @@ export default function PlanningPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function PlanningPage() {
+  return (
+    <RequireRole allowedRoles={["office"]}>
+      <PlanningPageContent />
+    </RequireRole>
   );
 }

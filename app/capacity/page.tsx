@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { RequireRole } from "@/app/components/require-role";
 import {
   filterEngineersStartedOnDateKey,
   deletePastEngineerAbsences,
@@ -134,7 +135,7 @@ function ChevronIcon() {
   );
 }
 
-export default function CapacityPage() {
+function CapacityPageContent() {
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [allOrders, setAllOrders] = useState<WorkOrder[]>([]);
@@ -1221,5 +1222,13 @@ export default function CapacityPage() {
 
       </div>
     </main>
+  );
+}
+
+export default function CapacityPage() {
+  return (
+    <RequireRole allowedRoles={["office"]}>
+      <CapacityPageContent />
+    </RequireRole>
   );
 }
