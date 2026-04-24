@@ -301,13 +301,15 @@ const inlineActionButtonStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   marginTop: "8px",
-  padding: "6px 9px",
+  padding: "6px 14px",
+  minWidth: "112px",
   borderRadius: "999px",
   border: `1px solid ${ui.redBorder}`,
   backgroundColor: ui.redSoft,
   color: ui.red,
   fontSize: "var(--fs-sm)",
   fontWeight: 700,
+  whiteSpace: "nowrap",
   cursor: "pointer",
 };
 

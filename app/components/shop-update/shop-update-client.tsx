@@ -434,6 +434,12 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     minHeight: isTablet ? "60px" : undefined,
   };
 
+  const sectionDividerStyle: CSSProperties = {
+    height: "1px",
+    backgroundColor: COLORS.border,
+    margin: isTablet ? "22px 0" : "18px 0",
+  };
+
   if (loading) {
     return (
       <div style={{ ...pageStyle, color: COLORS.textSoft }}>
@@ -521,74 +527,10 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
               </select>
             </div>
           </div>
-        </section>
 
-        <section
-          style={{
-            ...sectionCard,
-            marginTop: selectedOrder ? majorSectionGap : undefined,
-            marginBottom: selectedOrder ? 0 : undefined,
-          }}
-        >
-          <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
-            Complete an additional task
-          </h2>
-          <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
-            {extraActions.length === 0
-              ? "No additional tasks outstanding."
-              : `${extraActions.length} additional task${extraActions.length !== 1 ? "s" : ""} outstanding.`}
-          </p>
-
-          {extraActions.length > 0 && (
-            <div style={{ display: "grid", gap: isTablet ? "14px" : "10px" }}>
-              {extraActions.map((action) => (
-                <div
-                  key={action.id}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 0.8fr) auto",
-                    gap: isTablet ? "14px" : "10px",
-                    alignItems: "center",
-                    padding: isTablet ? "18px" : "10px 12px",
-                    borderRadius: isTablet ? "18px" : "10px",
-                    border: `1px solid ${COLORS.border}`,
-                    backgroundColor: COLORS.cardBg,
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={eyebrowStyle}>Description</div>
-                    <div style={{ fontSize: isTablet ? "18px" : "var(--fs-md)", fontWeight: 600, color: COLORS.text }}>
-                      {action.description}
-                    </div>
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={eyebrowStyle}>Responsible</div>
-                    <div style={{ fontSize: isTablet ? "16px" : "var(--fs-body)", color: COLORS.text }}>
-                      {normalizeAssignedPersonTeam(action.responsible_person_team)}
-                    </div>
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={eyebrowStyle}>Due date</div>
-                    <div style={{ fontSize: isTablet ? "16px" : "var(--fs-body)", color: COLORS.text }}>
-                      {formatDate(action.due_date)}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => openCloseExtraActionConfirmation(action)}
-                    style={{ ...primaryBtn, width: isTablet ? "100%" : undefined }}
-                  >
-                    Complete
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {selectedOrder && (
-          <>
-            <section style={{ ...sectionCard, marginTop: isTablet ? "22px" : "14px" }}>
+          {selectedOrder && (
+            <>
+              <div style={sectionDividerStyle} />
               <div style={eyebrowStyle}>Selected work order</div>
               <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: isTablet ? "18px" : "12px" }}>
                 Current work order details
@@ -612,9 +554,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                   large={isTablet}
                 />
               </div>
-            </section>
 
-            <section style={{ marginTop: isTablet ? "22px" : "14px" }}>
+              <div style={sectionDividerStyle} />
+              <div style={eyebrowStyle}>Work order update</div>
               <div
                 style={{
                   display: "grid",
@@ -715,24 +657,80 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                   )}
                 </div>
               </div>
-            </section>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                marginTop: isTablet ? "24px" : "14px",
-              }}
-            >
-              <button
-                onClick={() => void saveUpdate()}
-                style={{ ...primaryBtn, width: isTablet ? "100%" : undefined }}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  marginTop: isTablet ? "24px" : "14px",
+                }}
               >
-                Save Update
-              </button>
+                <button
+                  onClick={() => void saveUpdate()}
+                  style={{ ...primaryBtn, width: isTablet ? "100%" : undefined }}
+                >
+                  Save Update
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+
+        <section style={sectionCard}>
+          <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
+            Complete an additional task
+          </h2>
+          <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
+            {extraActions.length === 0
+              ? "No additional tasks outstanding."
+              : `${extraActions.length} additional task${extraActions.length !== 1 ? "s" : ""} outstanding.`}
+          </p>
+
+          {extraActions.length > 0 && (
+            <div style={{ display: "grid", gap: isTablet ? "14px" : "10px" }}>
+              {extraActions.map((action) => (
+                <div
+                  key={action.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 0.8fr) auto",
+                    gap: isTablet ? "14px" : "10px",
+                    alignItems: "center",
+                    padding: isTablet ? "18px" : "10px 12px",
+                    borderRadius: isTablet ? "18px" : "10px",
+                    border: `1px solid ${COLORS.border}`,
+                    backgroundColor: COLORS.cardBg,
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={eyebrowStyle}>Description</div>
+                    <div style={{ fontSize: isTablet ? "18px" : "var(--fs-md)", fontWeight: 600, color: COLORS.text }}>
+                      {action.description}
+                    </div>
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={eyebrowStyle}>Responsible</div>
+                    <div style={{ fontSize: isTablet ? "16px" : "var(--fs-body)", color: COLORS.text }}>
+                      {normalizeAssignedPersonTeam(action.responsible_person_team)}
+                    </div>
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={eyebrowStyle}>Due date</div>
+                    <div style={{ fontSize: isTablet ? "16px" : "var(--fs-body)", color: COLORS.text }}>
+                      {formatDate(action.due_date)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openCloseExtraActionConfirmation(action)}
+                    style={{ ...primaryBtn, width: isTablet ? "100%" : undefined }}
+                  >
+                    Complete
+                  </button>
+                </div>
+              ))}
             </div>
-          </>
-        )}
+          )}
+        </section>
 
         {saveStatus && (
           <div
