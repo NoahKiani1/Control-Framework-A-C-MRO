@@ -17,7 +17,7 @@ import {
   RESTRICTION_BLOCKED_STEPS,
   hasRestriction,
 } from "@/lib/restrictions";
-import { getActiveStepsForType, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
+import { READY_TO_CLOSE_STEP, resolveStepsForOrder } from "@/lib/process-steps";
 import { PageHeader } from "@/app/components/page-header";
 
 type Engineer = {
@@ -42,7 +42,7 @@ type WorkOrder = {
   work_order_type: string | null;
   part_number: string | null;
   current_process_step: string | null;
-  magnetic_test_required: boolean | null;
+  included_process_steps: string[] | null;
   due_date: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
@@ -174,7 +174,7 @@ function CapacityPageContent() {
 
     const woData = await getWorkOrders<WorkOrder>({
       select:
-        "work_order_id, customer, work_order_type, part_number, current_process_step, magnetic_test_required, due_date, hold_reason, rfq_state",
+        "work_order_id, customer, work_order_type, part_number, current_process_step, included_process_steps, due_date, hold_reason, rfq_state",
       isOpen: true,
       isActive: true,
     });
@@ -293,9 +293,9 @@ function CapacityPageContent() {
       const affected = allOrders
         .filter((o) => {
           if (!o.work_order_type || !o.current_process_step) return false;
-          const steps = getActiveStepsForType(
+          const steps = resolveStepsForOrder(
             o.work_order_type,
-            o.magnetic_test_required ?? false,
+            o.included_process_steps,
           );
 
           const currentIdx = steps.indexOf(o.current_process_step);
@@ -541,13 +541,15 @@ function CapacityPageContent() {
 
   const sectionCardStyle: React.CSSProperties = {
     ...surfaceCardStyle,
-    padding: "16px 18px",
+    padding: "var(--card-py) var(--card-px)",
+    minWidth: 0,
   };
 
   const collapsibleSectionStyle: React.CSSProperties = {
     ...surfaceCardStyle,
     padding: 0,
     overflow: "hidden",
+    minWidth: 0,
   };
 
   const secondarySectionStyle: React.CSSProperties = {
@@ -566,12 +568,12 @@ function CapacityPageContent() {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "14px",
+    gap: "var(--gap-default)",
   };
 
   const sectionTitleStyle: React.CSSProperties = {
     margin: 0,
-    fontSize: "16px",
+    fontSize: "var(--fs-heading)",
     fontWeight: 650,
     color: ui.text,
     letterSpacing: "-0.015em",
@@ -579,13 +581,13 @@ function CapacityPageContent() {
 
   const secondarySectionTitleStyle: React.CSSProperties = {
     ...sectionTitleStyle,
-    fontSize: "15px",
+    fontSize: "var(--fs-md)",
     color: ui.muted,
   };
 
   const sectionDescriptionStyle: React.CSSProperties = {
-    margin: "3px 0 0",
-    fontSize: "13px",
+    margin: "2px 0 0",
+    fontSize: "var(--fs-body)",
     color: ui.muted,
     lineHeight: 1.5,
   };
@@ -594,10 +596,10 @@ function CapacityPageContent() {
     display: "inline-flex",
     alignItems: "center",
     gap: "6px",
-    padding: "3px 9px",
+    padding: "3px 8px",
     borderRadius: "999px",
     border: `1px solid ${ui.border}`,
-    fontSize: "12px",
+    fontSize: "var(--fs-sm)",
     fontWeight: 650,
     lineHeight: 1.2,
     whiteSpace: "nowrap",
@@ -605,7 +607,7 @@ function CapacityPageContent() {
 
   const labelStyle: React.CSSProperties = {
     margin: 0,
-    fontSize: "10px",
+    fontSize: "var(--fs-meta)",
     fontWeight: 700,
     color: ui.mutedSoft,
     textTransform: "uppercase",
@@ -616,13 +618,13 @@ function CapacityPageContent() {
     cursor: "pointer",
     listStyle: "none",
     display: "block",
-    padding: "12px 16px",
+    padding: "10px 14px",
   };
 
   const summaryRightStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
-    gap: "12px",
+    gap: "10px",
     flexShrink: 0,
   };
 
@@ -632,15 +634,15 @@ function CapacityPageContent() {
   };
 
   const contentPaddingStyle: React.CSSProperties = {
-    padding: "0 16px 14px",
+    padding: "0 14px 12px",
   };
 
   const calloutStyle: React.CSSProperties = {
-    padding: "11px 13px",
+    padding: "9px 12px",
     borderRadius: "10px",
     border: `1px solid ${ui.border}`,
     backgroundColor: ui.surface,
-    fontSize: "13px",
+    fontSize: "var(--fs-body)",
     lineHeight: 1.6,
     color: ui.text,
   };
@@ -659,9 +661,9 @@ function CapacityPageContent() {
   };
 
   const tableCellStyle: React.CSSProperties = {
-    padding: "9px 13px",
+    padding: "7px 12px",
     borderBottom: `1px solid ${ui.border}`,
-    fontSize: "13px",
+    fontSize: "var(--fs-body)",
     overflowWrap: "anywhere",
     verticalAlign: "top",
     textAlign: "left",
@@ -674,7 +676,7 @@ function CapacityPageContent() {
     fontWeight: 650,
     color: ui.muted,
     backgroundColor: ui.surfaceSoft,
-    fontSize: "12px",
+    fontSize: "var(--fs-sm)",
     letterSpacing: "0.02em",
     position: "sticky",
     top: 0,
@@ -687,8 +689,8 @@ function CapacityPageContent() {
   });
 
   const metricValueStyle: React.CSSProperties = {
-    margin: "3px 0 0",
-    fontSize: "15px",
+    margin: "2px 0 0",
+    fontSize: "var(--fs-md)",
     fontWeight: 650,
     color: ui.text,
   };
@@ -698,7 +700,7 @@ function CapacityPageContent() {
       style={{
         minHeight: "100vh",
         backgroundColor: ui.pageBg,
-        padding: "32px 40px 40px",
+        padding: "var(--layout-page-py) var(--layout-page-px) var(--layout-page-px)",
         fontFamily: "var(--font-inter), var(--font-geist-sans), sans-serif",
         color: ui.text,
       }}
@@ -756,14 +758,14 @@ function CapacityPageContent() {
 
       `}</style>
 
-      <div style={{ maxWidth: "1280px" }}>
+      <div style={{ width: "100%", maxWidth: "var(--layout-content-max-w)", marginInline: "auto" }}>
         <PageHeader
           title="Capacity Management"
           description="Monitor near-term shop capacity, see which orders are driving weekly load, and review issues that need timely attention."
         />
 
-        <section style={{ ...sectionCardStyle, marginBottom: "14px" }}>
-          <div style={{ ...sectionHeaderStyle, marginBottom: "12px" }}>
+        <section style={{ ...sectionCardStyle, marginBottom: "var(--gap-default)" }}>
+          <div style={{ ...sectionHeaderStyle, marginBottom: "10px" }}>
             <div>
               <h2 style={sectionTitleStyle}>Weekly overview</h2>
               <p style={sectionDescriptionStyle}>
@@ -776,8 +778,8 @@ function CapacityPageContent() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-              gap: "12px",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "var(--gap-default)",
             }}
           >
             {weeks.map((w, i) => {
@@ -793,11 +795,12 @@ function CapacityPageContent() {
                   style={{
                     border: `1px solid ${ui.border}`,
                     backgroundColor: ui.surface,
-                    borderRadius: "12px",
-                    padding: "13px 14px",
+                    borderRadius: "var(--card-radius)",
+                    padding: "10px 12px",
                     display: "grid",
-                    gap: "10px",
+                    gap: "8px",
                     boxShadow: ui.shadowSoft,
+                    minWidth: 0,
                   }}
                 >
                   <div
@@ -805,14 +808,14 @@ function CapacityPageContent() {
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "flex-start",
-                      gap: "10px",
+                      gap: "8px",
                     }}
                   >
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <h3
                         style={{
                           margin: 0,
-                          fontSize: "14px",
+                          fontSize: "var(--fs-body)",
                           fontWeight: 650,
                           color: ui.text,
                           letterSpacing: "-0.01em",
@@ -820,17 +823,17 @@ function CapacityPageContent() {
                       >
                         {w.weekLabel}
                       </h3>
-                      <p style={{ margin: "2px 0 0", fontSize: "12px", color: ui.muted }}>
+                      <p style={{ margin: "2px 0 0", fontSize: "var(--fs-sm)", color: ui.muted }}>
                         {weekDateRange(w)}
                       </p>
                     </div>
                     <span style={{ ...badgeStyle, ...toneStyle }}>{statusLabel(w.status)}</span>
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
                     <span
                       style={{
-                        fontSize: "30px",
+                        fontSize: "var(--fs-display)",
                         fontWeight: 700,
                         lineHeight: 1,
                         letterSpacing: "-0.03em",
@@ -839,7 +842,7 @@ function CapacityPageContent() {
                     >
                       <AnimatedNumber value={w.percentage} />%
                     </span>
-                    <span style={{ fontSize: "12px", color: ui.muted }}>utilization</span>
+                    <span style={{ fontSize: "var(--fs-sm)", color: ui.muted }}>utilization</span>
                   </div>
 
                   <div
@@ -882,7 +885,7 @@ function CapacityPageContent() {
           </div>
         </section>
 
-        <section style={{ ...warningSectionStyle, marginBottom: "14px" }}>
+        <section style={{ ...warningSectionStyle, marginBottom: "var(--gap-default)" }}>
           <details className="capacity-details">
             <summary
               className="capacity-summary capacity-summary-warn"
@@ -945,13 +948,13 @@ function CapacityPageContent() {
                             </span>
                           </div>
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: "14px", fontWeight: 650, color: ui.text }}>
+                            <div style={{ fontSize: "var(--fs-body)", fontWeight: 650, color: ui.text }}>
                               <AnimatedNumber value={overdueOrders.length} /> work order{overdueOrders.length !== 1 ? "s are" : " is"} overdue
                             </div>
                             <div
                               style={{
                                 marginTop: "2px",
-                                fontSize: "13px",
+                                fontSize: "var(--fs-sm)",
                                 color: ui.muted,
                                 lineHeight: 1.5,
                               }}
@@ -963,9 +966,9 @@ function CapacityPageContent() {
                         </div>
                       </summary>
 
-                      <div style={{ padding: "0 14px 14px" }}>
+                      <div style={{ padding: "0 12px 12px" }}>
                         <div style={tableWrapStyle}>
-                          <table className="capacity-table" style={{ ...tableBaseStyle, minWidth: "900px" }}>
+                          <table className="capacity-table" style={{ ...tableBaseStyle, minWidth: "780px" }}>
                             <thead>
                               <tr>
                                 <th style={{ ...tableHeaderCellStyle, ...roundedTableHeaderStyle("left") }}>WO</th>
@@ -1026,13 +1029,13 @@ function CapacityPageContent() {
                             </span>
                           </div>
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: "14px", fontWeight: 650, color: ui.text }}>
+                            <div style={{ fontSize: "var(--fs-body)", fontWeight: 650, color: ui.text }}>
                               {restrictionWarningTitle(w)}
                             </div>
                             <div
                               style={{
                                 marginTop: "2px",
-                                fontSize: "13px",
+                                fontSize: "var(--fs-sm)",
                                 color: ui.muted,
                                 lineHeight: 1.5,
                               }}
@@ -1044,13 +1047,13 @@ function CapacityPageContent() {
                         </div>
                       </summary>
 
-                      <div style={{ padding: "0 14px 14px", display: "grid", gap: "10px" }}>
+                      <div style={{ padding: "0 12px 12px", display: "grid", gap: "10px" }}>
                         <div style={calloutStyle}>
                           <strong style={{ fontWeight: 650 }}>Unavailable dates:</strong> {formatDateRanges(w.unavailableDates)}
                         </div>
 
                         <div style={calloutStyle}>
-                          <p style={{ margin: 0, fontSize: "13px", color: ui.text, lineHeight: 1.6 }}>
+                          <p style={{ margin: 0, fontSize: "var(--fs-body)", color: ui.text, lineHeight: 1.6 }}>
                             <AnimatedNumber value={w.affectedOrders.length} /> order{w.affectedOrders.length !== 1 ? "s still" : " still"} need{" "}
                             {w.restriction === "certification"
                               ? "a qualified engineer available for certification"
@@ -1059,7 +1062,7 @@ function CapacityPageContent() {
                           </p>
 
                           <div style={{ ...tableWrapStyle, marginTop: "10px" }}>
-                            <table className="capacity-table" style={{ ...tableBaseStyle, minWidth: "980px" }}>
+                            <table className="capacity-table" style={{ ...tableBaseStyle, minWidth: "840px" }}>
                               <thead>
                                 <tr>
                                   <th style={{ ...tableHeaderCellStyle, ...roundedTableHeaderStyle("left") }}>WO</th>
@@ -1092,12 +1095,12 @@ function CapacityPageContent() {
               ) : (
                 <div
                   style={{
-                    padding: "14px",
+                    padding: "12px",
                     borderRadius: "10px",
                     backgroundColor: ui.surface,
                     border: `1px dashed ${ui.borderStrong}`,
                     color: ui.muted,
-                    fontSize: "13px",
+                    fontSize: "var(--fs-body)",
                   }}
                 >
                   No warnings need attention right now.
@@ -1108,7 +1111,7 @@ function CapacityPageContent() {
         </section>
 
         {orderDetails.length > 0 && (
-          <section style={{ ...collapsibleSectionStyle, marginBottom: "14px" }}>
+          <section style={{ ...collapsibleSectionStyle, marginBottom: "var(--gap-default)" }}>
             <details className="capacity-details">
               <summary className="capacity-summary" style={collapsibleSummaryBaseStyle}>
                 <div style={sectionHeaderStyle}>
@@ -1129,7 +1132,7 @@ function CapacityPageContent() {
 
               <div style={contentPaddingStyle}>
                 <div style={tableWrapStyle}>
-                  <table className="capacity-table" style={{ ...tableBaseStyle, minWidth: "980px" }}>
+                  <table className="capacity-table" style={{ ...tableBaseStyle, minWidth: "840px" }}>
                     <thead>
                       <tr>
                         <th style={{ ...tableHeaderCellStyle, ...roundedTableHeaderStyle("left") }}>WO</th>
@@ -1169,7 +1172,7 @@ function CapacityPageContent() {
         )}
 
         {visibleExcludedOrders.length > 0 && (
-          <section style={{ ...secondarySectionStyle, marginBottom: "14px" }}>
+          <section style={{ ...secondarySectionStyle, marginBottom: "var(--gap-default)" }}>
             <details className="capacity-details">
               <summary className="capacity-summary" style={collapsibleSummaryBaseStyle}>
                 <div style={sectionHeaderStyle}>
@@ -1190,7 +1193,7 @@ function CapacityPageContent() {
 
               <div style={contentPaddingStyle}>
                 <div style={tableWrapStyle}>
-                  <table className="capacity-table" style={{ ...tableBaseStyle, minWidth: "920px" }}>
+                  <table className="capacity-table" style={{ ...tableBaseStyle, minWidth: "800px" }}>
                     <thead>
                       <tr>
                         <th style={{ ...tableHeaderCellStyle, ...roundedTableHeaderStyle("left") }}>WO</th>

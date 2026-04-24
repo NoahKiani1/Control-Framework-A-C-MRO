@@ -25,8 +25,8 @@ import {
 import { calculateWeekCapacity } from "@/lib/capacity";
 import { RESTRICTION_BLOCKED_STEPS, hasRestriction } from "@/lib/restrictions";
 import {
-  getActiveStepsForType,
   READY_TO_CLOSE_STEP,
+  resolveStepsForOrder,
 } from "@/lib/process-steps";
 
 type WorkOrder = {
@@ -46,7 +46,7 @@ type WorkOrder = {
   last_manual_update: string | null;
   last_system_update: string | null;
   work_order_type: string | null;
-  magnetic_test_required: boolean | null;
+  included_process_steps: string[] | null;
   is_open: boolean;
   is_active: boolean;
 };
@@ -360,10 +360,10 @@ function KpiCard({ label, value, color, active, onClick }: CardProps) {
       style={{
         position: "relative",
         width: "100%",
-        padding: "20px 22px",
+        padding: "var(--card-py) var(--card-px)",
         backgroundColor: active ? color : COLORS.surface,
         border: `1px solid ${active ? color : COLORS.border}`,
-        borderRadius: "12px",
+        borderRadius: "var(--card-radius)",
         cursor: onClick ? "pointer" : "default",
         textAlign: "left",
         transition: "transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease",
@@ -375,7 +375,7 @@ function KpiCard({ label, value, color, active, onClick }: CardProps) {
         display: "flex",
         alignItems: "center",
         justifyContent: "flex-start",
-        minHeight: "84px",
+        minHeight: "68px",
       }}
       onMouseEnter={(e) => {
         if (!active) {
@@ -407,15 +407,16 @@ function KpiCard({ label, value, color, active, onClick }: CardProps) {
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "flex-start",
-          gap: "10px",
-          paddingLeft: "8px",
+          gap: "8px",
+          paddingLeft: "6px",
           maxWidth: "100%",
+          minWidth: 0,
         }}
       >
         <div
           className="dashboard-kpi-value"
           style={{
-            fontSize: "32px",
+            fontSize: "var(--fs-display)",
             fontWeight: 700,
             color: active ? "white" : color,
             lineHeight: 1,
@@ -431,10 +432,12 @@ function KpiCard({ label, value, color, active, onClick }: CardProps) {
           className="dashboard-kpi-label"
           style={{
             color: active ? "rgba(255,255,255,0.95)" : COLORS.textSoft,
-            fontSize: "14px",
             fontWeight: 550,
             lineHeight: 1.35,
             whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            minWidth: 0,
           }}
         >
           {label}
@@ -464,10 +467,10 @@ function StatTile({
   return (
     <div
       style={{
-        padding: "18px 20px",
+        padding: "var(--card-py) var(--card-px)",
         backgroundColor: t.bg,
         border: `1px solid ${t.border}`,
-        borderRadius: "12px",
+        borderRadius: "var(--card-radius)",
         boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
       }}
     >
@@ -475,7 +478,7 @@ function StatTile({
         className="dashboard-meta-label"
         style={{
           color: COLORS.textMuted,
-          marginBottom: "10px",
+          marginBottom: "8px",
         }}
       >
         {label}
@@ -553,7 +556,7 @@ function DashboardPageContent() {
         style={{
           minHeight: "100vh",
           backgroundColor: COLORS.pageBg,
-          padding: "32px 40px 40px",
+          padding: "var(--layout-page-py) var(--layout-page-px) var(--layout-page-px)",
           color: COLORS.textSoft,
           fontFamily: FONT_STACK,
         }}
@@ -597,7 +600,7 @@ function DashboardPageContent() {
       work_order_type: o.work_order_type,
       part_number: o.part_number,
       current_process_step: o.current_process_step,
-      magnetic_test_required: o.magnetic_test_required,
+      included_process_steps: o.included_process_steps,
       due_date: o.due_date,
       hold_reason: o.hold_reason,
       rfq_state: o.rfq_state,
@@ -635,9 +638,9 @@ function DashboardPageContent() {
 
   function getRemainingStepsForOrder(order: WorkOrder): string[] {
     if (!order.work_order_type || !order.current_process_step) return [];
-    const steps = getActiveStepsForType(
+    const steps = resolveStepsForOrder(
       order.work_order_type,
-      order.magnetic_test_required ?? false,
+      order.included_process_steps,
     );
     const currentIdx = steps.indexOf(order.current_process_step);
     if (currentIdx === -1) return [];
@@ -913,9 +916,10 @@ function DashboardPageContent() {
   const sectionCard: React.CSSProperties = {
     backgroundColor: COLORS.surface,
     border: `1px solid ${COLORS.border}`,
-    borderRadius: "14px",
-    padding: "20px",
+    borderRadius: "var(--card-radius)",
+    padding: "var(--card-py) var(--card-px)",
     boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+    minWidth: 0,
   };
 
   const tableWrapperStyle: React.CSSProperties = {
@@ -1268,12 +1272,12 @@ function DashboardPageContent() {
       style={{
         minHeight: "100vh",
         backgroundColor: COLORS.pageBg,
-        padding: "32px 40px 40px",
+        padding: "var(--layout-page-py) var(--layout-page-px) var(--layout-page-px)",
         fontFamily: FONT_STACK,
         color: COLORS.text,
       }}
     >
-      <div style={{ maxWidth: "1400px" }}>
+      <div style={{ width: "100%", maxWidth: "var(--layout-content-max-w)", marginInline: "auto" }}>
         <PageHeader
           eyebrow="Aircraft & Component MRO's Wheels & Brake Shop"
           title="Planning & Monitoring Tool"
@@ -1326,19 +1330,20 @@ function DashboardPageContent() {
         <section
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 1fr 1fr",
-            gap: "14px",
-            marginBottom: "20px",
+            gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr)",
+            gap: "var(--gap-default)",
+            marginBottom: "var(--gap-section)",
           }}
         >
           {/* Capacity — single source of truth */}
           <div
             style={{
-              padding: "20px 22px",
+              minWidth: 0,
+              padding: "var(--card-py) var(--card-px)",
               backgroundColor: COLORS.surface,
               border: `1px solid ${COLORS.border}`,
               borderLeft: `3px solid ${capacityColor}`,
-              borderRadius: "12px",
+              borderRadius: "var(--card-radius)",
               boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
             }}
           >
@@ -1347,16 +1352,16 @@ function DashboardPageContent() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "flex-start",
-                gap: "16px",
-                marginBottom: "14px",
+                gap: "var(--gap-default)",
+                marginBottom: "10px",
               }}
             >
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div
                   className="dashboard-meta-label"
                   style={{
                     color: COLORS.textMuted,
-                    marginBottom: "8px",
+                    marginBottom: "6px",
                   }}
                 >
                   Week Capacity
@@ -1366,12 +1371,13 @@ function DashboardPageContent() {
                   style={{
                     display: "flex",
                     alignItems: "baseline",
-                    gap: "10px",
+                    gap: "8px",
+                    flexWrap: "wrap",
                   }}
                 >
                   <div
                     style={{
-                      fontSize: "34px",
+                      fontSize: "var(--fs-display-lg)",
                       fontWeight: 700,
                       color: capacityColor,
                       letterSpacing: "-0.03em",
@@ -1435,7 +1441,7 @@ function DashboardPageContent() {
           <StatTile label="Active Work Orders">
             <div
               style={{
-                fontSize: "30px",
+                fontSize: "var(--fs-display)",
                 fontWeight: 700,
                 letterSpacing: "-0.03em",
                 lineHeight: 1,
@@ -1449,7 +1455,7 @@ function DashboardPageContent() {
           <StatTile label="Shop Engineers">
             <div
               style={{
-                fontSize: "30px",
+                fontSize: "var(--fs-display)",
                 fontWeight: 700,
                 letterSpacing: "-0.03em",
                 lineHeight: 1,
@@ -1463,12 +1469,12 @@ function DashboardPageContent() {
         </section>
 
         {/* KPI GRID — 6 clickable cards */}
-        <section style={{ marginBottom: "20px" }}>
+        <section style={{ marginBottom: "var(--gap-section)" }}>
           <div
             className="dashboard-meta-label"
             style={{
               color: COLORS.textMuted,
-              marginBottom: "10px",
+              marginBottom: "8px",
               paddingLeft: "4px",
             }}
           >
@@ -1478,7 +1484,7 @@ function DashboardPageContent() {
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-              gap: "12px",
+              gap: "var(--gap-default)",
             }}
           >
             <KpiCard
@@ -1530,8 +1536,8 @@ function DashboardPageContent() {
         <section
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 2.2fr) minmax(280px, 1fr)",
-            gap: "16px",
+            gridTemplateColumns: "minmax(0, 2.2fr) minmax(0, 1fr)",
+            gap: "var(--gap-default)",
             alignItems: "start",
           }}
         >
@@ -1544,29 +1550,33 @@ function DashboardPageContent() {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    marginBottom: "16px",
-                    paddingBottom: "4px",
+                    gap: "var(--gap-default)",
+                    marginBottom: "var(--gap-default)",
+                    paddingBottom: "2px",
+                    flexWrap: "wrap",
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "12px",
+                      gap: "10px",
+                      minWidth: 0,
                     }}
                   >
                     <div
                       style={{
                         width: "3px",
-                        height: "22px",
+                        height: "18px",
                         backgroundColor: panelConfig[activePanel].accent,
                         borderRadius: "2px",
+                        flexShrink: 0,
                       }}
                     />
                     <h3
                       style={{
                         margin: 0,
-                        fontSize: "18px",
+                        fontSize: "var(--fs-heading)",
                         fontWeight: 700,
                         color: COLORS.heading,
                         letterSpacing: "-0.01em",
@@ -1576,8 +1586,8 @@ function DashboardPageContent() {
                     </h3>
                     <span
                       style={{
-                        padding: "2px 10px",
-                        fontSize: "12px",
+                        padding: "2px 8px",
+                        fontSize: "var(--fs-xs)",
                         fontWeight: 700,
                         borderRadius: "999px",
                         backgroundColor: `${panelConfig[activePanel].accent}15`,
@@ -1595,10 +1605,10 @@ function DashboardPageContent() {
                       backgroundColor: COLORS.surface,
                       border: `1px solid ${COLORS.border}`,
                       borderRadius: "8px",
-                      fontSize: "13px",
+                      fontSize: "var(--fs-sm)",
                       cursor: "pointer",
                       color: COLORS.textSoft,
-                      padding: "6px 12px",
+                      padding: "5px 10px",
                       fontWeight: 500,
                       transition: "all 0.15s ease",
                     }}
@@ -1622,18 +1632,18 @@ function DashboardPageContent() {
             {!activePanel && (
               <div
                 style={{
-                  padding: "48px 24px",
+                  padding: "36px 20px",
                   textAlign: "center",
                   color: COLORS.textMuted,
-                  fontSize: "14px",
+                  fontSize: "var(--fs-body)",
                 }}
               >
                 <div
                   style={{
-                    fontSize: "16px",
+                    fontSize: "var(--fs-md)",
                     fontWeight: 600,
                     color: COLORS.textSoft,
-                    marginBottom: "6px",
+                    marginBottom: "4px",
                   }}
                 >
                   Select a card above
@@ -1650,19 +1660,19 @@ function DashboardPageContent() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "flex-start",
-                gap: "12px",
-                marginBottom: "14px",
+                gap: "10px",
+                marginBottom: "var(--gap-default)",
               }}
             >
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div
                   style={{
-                    fontSize: "11px",
+                    fontSize: "var(--fs-meta)",
                     fontWeight: 600,
                     letterSpacing: "0.08em",
                     textTransform: "uppercase",
                     color: COLORS.textMuted,
-                    marginBottom: "6px",
+                    marginBottom: "4px",
                   }}
                 >
                   Staff Availability
@@ -1670,7 +1680,7 @@ function DashboardPageContent() {
                 <h3
                   style={{
                     margin: 0,
-                    fontSize: "18px",
+                    fontSize: "var(--fs-heading)",
                     fontWeight: 700,
                     color: COLORS.heading,
                     letterSpacing: "-0.01em",
@@ -1683,14 +1693,15 @@ function DashboardPageContent() {
               {totalAffectedOrders > 0 && (
                 <div
                   style={{
-                    padding: "4px 10px",
+                    padding: "3px 8px",
                     borderRadius: "999px",
                     backgroundColor: COLORS.redSoft,
                     color: COLORS.red,
-                    fontSize: "11px",
+                    fontSize: "var(--fs-xs)",
                     fontWeight: 700,
                     border: `1px solid ${COLORS.red}22`,
                     whiteSpace: "nowrap",
+                    flexShrink: 0,
                   }}
                 >
                   <AnimatedNumber value={totalAffectedOrders} /> at risk

@@ -3,14 +3,22 @@
 import { useState } from "react";
 import * as XLSX from "xlsx";
 import { RequireRole } from "@/app/components/require-role";
-import { getInitialProcessStep } from "@/lib/process-steps";
+import {
+  INTAKE_STEP,
+  getActiveStepsForType,
+  getInitialProcessStepForOrder,
+  getProcessStepsForType,
+} from "@/lib/process-steps";
 import {
   isOlderThanOneYear,
   mapWorkOrderType,
   normalizeImportedRfqState,
   parseExcelDate,
 } from "@/lib/import-normalize";
-import { normalizeAssignedPersonTeam } from "@/lib/work-order-rules";
+import {
+  normalizeAssignedPersonTeam,
+  normalizePriorityValue,
+} from "@/lib/work-order-rules";
 import { getEngineers } from "@/lib/engineers";
 import {
   clearImportRuns,
@@ -40,17 +48,40 @@ type StaffMember = {
   employment_start_date?: string | null;
 };
 
+type StepVariant = "standard" | "custom";
+
 type NewOrderSetup = {
   is_active: boolean;
   priority: string;
   due_date: string;
   assigned_person_team: string;
+  step_variant: StepVariant;
+  included_steps: string[];
 };
+
+function defaultIncludedStepsForType(workOrderType: string | null): string[] {
+  return getActiveStepsForType(workOrderType, false);
+}
+
+function normalizeIncludedSteps(
+  workOrderType: string | null,
+  selected: string[],
+): string[] {
+  const template = getProcessStepsForType(workOrderType);
+  if (template.length === 0) return [];
+
+  const selectedSet = new Set(selected);
+  const ordered = template.filter(
+    (step) => selectedSet.has(step) || step === INTAKE_STEP,
+  );
+  return ordered;
+}
 
 type ExistingOrderSnapshot = ParsedRow & {
   is_active: boolean;
   current_process_step: string | null;
   assigned_person_team: string | null;
+  included_process_steps: string[] | null;
 };
 
 type RfqActivationCandidate = ParsedRow & {
@@ -180,7 +211,7 @@ function ImportPageContent() {
     const existingSnapshots = existingOnes.length
       ? await getWorkOrders<ExistingOrderSnapshot>({
           select:
-            "work_order_id, customer, rfq_state, last_system_update, is_open, work_order_type, part_number, is_active, current_process_step, assigned_person_team",
+            "work_order_id, customer, rfq_state, last_system_update, is_open, work_order_type, part_number, is_active, current_process_step, assigned_person_team, included_process_steps",
           workOrderIds: existingOnes.map((r) => r.work_order_id),
         })
       : [];
@@ -210,10 +241,12 @@ function ImportPageContent() {
         newOnes.map((order) => [
           order.work_order_id,
           {
-            is_active: false,
+            is_active: true,
             priority: "No",
             due_date: "",
             assigned_person_team: "",
+            step_variant: "standard" as StepVariant,
+            included_steps: defaultIncludedStepsForType(order.work_order_type),
           },
         ]),
       ),
@@ -233,11 +266,14 @@ function ImportPageContent() {
     workOrderId: string,
     patch: Partial<NewOrderSetup>,
   ) {
+    const order = newOrders.find((o) => o.work_order_id === workOrderId);
     const defaultSetup: NewOrderSetup = {
       is_active: false,
       priority: "No",
       due_date: "",
       assigned_person_team: "",
+      step_variant: "standard",
+      included_steps: defaultIncludedStepsForType(order?.work_order_type ?? null),
     };
 
     setNewOrderSetup((prev) => ({
@@ -248,6 +284,58 @@ function ImportPageContent() {
         ...patch,
       },
     }));
+  }
+
+  function setVariantForOrder(workOrderId: string, variant: StepVariant) {
+    const order = newOrders.find((o) => o.work_order_id === workOrderId);
+    setNewOrderSetup((prev) => {
+      const existing = prev[workOrderId];
+      const includedSteps =
+        variant === "standard"
+          ? defaultIncludedStepsForType(order?.work_order_type ?? null)
+          : existing?.included_steps ??
+            defaultIncludedStepsForType(order?.work_order_type ?? null);
+      return {
+        ...prev,
+        [workOrderId]: {
+          ...(existing || {
+            is_active: false,
+            priority: "No",
+            due_date: "",
+            assigned_person_team: "",
+            step_variant: "standard" as StepVariant,
+            included_steps: includedSteps,
+          }),
+          step_variant: variant,
+          included_steps: includedSteps,
+        },
+      };
+    });
+  }
+
+  function toggleCustomStep(
+    workOrderId: string,
+    workOrderType: string | null,
+    step: string,
+    checked: boolean,
+  ) {
+    setNewOrderSetup((prev) => {
+      const existing = prev[workOrderId];
+      if (!existing) return prev;
+      const current = new Set(existing.included_steps);
+      if (checked) current.add(step);
+      else current.delete(step);
+      return {
+        ...prev,
+        [workOrderId]: {
+          ...existing,
+          included_steps: normalizeIncludedSteps(
+            workOrderType,
+            Array.from(current),
+          ),
+        },
+      };
+    });
   }
 
   function setAllNewOrdersActive(isActive: boolean) {
@@ -261,6 +349,10 @@ function ImportPageContent() {
             due_date: prev[order.work_order_id]?.due_date || "",
             assigned_person_team:
               prev[order.work_order_id]?.assigned_person_team || "",
+            step_variant: prev[order.work_order_id]?.step_variant || "standard",
+            included_steps:
+              prev[order.work_order_id]?.included_steps ||
+              defaultIncludedStepsForType(order.work_order_type),
           },
         ]),
       ),
@@ -303,7 +395,7 @@ function ImportPageContent() {
     const existingIds = existingOrders.map((r) => r.work_order_id);
     const currentData = await getWorkOrders<ExistingOrderSnapshot>({
       select:
-        "work_order_id, customer, rfq_state, last_system_update, is_open, work_order_type, part_number, is_active, current_process_step, assigned_person_team",
+        "work_order_id, customer, rfq_state, last_system_update, is_open, work_order_type, part_number, is_active, current_process_step, assigned_person_team, included_process_steps",
       workOrderIds: existingIds,
     });
 
@@ -341,7 +433,10 @@ function ImportPageContent() {
                 is_active: true,
                 current_process_step:
                   current?.current_process_step ||
-                  getInitialProcessStep(current?.work_order_type || r.work_order_type),
+                  getInitialProcessStepForOrder(
+                    current?.work_order_type || r.work_order_type,
+                    current?.included_process_steps ?? null,
+                  ),
                 assigned_person_team: normalizeAssignedPersonTeam(
                   current?.assigned_person_team,
                 ),
@@ -368,21 +463,31 @@ function ImportPageContent() {
     // 2. Insert new orders
     let inserted = 0;
     for (let i = 0; i < newOrders.length; i += batchSize) {
-      const batch = newOrders.slice(i, i + batchSize).map((r) => ({
-        ...r,
-        is_active: newOrderSetup[r.work_order_id]?.is_active || false,
-        priority: newOrderSetup[r.work_order_id]?.priority || "No",
-        due_date: newOrderSetup[r.work_order_id]?.due_date || null,
-        assigned_person_team:
-          (newOrderSetup[r.work_order_id]?.assigned_person_team || "").trim() ||
-          (newOrderSetup[r.work_order_id]?.is_active
-            ? normalizeAssignedPersonTeam(null)
-            : null),
-        current_process_step: newOrderSetup[r.work_order_id]?.is_active
-          ? getInitialProcessStep(r.work_order_type)
-          : null,
-        last_system_update: importTimestamp,
-      }));
+      const batch = newOrders.slice(i, i + batchSize).map((r) => {
+        const setup = newOrderSetup[r.work_order_id];
+        const isActive = setup?.is_active || false;
+        const includedSteps =
+          setup?.included_steps &&
+          normalizeIncludedSteps(r.work_order_type, setup.included_steps);
+        return {
+          ...r,
+          is_active: isActive,
+          priority: normalizePriorityValue(setup?.priority),
+          due_date: setup?.due_date || null,
+          assigned_person_team:
+            (setup?.assigned_person_team || "").trim() ||
+            (isActive ? normalizeAssignedPersonTeam(null) : null),
+          included_process_steps:
+            includedSteps && includedSteps.length > 0 ? includedSteps : null,
+          current_process_step: isActive
+            ? getInitialProcessStepForOrder(
+                r.work_order_type,
+                includedSteps ?? null,
+              )
+            : null,
+          last_system_update: importTimestamp,
+        };
+      });
 
       const { error } = await insertWorkOrders(batch);
 
@@ -438,27 +543,27 @@ function ImportPageContent() {
   }
 
   const buttonStyle: React.CSSProperties = {
-    padding: "11px 18px",
+    padding: "9px 16px",
     backgroundColor: "#2563eb",
     color: "white",
     border: "none",
     borderRadius: "8px",
     cursor: "pointer",
     fontWeight: 700,
-    fontSize: "14px",
+    fontSize: "var(--fs-body)",
   };
 
   const secondaryButtonStyle: React.CSSProperties = {
     ...buttonStyle,
     backgroundColor: "#4b5563",
-    padding: "10px 14px",
-    fontSize: "13px",
+    padding: "8px 12px",
+    fontSize: "var(--fs-sm)",
   };
 
   const cellStyle: React.CSSProperties = {
-    padding: "8px 10px",
+    padding: "7px 10px",
     borderBottom: "1px solid #eee",
-    fontSize: "13px",
+    fontSize: "var(--fs-body)",
     whiteSpace: "normal",
     overflowWrap: "anywhere",
     verticalAlign: "top",
@@ -468,50 +573,53 @@ function ImportPageContent() {
   const headerStyle: React.CSSProperties = {
     ...cellStyle,
     fontWeight: "bold",
+    fontSize: "var(--fs-sm)",
     backgroundColor: "#f5f5f5",
   };
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
     minWidth: 0,
-    padding: "8px 10px",
+    padding: "6px 10px",
     border: "1px solid #cbd5e1",
     borderRadius: "8px",
-    fontSize: "13px",
+    fontSize: "var(--fs-body)",
     boxSizing: "border-box",
     backgroundColor: "#fffefb",
   };
 
   const panelStyle: React.CSSProperties = {
-    marginBottom: "1rem",
-    padding: "16px 18px",
+    marginBottom: "12px",
+    padding: "var(--card-py) var(--card-px)",
     borderRadius: "10px",
+    fontSize: "var(--fs-body)",
   };
 
   const newOrderCardStyle: React.CSSProperties = {
     display: "grid",
     gridTemplateColumns:
-      "minmax(170px, 0.9fr) minmax(220px, 1.1fr) minmax(150px, 0.8fr) repeat(4, minmax(110px, 0.6fr))",
-    gap: "12px",
+      "minmax(140px, 0.9fr) minmax(180px, 1.1fr) minmax(130px, 0.8fr) repeat(4, minmax(100px, 0.6fr))",
+    gap: "10px",
     alignItems: "start",
-    padding: "14px 16px",
+    padding: "12px 14px",
     border: "1px solid #e5dccb",
     borderRadius: "10px",
     backgroundColor: "#fffef9",
+    minWidth: 0,
   };
 
   const newOrderFieldLabel: React.CSSProperties = {
-    fontSize: "11px",
+    fontSize: "var(--fs-xs)",
     fontWeight: 700,
     color: "#6b7280",
     textTransform: "uppercase",
     letterSpacing: "0.06em",
-    marginBottom: "6px",
+    marginBottom: "4px",
   };
 
   return (
-    <main style={{ minHeight: "100vh", backgroundColor: "#f2efe9", padding: "32px 40px 40px", fontFamily: "var(--font-inter), var(--font-geist-sans), sans-serif" }}>
-      <div style={{ maxWidth: "1240px" }}>
+    <main style={{ minHeight: "100vh", backgroundColor: "#f2efe9", padding: "var(--layout-page-py) var(--layout-page-px) var(--layout-page-px)", fontFamily: "var(--font-inter), var(--font-geist-sans), sans-serif" }}>
+      <div style={{ width: "100%", maxWidth: "var(--layout-content-max-w)", marginInline: "auto" }}>
       <PageHeader
         title="AcMP Import"
         description="Upload an AcMP Excel export (.xlsx). Closed and old orders will be automatically skipped and removed."
@@ -522,13 +630,14 @@ function ImportPageContent() {
           <label
             style={{
               display: "inline-block",
-              margin: "1rem 0",
-              padding: "10px 20px",
+              margin: "14px 0",
+              padding: "9px 16px",
               backgroundColor: "#0070f3",
               color: "white",
               borderRadius: "6px",
               cursor: "pointer",
               fontWeight: "bold",
+              fontSize: "var(--fs-body)",
             }}
           >
             Choose file
@@ -697,33 +806,45 @@ function ImportPageContent() {
                 }}
               >
                 {newOrders.map((order) => {
-                  const setup = newOrderSetup[order.work_order_id] || {
-                    is_active: false,
-                    priority: "No",
-                    due_date: "",
-                    assigned_person_team: "",
-                  };
+                  const setup =
+                    newOrderSetup[order.work_order_id] || {
+                      is_active: false,
+                      priority: "No",
+                      due_date: "",
+                      assigned_person_team: "",
+                      step_variant: "standard" as StepVariant,
+                      included_steps: defaultIncludedStepsForType(
+                        order.work_order_type,
+                      ),
+                    };
                   const dueRequired =
                     setup.is_active &&
                     (setup.priority === "Yes" || setup.priority === "AOG");
+                  const templateSteps = getProcessStepsForType(
+                    order.work_order_type,
+                  );
+                  const customStepOptions = templateSteps.filter(
+                    (step) => step !== INTAKE_STEP,
+                  );
+                  const includedSet = new Set(setup.included_steps);
 
                   return (
                     <div key={order.work_order_id} style={newOrderCardStyle}>
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <div style={newOrderFieldLabel}>Work order</div>
-                        <div style={{ fontWeight: 700, fontSize: "16px" }}>
+                        <div style={{ fontWeight: 700, fontSize: "var(--fs-md)", overflowWrap: "anywhere" }}>
                           {order.work_order_id}
                         </div>
                       </div>
 
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <div style={newOrderFieldLabel}>Customer</div>
-                        <div style={{ fontWeight: 600 }}>{order.customer || "-"}</div>
+                        <div style={{ fontWeight: 600, fontSize: "var(--fs-body)", overflowWrap: "anywhere" }}>{order.customer || "-"}</div>
                       </div>
 
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         <div style={newOrderFieldLabel}>Part number</div>
-                        <div style={{ fontWeight: 600 }}>{order.part_number || "-"}</div>
+                        <div style={{ fontWeight: 600, fontSize: "var(--fs-body)", overflowWrap: "anywhere" }}>{order.part_number || "-"}</div>
                       </div>
 
                       <div>
@@ -800,6 +921,118 @@ function ImportPageContent() {
                           ))}
                         </select>
                       </div>
+
+                      {setup.is_active && order.work_order_type && (
+                        <div
+                          style={{
+                            gridColumn: "1 / -1",
+                            borderTop: "1px dashed #e5dccb",
+                            paddingTop: "10px",
+                            display: "grid",
+                            gap: "10px",
+                          }}
+                        >
+                          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setVariantForOrder(
+                                  order.work_order_id,
+                                  "standard",
+                                )
+                              }
+                              style={{
+                                padding: "6px 14px",
+                                borderRadius: "6px",
+                                border: `1px solid ${setup.step_variant === "standard" ? "#2555c7" : "#cbd5e1"}`,
+                                backgroundColor:
+                                  setup.step_variant === "standard"
+                                    ? "#eef3ff"
+                                    : "#fffefb",
+                                color:
+                                  setup.step_variant === "standard"
+                                    ? "#2555c7"
+                                    : "#4b5563",
+                                fontWeight: 700,
+                                fontSize: "var(--fs-sm)",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Standard {order.work_order_type}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setVariantForOrder(
+                                  order.work_order_id,
+                                  "custom",
+                                )
+                              }
+                              style={{
+                                padding: "6px 14px",
+                                borderRadius: "6px",
+                                border: `1px solid ${setup.step_variant === "custom" ? "#b45309" : "#cbd5e1"}`,
+                                backgroundColor:
+                                  setup.step_variant === "custom"
+                                    ? "#fff6e8"
+                                    : "#fffefb",
+                                color:
+                                  setup.step_variant === "custom"
+                                    ? "#b45309"
+                                    : "#4b5563",
+                                fontWeight: 700,
+                                fontSize: "var(--fs-sm)",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Custom — add or remove task
+                            </button>
+                          </div>
+
+                          {setup.step_variant === "custom" && (
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns:
+                                  "repeat(auto-fill, minmax(180px, 1fr))",
+                                gap: "6px 12px",
+                                padding: "10px 12px",
+                                backgroundColor: "#fffdfa",
+                                border: "1px solid #e5dccb",
+                                borderRadius: "8px",
+                              }}
+                            >
+                              {customStepOptions.map((step) => (
+                                <label
+                                  key={step}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
+                                    fontSize: "var(--fs-sm)",
+                                    color: "#1f2937",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={includedSet.has(step)}
+                                    onChange={(e) =>
+                                      toggleCustomStep(
+                                        order.work_order_id,
+                                        order.work_order_type,
+                                        step,
+                                        e.target.checked,
+                                      )
+                                    }
+                                  />
+                                  {step}
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -818,39 +1051,39 @@ function ImportPageContent() {
           <table style={{ borderCollapse: "collapse", marginTop: "1rem" }}>
             <tbody>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Rows in file</td>
+                <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>Rows in file</td>
                 <td>{results.processed}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Newly inserted</td>
+                <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>Newly inserted</td>
                 <td>{results.inserted}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Updated</td>
+                <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>Updated</td>
                 <td>{results.updated}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>
+                <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>
                   Activated after RFQ approval
                 </td>
                 <td>{results.rfqActivated}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Closed orders skipped</td>
+                <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>Closed orders skipped</td>
                 <td>{results.closedSkipped}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>
+                <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>
                   Closed orders removed from database
                 </td>
                 <td>{results.closedRemoved}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Removed (older than 1 year)</td>
+                <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>Removed (older than 1 year)</td>
                 <td>{results.deleted}</td>
               </tr>
               <tr>
-                <td style={{ padding: "4px 12px" }}>Skipped (no ID)</td>
+                <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>Skipped (no ID)</td>
                 <td>{results.skipped}</td>
               </tr>
             </tbody>

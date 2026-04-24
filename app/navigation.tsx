@@ -114,13 +114,14 @@ export function Navigation() {
       )}
 
       <aside
+        style={{ width: "var(--layout-sidebar-w)" }}
         className={[
-          "fixed inset-y-0 left-0 z-50 flex w-[260px] shrink-0 flex-col",
+          "fixed inset-y-0 left-0 z-50 flex shrink-0 flex-col",
           "bg-[#201c18] text-[#c9bfae]",
-          "rounded-r-[28px]",
+          "rounded-r-[24px]",
           "shadow-[10px_0_40px_-4px_rgba(0,0,0,0.45)]",
           "transition-transform duration-200",
-          "md:sticky md:top-3 md:ml-3 md:my-3 md:h-[calc(100vh-24px)] md:min-h-0 md:rounded-[28px] md:self-start md:translate-x-0",
+          "md:sticky md:top-3 md:ml-3 md:my-3 md:h-[calc(100vh-24px)] md:min-h-0 md:rounded-[24px] md:self-start md:translate-x-0",
           "md:shadow-[0_14px_40px_-8px_rgba(0,0,0,0.35)]",
           open ? "translate-x-0" : "-translate-x-full md:translate-x-0",
         ].join(" ")}
@@ -138,30 +139,30 @@ export function Navigation() {
           href="/dashboard"
           onClick={close}
           aria-label="Dashboard home"
-          className="flex flex-col items-center gap-3 px-5 pb-6 pt-7"
+        className="flex flex-col items-center gap-2 px-4 pb-4 pt-4"
         >
-          <div className="flex h-28 w-28 shrink-0 items-center justify-center">
+          <div className="flex h-[76px] w-[76px] shrink-0 items-center justify-center">
             <Image
               src="/company-logo.png"
               alt="Aircraft & Component"
               width={1094}
               height={1094}
               priority
-              className="h-24 w-24 object-contain"
+              className="h-[66px] w-[66px] object-contain"
             />
           </div>
           <div className="flex flex-col items-center leading-tight">
-            <span className="text-xl font-semibold tracking-tight text-white">Aircraft &amp; Component</span>
-            <span className="text-[13px] text-[#8a8374]">Control Board</span>
+            <span className="text-[14px] font-semibold tracking-tight text-white">Aircraft &amp; Component</span>
+            <span className="text-[10px] text-[#8a8374]">Control Board</span>
           </div>
         </Link>
 
         <div className="mx-3 h-px bg-white/5" />
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
+        <nav className="flex-1 overflow-y-auto px-2 py-3">
           {navGroups.map((group, idx) => (
-            <div key={group.label} className={idx > 0 ? "mt-6" : ""}>
-              <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6e6759]">
+            <div key={group.label} className={idx > 0 ? "mt-4" : ""}>
+              <div className="px-3 pb-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#6e6759]">
                 {group.label}
               </div>
               <ul className="flex flex-col gap-0.5">
@@ -180,14 +181,14 @@ export function Navigation() {
                         href={item.href}
                         onClick={close}
                         className={[
-                          "group flex items-center gap-3 rounded-md px-3 py-2 text-[13px] transition-colors",
+                          "group flex items-center gap-2.5 rounded-md px-3 py-1.5 text-[11px] transition-colors",
                           active
                             ? "bg-white/[0.06] font-medium text-white"
                             : "text-[#c9bfae] hover:bg-white/[0.04] hover:text-white",
                         ].join(" ")}
                       >
                         <Icon
-                          size={18}
+                          size={16}
                           strokeWidth={1.75}
                           className={
                             active
@@ -195,7 +196,7 @@ export function Navigation() {
                               : "text-[#8a8374] group-hover:text-[#c9bfae]"
                           }
                         />
-                        <span>{item.label}</span>
+                        <span className="min-w-0 truncate">{item.label}</span>
                       </Link>
                     </li>
                   );
@@ -205,13 +206,13 @@ export function Navigation() {
           ))}
         </nav>
 
-        <div className="mt-auto border-t border-white/5 p-3">
-          <div className="flex items-center gap-3 rounded-md px-2 py-2">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#dc2626]/15 text-[#f87171] ring-1 ring-[#dc2626]/25">
-              <BriefcaseBusiness size={16} />
+        <div className="mt-auto border-t border-white/5 p-2">
+          <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#dc2626]/15 text-[#f87171] ring-1 ring-[#dc2626]/25">
+              <BriefcaseBusiness size={14} />
             </div>
             <div className="flex min-w-0 flex-1 flex-col leading-tight">
-              <span className="truncate text-[13px] font-medium text-white">
+              <span className="truncate text-[11px] font-medium text-white">
                 Office
               </span>
             </div>
@@ -219,9 +220,9 @@ export function Navigation() {
               type="button"
               onClick={handleLogout}
               aria-label="Log out"
-              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-[#8a8374] hover:bg-white/5 hover:text-[#c9bfae]"
+              className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[#8a8374] hover:bg-white/5 hover:text-[#c9bfae]"
             >
-              <LogOut size={16} />
+              <LogOut size={14} />
             </button>
           </div>
         </div>

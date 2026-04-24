@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
-  getCompletableStepsForType,
-  getLastCompletedStep,
-  getNextProcessStepAfterCompleted,
-  hasOptionalSteps,
+  getCompletableStepsForOrder,
+  getLastCompletedStepForOrder,
+  getNextProcessStepAfterCompletedForOrder,
   READY_TO_CLOSE_STEP,
 } from "@/lib/process-steps";
 import {
@@ -37,7 +36,7 @@ type WorkOrder = {
   action_closed: boolean | null;
   priority: string | null;
   assigned_person_team: string | null;
-  magnetic_test_required: boolean | null;
+  included_process_steps: string[] | null;
 };
 
 type StaffMember = {
@@ -89,6 +88,7 @@ const FONT_STACK = "var(--font-inter), var(--font-geist-sans), sans-serif";
 
 export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const isTablet = variant === "tablet";
+  const majorSectionGap = isTablet ? "52px" : "44px";
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -96,7 +96,6 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const [stepTouched, setStepTouched] = useState(false);
   const [holdReason, setHoldReason] = useState("");
   const [requiredNextAction, setRequiredNextAction] = useState("");
-  const [magneticTestRequired, setMagneticTestRequired] = useState(false);
   const [isBlockedUpdate, setIsBlockedUpdate] = useState(false);
   const [todayAbsentEngineerIds, setTodayAbsentEngineerIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,7 +111,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       const [data, staffData, absenceData, extras] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select:
-            "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, magnetic_test_required",
+            "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, included_process_steps",
           isOpen: true,
           isActive: true,
           orderBy: { column: "work_order_id", ascending: false },
@@ -181,20 +180,17 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     [shopStaff, todayAbsentEngineerIdSet],
   );
 
-  const showMagneticTestOption =
-    selectedOrder && hasOptionalSteps(selectedOrder.work_order_type);
-
-  const completableSteps = getCompletableStepsForType(
+  const completableSteps = getCompletableStepsForOrder(
     selectedOrder?.work_order_type || null,
-    magneticTestRequired,
+    selectedOrder?.included_process_steps ?? null,
   );
 
   const previewNextStep =
     selectedOrder && completedStep
-      ? getNextProcessStepAfterCompleted(
+      ? getNextProcessStepAfterCompletedForOrder(
           selectedOrder.work_order_type,
           completedStep,
-          magneticTestRequired,
+          selectedOrder.included_process_steps,
         )
       : null;
 
@@ -206,16 +202,14 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const order = orders.find((o) => o.work_order_id === id);
     if (!order) return;
 
-    const mtRequired = order.magnetic_test_required ?? false;
     const hasBlocker = Boolean(order.hold_reason?.trim());
 
     setSelectedId(id);
-    setMagneticTestRequired(mtRequired);
     setCompletedStep(
-      getLastCompletedStep(
+      getLastCompletedStepForOrder(
         order.work_order_type,
         order.current_process_step,
-        mtRequired,
+        order.included_process_steps,
       ),
     );
     setStepTouched(false);
@@ -223,21 +217,6 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setRequiredNextAction(order.required_next_action || "");
     setIsBlockedUpdate(hasBlocker);
     setSaveStatus("");
-  }
-
-  function handleMagneticTestToggle(checked: boolean) {
-    setMagneticTestRequired(checked);
-
-    if (!selectedOrder) return;
-
-    setCompletedStep(
-      getLastCompletedStep(
-        selectedOrder.work_order_type,
-        selectedOrder.current_process_step,
-        checked,
-      ),
-    );
-    setStepTouched(false);
   }
 
   function handleCompletedStepChange(value: string) {
@@ -301,10 +280,10 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     }
 
     const nextProcessStep =
-      getNextProcessStepAfterCompleted(
+      getNextProcessStepAfterCompletedForOrder(
         selectedOrder.work_order_type,
         completedStep,
-        magneticTestRequired,
+        selectedOrder.included_process_steps,
       ) ?? completedStep;
 
     const normalizedHoldReason = holdReason.trim();
@@ -329,7 +308,6 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       action_owner: isBlockedUpdate ? selectedOrder.action_owner || null : null,
       action_status: isBlockedUpdate ? "Open" : null,
       action_closed: false,
-      magnetic_test_required: magneticTestRequired,
       last_manual_update: new Date().toISOString(),
     };
 
@@ -358,7 +336,6 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setStepTouched(false);
     setHoldReason("");
     setRequiredNextAction("");
-    setMagneticTestRequired(false);
     setIsBlockedUpdate(false);
     setSaveStatus(`${savedId} updated. Select the next work order.`);
   }
@@ -366,54 +343,55 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const pageStyle: CSSProperties = {
     minHeight: "100vh",
     backgroundColor: COLORS.pageBg,
-    padding: isTablet ? "28px 22px 44px" : "32px 40px 40px",
+    padding: isTablet ? "28px 22px 44px" : "var(--layout-page-py) var(--layout-page-px) var(--layout-page-px)",
     fontFamily: FONT_STACK,
     color: COLORS.text,
   };
 
   const shellStyle: CSSProperties = {
     width: "100%",
-    maxWidth: isTablet ? "760px" : "1440px",
-    margin: isTablet ? "0 auto" : undefined,
+    maxWidth: isTablet ? "760px" : "var(--layout-content-max-w)",
+    marginInline: "auto",
   };
 
   const sectionCard: CSSProperties = {
     backgroundColor: COLORS.panelBg,
     border: `1px solid ${COLORS.border}`,
-    borderRadius: isTablet ? "22px" : "14px",
-    padding: isTablet ? "22px" : "16px 18px",
+    borderRadius: isTablet ? "22px" : "var(--card-radius)",
+    padding: isTablet ? "22px" : "var(--card-py) var(--card-px)",
     boxShadow: COLORS.shadow,
+    minWidth: 0,
   };
 
   const innerCard: CSSProperties = {
     backgroundColor: COLORS.cardBg,
     border: `1px solid ${COLORS.border}`,
-    borderRadius: isTablet ? "18px" : "14px",
-    padding: isTablet ? "18px" : "15px",
+    borderRadius: isTablet ? "18px" : "var(--card-radius)",
+    padding: isTablet ? "18px" : "12px",
   };
 
   const inputStyle: CSSProperties = {
     width: "100%",
-    padding: isTablet ? "16px 16px" : "10px 12px",
+    padding: isTablet ? "16px 16px" : "8px 10px",
     border: `1px solid ${COLORS.borderStrong}`,
-    borderRadius: isTablet ? "14px" : "10px",
-    fontSize: isTablet ? "18px" : "14px",
+    borderRadius: isTablet ? "14px" : "8px",
+    fontSize: isTablet ? "18px" : "var(--fs-body)",
     boxSizing: "border-box",
     backgroundColor: COLORS.inputBg,
     color: COLORS.text,
-    minHeight: isTablet ? "58px" : "42px",
+    minHeight: isTablet ? "58px" : "36px",
     outline: "none",
   };
 
   const subtitleStyle: CSSProperties = {
     margin: "4px 0 0",
-    fontSize: isTablet ? "16px" : "14px",
+    fontSize: isTablet ? "16px" : "var(--fs-body)",
     color: COLORS.textSoft,
     lineHeight: 1.5,
   };
 
   const fieldTitleStyle: CSSProperties = {
-    fontSize: isTablet ? "22px" : "16px",
+    fontSize: isTablet ? "22px" : "var(--fs-heading)",
     fontWeight: 650,
     color: COLORS.heading,
     margin: 0,
@@ -421,38 +399,38 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   };
 
   const eyebrowStyle: CSSProperties = {
-    fontSize: isTablet ? "12px" : "11px",
+    fontSize: isTablet ? "12px" : "var(--fs-xs)",
     fontWeight: 700,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
     color: COLORS.textMuted,
-    marginBottom: "6px",
+    marginBottom: "4px",
   };
 
   const choiceBtn = (active: boolean): CSSProperties => ({
     flex: 1,
-    padding: isTablet ? "17px 16px" : "10px 12px",
-    borderRadius: isTablet ? "15px" : "10px",
+    padding: isTablet ? "17px 16px" : "8px 10px",
+    borderRadius: isTablet ? "15px" : "8px",
     border: `1px solid ${active ? "#d7e3ff" : COLORS.border}`,
     backgroundColor: active ? COLORS.blueSoft : COLORS.panelBg,
     color: active ? COLORS.blue : COLORS.textSoft,
     fontWeight: 700,
-    fontSize: isTablet ? "17px" : "13px",
+    fontSize: isTablet ? "17px" : "var(--fs-sm)",
     cursor: "pointer",
     boxShadow: active ? "0 1px 2px rgba(31, 41, 55, 0.04)" : "none",
     minHeight: isTablet ? "58px" : undefined,
   });
 
   const primaryBtn: CSSProperties = {
-    padding: isTablet ? "17px 24px" : "11px 18px",
+    padding: isTablet ? "17px 24px" : "9px 16px",
     backgroundColor: COLORS.blue,
     color: "white",
     border: `1px solid ${COLORS.blue}`,
-    borderRadius: isTablet ? "16px" : "10px",
+    borderRadius: isTablet ? "16px" : "8px",
     cursor: "pointer",
     fontWeight: 700,
-    fontSize: isTablet ? "18px" : "14px",
-    boxShadow: "0 8px 20px rgba(37, 85, 199, 0.18)",
+    fontSize: isTablet ? "18px" : "var(--fs-body)",
+    boxShadow: "0 6px 16px rgba(37, 85, 199, 0.16)",
     minHeight: isTablet ? "60px" : undefined,
   };
 
@@ -481,8 +459,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
           }
         />
 
-        <section style={{ ...sectionCard, marginBottom: isTablet ? "22px" : "18px" }}>
-          <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "20px", marginBottom: "4px" }}>
+        <section style={{ ...sectionCard, marginBottom: majorSectionGap }}>
+          <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
             Search for a work order to update
           </h2>
           <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
@@ -492,8 +470,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isTablet ? "1fr" : "1.65fr 1fr",
-              gap: isTablet ? "16px" : "14px",
+              gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1.65fr) minmax(0, 1fr)",
+              gap: isTablet ? "16px" : "var(--gap-default)",
             }}
           >
             <div style={innerCard}>
@@ -545,8 +523,14 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
           </div>
         </section>
 
-        <section style={{ ...sectionCard, marginBottom: selectedOrder ? 0 : undefined }}>
-          <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "20px", marginBottom: "4px" }}>
+        <section
+          style={{
+            ...sectionCard,
+            marginTop: selectedOrder ? majorSectionGap : undefined,
+            marginBottom: selectedOrder ? 0 : undefined,
+          }}
+        >
+          <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
             Complete an additional task
           </h2>
           <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
@@ -562,30 +546,30 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                   key={action.id}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: isTablet ? "1fr" : "1.7fr 1fr 0.8fr auto",
-                    gap: isTablet ? "14px" : "12px",
+                    gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 0.8fr) auto",
+                    gap: isTablet ? "14px" : "10px",
                     alignItems: "center",
-                    padding: isTablet ? "18px" : "12px 14px",
-                    borderRadius: isTablet ? "18px" : "12px",
+                    padding: isTablet ? "18px" : "10px 12px",
+                    borderRadius: isTablet ? "18px" : "10px",
                     border: `1px solid ${COLORS.border}`,
                     backgroundColor: COLORS.cardBg,
                   }}
                 >
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={eyebrowStyle}>Description</div>
-                    <div style={{ fontSize: isTablet ? "18px" : "15px", fontWeight: 600, color: COLORS.text }}>
+                    <div style={{ fontSize: isTablet ? "18px" : "var(--fs-md)", fontWeight: 600, color: COLORS.text }}>
                       {action.description}
                     </div>
                   </div>
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={eyebrowStyle}>Responsible</div>
-                    <div style={{ fontSize: isTablet ? "16px" : "14px", color: COLORS.text }}>
+                    <div style={{ fontSize: isTablet ? "16px" : "var(--fs-body)", color: COLORS.text }}>
                       {normalizeAssignedPersonTeam(action.responsible_person_team)}
                     </div>
                   </div>
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={eyebrowStyle}>Due date</div>
-                    <div style={{ fontSize: isTablet ? "16px" : "14px", color: COLORS.text }}>
+                    <div style={{ fontSize: isTablet ? "16px" : "var(--fs-body)", color: COLORS.text }}>
                       {formatDate(action.due_date)}
                     </div>
                   </div>
@@ -604,17 +588,17 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
         {selectedOrder && (
           <>
-            <section style={{ ...sectionCard, marginTop: isTablet ? "22px" : "18px" }}>
+            <section style={{ ...sectionCard, marginTop: isTablet ? "22px" : "14px" }}>
               <div style={eyebrowStyle}>Selected work order</div>
-              <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "20px", marginBottom: isTablet ? "18px" : "14px" }}>
+              <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: isTablet ? "18px" : "12px" }}>
                 Current work order details
               </h2>
 
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: isTablet ? "1fr 1fr" : "repeat(6, 1fr)",
-                  gap: isTablet ? "14px" : "12px",
+                  gridTemplateColumns: isTablet ? "1fr 1fr" : "repeat(6, minmax(0, 1fr))",
+                  gap: isTablet ? "14px" : "10px",
                 }}
               >
                 <InfoBox label="Work Order" value={selectedOrder.work_order_id} large={isTablet} />
@@ -630,52 +614,19 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
               </div>
             </section>
 
-            <section style={{ marginTop: isTablet ? "22px" : "18px" }}>
+            <section style={{ marginTop: isTablet ? "22px" : "14px" }}>
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: isTablet ? "1fr" : "1fr 1fr",
-                  gap: isTablet ? "22px" : "16px",
+                  gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1fr) minmax(0, 1fr)",
+                  gap: isTablet ? "22px" : "12px",
                 }}
               >
                 <div style={sectionCard}>
                   <div style={eyebrowStyle}>Step update</div>
-                  <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "20px", marginBottom: "6px" }}>
+                  <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
                     Completed Step
                   </h2>
-
-                  {showMagneticTestOption && (
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: isTablet ? "12px" : "8px",
-                        padding: isTablet ? "16px" : "11px 12px",
-                        backgroundColor: magneticTestRequired ? COLORS.amberSoft : COLORS.cardBg,
-                        border: magneticTestRequired
-                          ? "1px solid #e8c98f"
-                          : `1px solid ${COLORS.border}`,
-                        borderRadius: isTablet ? "16px" : "10px",
-                        cursor: "pointer",
-                        fontSize: isTablet ? "17px" : "14px",
-                        color: COLORS.text,
-                        marginBottom: isTablet ? "16px" : "12px",
-                        minHeight: isTablet ? "58px" : undefined,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={magneticTestRequired}
-                        onChange={(e) => handleMagneticTestToggle(e.target.checked)}
-                        style={{
-                          width: isTablet ? "24px" : "16px",
-                          height: isTablet ? "24px" : "16px",
-                          accentColor: "#d29b2d",
-                        }}
-                      />
-                      Magnetic Test required
-                    </label>
-                  )}
 
                   {completableSteps.length > 0 ? (
                     <>
@@ -718,14 +669,14 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
                 <div style={sectionCard}>
                   <div style={eyebrowStyle}>Blocker update</div>
-                  <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "20px", marginBottom: "6px" }}>
+                  <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
                     Blocked?
                   </h2>
                   <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
                     Only complete this section if the work cannot continue.
                   </p>
 
-                  <div style={{ display: "flex", gap: isTablet ? "14px" : "10px", marginBottom: isTablet ? "18px" : "14px" }}>
+                  <div style={{ display: "flex", gap: isTablet ? "14px" : "8px", marginBottom: isTablet ? "18px" : "12px" }}>
                     <button type="button" onClick={() => setBlockedChoice(false)} style={choiceBtn(!isBlockedUpdate)}>
                       No
                     </button>
@@ -738,11 +689,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                     <div
                       style={{
                         display: "grid",
-                        gap: isTablet ? "14px" : "10px",
-                        padding: isTablet ? "18px" : "14px",
+                        gap: isTablet ? "14px" : "8px",
+                        padding: isTablet ? "18px" : "12px",
                         backgroundColor: "#fffdfa",
                         border: `1px solid ${COLORS.border}`,
-                        borderRadius: isTablet ? "18px" : "12px",
+                        borderRadius: isTablet ? "18px" : "10px",
                       }}
                     >
                       <input
@@ -757,7 +708,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                         placeholder="Action required..."
                         style={inputStyle}
                       />
-                      <div style={{ fontSize: isTablet ? "15px" : "13px", color: COLORS.textSoft, paddingTop: "2px" }}>
+                      <div style={{ fontSize: isTablet ? "15px" : "var(--fs-sm)", color: COLORS.textSoft, paddingTop: "2px" }}>
                         Status will be saved as <strong>Open</strong>.
                       </div>
                     </div>
@@ -770,7 +721,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
               style={{
                 display: "flex",
                 justifyContent: "flex-end",
-                marginTop: isTablet ? "24px" : "18px",
+                marginTop: isTablet ? "24px" : "14px",
               }}
             >
               <button
@@ -786,12 +737,12 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
         {saveStatus && (
           <div
             style={{
-              marginTop: "16px",
-              padding: isTablet ? "16px 18px" : "12px 14px",
+              marginTop: "12px",
+              padding: isTablet ? "16px 18px" : "10px 12px",
               backgroundColor: COLORS.cardBg,
               border: `1px solid ${COLORS.borderStrong}`,
-              borderRadius: isTablet ? "16px" : "12px",
-              fontSize: isTablet ? "16px" : "14px",
+              borderRadius: isTablet ? "16px" : "10px",
+              fontSize: isTablet ? "16px" : "var(--fs-body)",
               color: COLORS.textSoft,
             }}
           >
@@ -816,41 +767,41 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
           <div
             style={{
               width: "100%",
-              maxWidth: isTablet ? "620px" : "520px",
+              maxWidth: isTablet ? "620px" : "480px",
               backgroundColor: "#fcfaf6",
               border: `1px solid ${COLORS.borderStrong}`,
-              borderRadius: isTablet ? "24px" : "18px",
+              borderRadius: isTablet ? "24px" : "16px",
               boxShadow: "0 20px 50px rgba(31, 41, 55, 0.18)",
-              padding: isTablet ? "22px" : "18px",
+              padding: isTablet ? "22px" : "16px",
             }}
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div style={{ marginBottom: "14px" }}>
+            <div style={{ marginBottom: "12px" }}>
               <div style={eyebrowStyle}>Complete additional task</div>
               <h2
                 style={{
                   margin: 0,
-                  fontSize: isTablet ? "26px" : "22px",
-                  fontWeight: 750,
-                  letterSpacing: "-0.025em",
+                  fontSize: isTablet ? "26px" : "var(--fs-title)",
+                  fontWeight: 700,
+                  letterSpacing: "-0.02em",
                   color: COLORS.text,
-                  lineHeight: 1.1,
+                  lineHeight: 1.15,
                 }}
               >
                 {extraActionToClose.description}
               </h2>
             </div>
 
-            <div style={{ ...innerCard, display: "grid", gap: isTablet ? "14px" : "10px" }}>
+            <div style={{ ...innerCard, display: "grid", gap: isTablet ? "14px" : "8px" }}>
               <div>
                 <div style={eyebrowStyle}>Responsible</div>
-                <div style={{ fontSize: isTablet ? "17px" : "14px", color: COLORS.text }}>
+                <div style={{ fontSize: isTablet ? "17px" : "var(--fs-body)", color: COLORS.text }}>
                   {normalizeAssignedPersonTeam(extraActionToClose.responsible_person_team)}
                 </div>
               </div>
               <div>
                 <div style={eyebrowStyle}>Due date</div>
-                <div style={{ fontSize: isTablet ? "17px" : "14px", color: COLORS.text }}>
+                <div style={{ fontSize: isTablet ? "17px" : "var(--fs-body)", color: COLORS.text }}>
                   {formatDate(extraActionToClose.due_date)}
                 </div>
               </div>
@@ -873,20 +824,20 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
               style={{
                 display: "flex",
                 justifyContent: "flex-end",
-                gap: isTablet ? "14px" : "10px",
-                marginTop: isTablet ? "18px" : "14px",
+                gap: isTablet ? "14px" : "8px",
+                marginTop: isTablet ? "18px" : "12px",
               }}
             >
               <button
                 type="button"
                 onClick={closeCloseExtraActionConfirmation}
                 style={{
-                  padding: isTablet ? "16px 20px" : "10px 14px",
-                  borderRadius: isTablet ? "15px" : "10px",
+                  padding: isTablet ? "16px 20px" : "9px 14px",
+                  borderRadius: isTablet ? "15px" : "8px",
                   border: `1px solid ${COLORS.borderStrong}`,
                   backgroundColor: COLORS.panelBg,
                   color: COLORS.text,
-                  fontSize: isTablet ? "17px" : "14px",
+                  fontSize: isTablet ? "17px" : "var(--fs-body)",
                   fontWeight: 700,
                   cursor: "pointer",
                   minHeight: isTablet ? "58px" : undefined,
@@ -923,17 +874,18 @@ function InfoBox({
   return (
     <div
       style={{
-        padding: large ? "17px" : "14px 14px 13px",
+        padding: large ? "17px" : "10px 12px",
         backgroundColor: COLORS.cardBg,
         border: `1px solid ${COLORS.border}`,
-        borderRadius: large ? "16px" : "12px",
+        borderRadius: large ? "16px" : "10px",
+        minWidth: 0,
       }}
     >
       <div
         style={{
-          fontSize: large ? "12px" : "11px",
+          fontSize: large ? "12px" : "var(--fs-xs)",
           color: "#8b857a",
-          marginBottom: "5px",
+          marginBottom: "4px",
           textTransform: "uppercase",
           letterSpacing: "0.08em",
           fontWeight: 700,
@@ -943,10 +895,11 @@ function InfoBox({
       </div>
       <div
         style={{
-          fontSize: large ? "17px" : "15px",
+          fontSize: large ? "17px" : "var(--fs-md)",
           fontWeight: 700,
           color: COLORS.text,
           lineHeight: 1.3,
+          overflowWrap: "anywhere",
         }}
       >
         {value}
@@ -990,10 +943,10 @@ function StatusNote({
   return (
     <div
       style={{
-        marginTop: color === "red" || color === "neutral" ? 0 : large ? "16px" : "12px",
-        padding: large ? "15px 16px" : "10px 12px",
-        borderRadius: large ? "15px" : "10px",
-        fontSize: large ? "16px" : "13px",
+        marginTop: color === "red" || color === "neutral" ? 0 : large ? "16px" : "10px",
+        padding: large ? "15px 16px" : "8px 10px",
+        borderRadius: large ? "15px" : "8px",
+        fontSize: large ? "16px" : "var(--fs-body)",
         fontWeight: 700,
         lineHeight: 1.45,
         ...palette,

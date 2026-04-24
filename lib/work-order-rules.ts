@@ -63,6 +63,12 @@ export function normalizeAssignedPersonTeam(
   return assignedPersonTeam?.trim() || DEFAULT_ASSIGNED_PERSON_TEAM;
 }
 
+export function normalizePriorityValue(
+  priority: string | null | undefined,
+): string {
+  return priority?.trim() || "No";
+}
+
 export function normalizeRfqState(state: string | null | undefined): string {
   return (state || "").trim().replace(/\s+/g, " ").toLowerCase();
 }

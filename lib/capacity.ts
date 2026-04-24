@@ -1,4 +1,4 @@
-import { getActiveStepsForType, PROCESS_STEPS, READY_TO_CLOSE_STEP } from "@/lib/process-steps";
+import { PROCESS_STEPS, READY_TO_CLOSE_STEP, resolveStepsForOrder } from "@/lib/process-steps";
 import { filterEngineersStartedOnDateKey } from "@/lib/engineers";
 import { isRfqBlockedState } from "@/lib/work-order-rules";
 import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
@@ -12,7 +12,7 @@ import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
 // Overhaul totaal: 535 min (Intake 10 + Disassembly 10 + Paint Stripping 120 +
 //                           Magnetic Test 45 + Penetrant 120 + Eddy Current 60 +
 //                           Inspection 20 + Painting 60 + Assembly 60 + EASA 30)
-// Magnetic Test is optioneel en telt alleen mee als magnetic_test_required aan staat.
+// Magnetic Test is optioneel en telt alleen mee als het in `included_process_steps` staat.
 // "Repair" stap is vervallen: valt samen met Assembly
 
 export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
@@ -90,19 +90,19 @@ export function getRemainingHours(
   workOrderType: string | null,
   currentStep: string | null,
   partNumber?: string | null,
-  magneticTestRequired = false,
+  includedSteps?: string[] | null,
 ): number {
   if (!workOrderType || !FALLBACK_HOURS[workOrderType]) return 0;
 
   const total = getTotalHoursForPart(workOrderType, partNumber);
-  const steps = getActiveStepsForType(workOrderType, magneticTestRequired);
+  const steps = resolveStepsForOrder(workOrderType, includedSteps);
   const weights = STEP_WEIGHTS[workOrderType];
   const normalizedCurrentStep = normalizeCurrentStepForCapacity(
     workOrderType,
     currentStep,
   );
   const activeTotalWeight = steps.reduce(
-    (sum, step) => sum + (weights[step] || 0),
+    (sum: number, step: string) => sum + (weights[step] || 0),
     0,
   );
 
@@ -219,7 +219,7 @@ export function calculateWeekCapacity(
     work_order_type: string | null;
     part_number: string | null;
     current_process_step: string | null;
-    magnetic_test_required?: boolean | null;
+    included_process_steps?: string[] | null;
     due_date: string | null;
     hold_reason: string | null;
     rfq_state: string | null;
@@ -293,7 +293,7 @@ export function calculateWeekCapacity(
       order.work_order_type,
       order.current_process_step,
       order.part_number,
-      order.magnetic_test_required ?? false,
+      order.included_process_steps,
     );
     if (remaining <= 0) continue;
 

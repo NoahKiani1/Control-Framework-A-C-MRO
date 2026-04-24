@@ -9,8 +9,16 @@
  *   page lets the engineer pick the completed step; this module calculates what
  *   `current_process_step` should become.
  *
- * Optional steps (e.g. Magnetic Test) are skipped by default but can be
- * included per work order via the `includeOptional` flag.
+ * Step configuration is per work order: `work_orders.included_process_steps`
+ * is the authoritative, ordered list of steps the shop has to run through for
+ * that order. Office sets it during import / activation (Standard uses the
+ * default active steps for the type; Custom lets them add/drop tasks such as
+ * Magnetic Test).
+ *
+ * Template-level helpers (those that only take `workOrderType`) remain for
+ * places where no order is in scope — for example restriction lookups and the
+ * shared planning legend. Order-aware call sites must pass
+ * `includedSteps` so the per-order configuration is respected.
  */
 
 /** Steps that are skipped unless explicitly included per work order. */
@@ -90,7 +98,7 @@ export function getProcessStepsForType(workOrderType: string | null): string[] {
   return PROCESS_STEPS[workOrderType] || [];
 }
 
-/** Whether a step is optional (skipped unless override is set). */
+/** Whether a step is optional (skipped unless included per order). */
 export function isOptionalProcessStep(step: string | null): boolean {
   if (!step) return false;
   return OPTIONAL_PROCESS_STEPS.includes(step);
@@ -102,12 +110,13 @@ export function hasOptionalSteps(workOrderType: string | null): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Step filtering
+// Template-level step filtering (no per-order configuration)
 // ---------------------------------------------------------------------------
 
 /**
- * Active steps for the current configuration.
- * When `includeOptional` is false (default) optional steps are excluded.
+ * Default active steps for a type. `includeOptional` decides whether optional
+ * steps (Magnetic Test) are part of the default set. Used as the baseline for
+ * Standard variant orders and for non-order contexts (restrictions, legends).
  */
 export function getActiveStepsForType(
   workOrderType: string | null,
@@ -127,22 +136,112 @@ export function getTrackedStepsForType(workOrderType: string | null): string[] {
 export const INTAKE_STEP = "Intake";
 export const DEFAULT_START_PROCESS_STEP = "Disassembly";
 
-export function getInitialProcessStep(
-  workOrderType: string | null,
-  includeOptional = false,
-): string {
-  const completableSteps = getCompletableStepsForType(
-    workOrderType,
-    includeOptional,
-  );
+// ---------------------------------------------------------------------------
+// Order-aware step resolution
+// ---------------------------------------------------------------------------
 
-  return completableSteps[0] || DEFAULT_START_PROCESS_STEP;
+/**
+ * The effective step list for an order.
+ *
+ * If the order has `included_process_steps`, that is authoritative (kept in
+ * template order and filtered to known steps so a stale value cannot inject an
+ * unknown step). Otherwise we fall back to the default active steps for the
+ * type — this handles orders that pre-date the column and orders whose
+ * `work_order_type` is null.
+ */
+export function resolveStepsForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+): string[] {
+  const template = getProcessStepsForType(workOrderType);
+  if (template.length === 0) return [];
+
+  if (includedSteps && includedSteps.length > 0) {
+    const includedSet = new Set(includedSteps);
+    return template.filter((step) => includedSet.has(step));
+  }
+
+  return getActiveStepsForType(workOrderType, false);
 }
 
 /**
  * Steps the shop engineer can select as "completed" in the shop-update form.
- * Excludes Intake (set automatically) and optional steps (unless overridden).
+ * Excludes Intake — it is set automatically when the order is activated.
  */
+export function getCompletableStepsForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+): string[] {
+  return resolveStepsForOrder(workOrderType, includedSteps).filter(
+    (step) => step !== INTAKE_STEP,
+  );
+}
+
+/** The first completable step for an order (used on activation). */
+export function getInitialProcessStepForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+): string {
+  const completable = getCompletableStepsForOrder(workOrderType, includedSteps);
+  return completable[0] || DEFAULT_START_PROCESS_STEP;
+}
+
+/**
+ * Given a completed step, return the value `current_process_step` should
+ * become. Returns `READY_TO_CLOSE_STEP` when the completed step is the last in
+ * the order's configured sequence.
+ */
+export function getNextProcessStepAfterCompletedForOrder(
+  workOrderType: string | null,
+  completedStep: string | null,
+  includedSteps: string[] | null | undefined,
+): string | null {
+  if (!workOrderType || !completedStep) return null;
+
+  const steps = resolveStepsForOrder(workOrderType, includedSteps);
+  const completedIndex = steps.indexOf(completedStep);
+  if (completedIndex === -1) return null;
+
+  if (completedIndex >= steps.length - 1) return READY_TO_CLOSE_STEP;
+  return steps[completedIndex + 1];
+}
+
+/**
+ * Given `current_process_step`, return the most recently completed step
+ * (i.e. the active step directly before the current one) for the
+ * shop-update "completed step" dropdown. Returns "" when nothing is completed.
+ */
+export function getLastCompletedStepForOrder(
+  workOrderType: string | null,
+  currentProcessStep: string | null,
+  includedSteps: string[] | null | undefined,
+): string {
+  if (!workOrderType || !currentProcessStep) return "";
+
+  const completable = getCompletableStepsForOrder(workOrderType, includedSteps);
+  const currentIndex = completable.indexOf(currentProcessStep);
+  if (currentIndex <= 0) return "";
+  return completable[currentIndex - 1];
+}
+
+// ---------------------------------------------------------------------------
+// Legacy template-level progression helpers
+//
+// Kept for places that don't have a concrete order (e.g. the Office Update
+// activation-step dropdown for orders that haven't picked a variant yet).
+// Prefer the *ForOrder variants when an order is in scope.
+// ---------------------------------------------------------------------------
+
+export function getInitialProcessStep(
+  workOrderType: string | null,
+  includeOptional = false,
+): string {
+  const completable = getActiveStepsForType(workOrderType, includeOptional).filter(
+    (step) => step !== INTAKE_STEP,
+  );
+  return completable[0] || DEFAULT_START_PROCESS_STEP;
+}
+
 export function getCompletableStepsForType(
   workOrderType: string | null,
   includeOptional = false,
@@ -150,65 +249,6 @@ export function getCompletableStepsForType(
   return getActiveStepsForType(workOrderType, includeOptional).filter(
     (step) => step !== INTAKE_STEP,
   );
-}
-
-// ---------------------------------------------------------------------------
-// Progression
-// ---------------------------------------------------------------------------
-
-/**
- * Given a completed step, return the value that `current_process_step` should
- * be set to. Optional steps are skipped unless `includeOptional` is true.
- *
- * Returns `READY_TO_CLOSE_STEP` when the completed step is the final step
- * (EASA-Form 1), meaning there are no more tracked shop steps remaining.
- */
-export function getNextProcessStepAfterCompleted(
-  workOrderType: string | null,
-  completedStep: string | null,
-  includeOptional = false,
-): string | null {
-  if (!workOrderType || !completedStep) return null;
-
-  const steps = getProcessStepsForType(workOrderType);
-  const completedIndex = steps.indexOf(completedStep);
-
-  if (completedIndex === -1) return null;
-
-  // Walk forward, skipping optional steps when not included
-  for (let i = completedIndex + 1; i < steps.length; i++) {
-    if (includeOptional || !isOptionalProcessStep(steps[i])) {
-      return steps[i];
-    }
-  }
-
-  // Completed step was the last tracked step.
-  return READY_TO_CLOSE_STEP;
-}
-
-/**
- * Given the current `current_process_step`, return the step that was most
- * recently completed (i.e. the active step directly before the current one).
- *
- * Used to pre-select the "completed step" dropdown so the engineer sees where
- * the order currently stands.
- *
- * Returns "" when the order is at the first step (nothing completed yet).
- */
-export function getLastCompletedStep(
-  workOrderType: string | null,
-  currentProcessStep: string | null,
-  includeOptional = false,
-): string {
-  if (!workOrderType || !currentProcessStep) return "";
-
-  const completable = getCompletableStepsForType(workOrderType, includeOptional);
-  const currentIndex = completable.indexOf(currentProcessStep);
-
-  // Current step is the first completable step or not found — nothing completed yet
-  if (currentIndex <= 0) return "";
-
-  return completable[currentIndex - 1];
 }
 
 // ---------------------------------------------------------------------------

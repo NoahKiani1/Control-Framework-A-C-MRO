@@ -8,8 +8,8 @@ import { PageHeader } from "@/app/components/page-header";
 import {
   PROCESS_STEP_SHORT_LABELS,
   READY_TO_CLOSE_STEP,
-  getActiveStepsForType,
   getShortProcessStepLabel,
+  resolveStepsForOrder,
 } from "@/lib/process-steps";
 import { STEP_WEIGHTS } from "@/lib/capacity";
 import {
@@ -56,6 +56,7 @@ type WorkOrder = {
   action_closed: boolean | null;
   last_manual_update: string | null;
   last_system_update: string | null;
+  included_process_steps: string[] | null;
 };
 
 type StaffMember = {
@@ -82,7 +83,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update";
+  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps";
 
 const ui = {
   pageBg: "#f2efe9",
@@ -128,34 +129,36 @@ const surfaceCardStyle: React.CSSProperties = {
 
 const sectionCardStyle: React.CSSProperties = {
   ...surfaceCardStyle,
-  padding: "16px 18px",
+  padding: "var(--card-py) var(--card-px)",
+  minWidth: 0,
 };
 
 const secondarySectionStyle: React.CSSProperties = {
   ...surfaceCardStyle,
-  padding: "16px 18px",
+  padding: "var(--card-py) var(--card-px)",
   backgroundColor: ui.surfaceMuted,
+  minWidth: 0,
 };
 
 const sectionHeaderStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
-  gap: "14px",
-  marginBottom: "12px",
+  gap: "var(--gap-default)",
+  marginBottom: "10px",
 };
 
 const sectionTitleStyle: React.CSSProperties = {
   margin: 0,
-  fontSize: "16px",
+  fontSize: "var(--fs-heading)",
   fontWeight: 650,
   color: ui.text,
   letterSpacing: "-0.015em",
 };
 
 const sectionDescriptionStyle: React.CSSProperties = {
-  margin: "3px 0 0",
-  fontSize: "13px",
+  margin: "2px 0 0",
+  fontSize: "var(--fs-body)",
   color: ui.muted,
   lineHeight: 1.5,
 };
@@ -164,10 +167,10 @@ const badgeStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: "6px",
-  padding: "3px 9px",
+  padding: "3px 8px",
   borderRadius: "999px",
   border: `1px solid ${ui.border}`,
-  fontSize: "12px",
+  fontSize: "var(--fs-sm)",
   fontWeight: 650,
   lineHeight: 1.2,
   whiteSpace: "nowrap",
@@ -240,9 +243,9 @@ const tableBaseStyle: React.CSSProperties = {
 };
 
 const tableCellStyle: React.CSSProperties = {
-  padding: "10px 14px",
+  padding: "8px 12px",
   borderBottom: `1px solid ${ui.border}`,
-  fontSize: "14px",
+  fontSize: "var(--fs-body)",
   lineHeight: 1.45,
   overflowWrap: "anywhere",
   verticalAlign: "top",
@@ -256,7 +259,7 @@ const tableHeaderCellStyle: React.CSSProperties = {
   fontWeight: 650,
   color: ui.muted,
   backgroundColor: ui.surfaceSoft,
-  fontSize: "13px",
+  fontSize: "var(--fs-sm)",
   letterSpacing: "0.02em",
   position: "sticky",
   top: 0,
@@ -298,12 +301,12 @@ const inlineActionButtonStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   marginTop: "8px",
-  padding: "7px 10px",
+  padding: "6px 9px",
   borderRadius: "999px",
   border: `1px solid ${ui.redBorder}`,
   backgroundColor: ui.redSoft,
   color: ui.red,
-  fontSize: "12px",
+  fontSize: "var(--fs-sm)",
   fontWeight: 700,
   cursor: "pointer",
 };
@@ -336,7 +339,7 @@ const modalBackdropStyle: React.CSSProperties = {
   backgroundColor: "rgba(31, 41, 55, 0.28)",
   display: "grid",
   placeItems: "center",
-  padding: "24px",
+  padding: "20px",
   zIndex: 60,
 };
 
@@ -347,32 +350,32 @@ const modalCardStyle: React.CSSProperties = {
   border: `1px solid ${ui.borderStrong}`,
   borderRadius: "18px",
   boxShadow: "0 20px 50px rgba(31, 41, 55, 0.18)",
-  padding: "18px",
+  padding: "16px",
 };
 
 const modalInnerCardStyle: React.CSSProperties = {
   backgroundColor: ui.surface,
   border: `1px solid ${ui.border}`,
   borderRadius: "14px",
-  padding: "15px",
+  padding: "13px",
 };
 
 const modalInputStyle: React.CSSProperties = {
   width: "100%",
-  padding: "10px 12px",
+  padding: "8px 10px",
   border: `1px solid ${ui.borderStrong}`,
   borderRadius: "10px",
-  fontSize: "14px",
+  fontSize: "var(--fs-body)",
   lineHeight: 1.4,
   boxSizing: "border-box",
   backgroundColor: "#fffdf9",
   color: ui.text,
-  minHeight: "42px",
+  minHeight: "36px",
   outline: "none",
 };
 
 const modalEyebrowStyle: React.CSSProperties = {
-  fontSize: "11px",
+  fontSize: "var(--fs-xs)",
   fontWeight: 700,
   letterSpacing: "0.08em",
   textTransform: "uppercase",
@@ -382,7 +385,7 @@ const modalEyebrowStyle: React.CSSProperties = {
 
 const modalTitleStyle: React.CSSProperties = {
   margin: 0,
-  fontSize: "22px",
+  fontSize: "var(--fs-title)",
   fontWeight: 750,
   letterSpacing: "-0.025em",
   color: ui.text,
@@ -390,12 +393,12 @@ const modalTitleStyle: React.CSSProperties = {
 };
 
 const modalActionButtonStyle: React.CSSProperties = {
-  padding: "10px 14px",
+  padding: "8px 12px",
   borderRadius: "10px",
   border: `1px solid ${ui.borderStrong}`,
   backgroundColor: ui.surface,
   color: ui.text,
-  fontSize: "14px",
+  fontSize: "var(--fs-body)",
   fontWeight: 700,
   cursor: "pointer",
 };
@@ -472,23 +475,39 @@ const SEGMENT_LABEL_MIN_SHARE = 0.03;
 const EDGE_SEGMENT_LABEL_MIN_SHARE = 0.025;
 const CURRENT_SEGMENT_LABEL_MIN_SHARE = 0.03;
 
+function getTimelineTrackTemplate(segments: TimelineSegment[]): string {
+  return segments
+    .map((segment) => {
+      const trackShare = Math.max(segment.share, 0.001);
+      return `minmax(0, ${trackShare}fr)`;
+    })
+    .join(" ");
+}
+
 function buildTimelineSegments(order: WorkOrder): TimelineSegment[] {
   if (!order.work_order_type) return [];
-  const steps = getActiveStepsForType(order.work_order_type, true);
-  if (steps.length === 0) return [];
+  const includedSteps = resolveStepsForOrder(
+    order.work_order_type,
+    order.included_process_steps,
+  );
+  if (includedSteps.length === 0) return [];
+
   const weights = STEP_WEIGHTS[order.work_order_type] || {};
   const currentIdx = order.current_process_step
-    ? steps.indexOf(order.current_process_step)
+    ? includedSteps.indexOf(order.current_process_step)
     : -1;
 
-  const resolved = steps.map((step) => {
+  const resolved = includedSteps.map((step: string) => {
     const rawWeight = weights[step];
     const weight = rawWeight && rawWeight > 0 ? rawWeight : 0.03;
     return { step, weight };
   });
-  const totalWeight = resolved.reduce((sum, s) => sum + s.weight, 0) || 1;
+  const totalWeight = resolved.reduce(
+    (sum: number, s: { step: string; weight: number }) => sum + s.weight,
+    0,
+  ) || 1;
 
-  return resolved.map(({ step, weight }, idx) => {
+  return resolved.map(({ step, weight }: { step: string; weight: number }, idx: number) => {
     const state: TimelineSegment["state"] =
       currentIdx === -1
         ? "upcoming"
@@ -497,6 +516,7 @@ function buildTimelineSegments(order: WorkOrder): TimelineSegment[] {
           : idx === currentIdx
             ? "current"
             : "upcoming";
+
     return {
       name: step,
       shortName: getShortProcessStepLabel(step),
@@ -549,12 +569,12 @@ function shouldShowTimelineLabel(
   index: number,
   total: number,
 ): boolean {
-  if (segment.shortName.length <= 3) {
-    return segment.share >= 0.02 || total <= 12;
+  if (segment.state === "current") {
+    return true;
   }
 
-  if (segment.state === "current") {
-    return segment.share >= CURRENT_SEGMENT_LABEL_MIN_SHARE || total <= 5;
+  if (segment.shortName.length <= 3) {
+    return segment.share >= 0.02 || total <= 12;
   }
 
   if (segment.share >= SEGMENT_LABEL_MIN_SHARE) {
@@ -567,6 +587,28 @@ function shouldShowTimelineLabel(
   );
 }
 
+function getTimelineLabelFontSize(segment: TimelineSegment): string {
+  const labelLength = segment.state === "current" ? segment.name.length : segment.shortName.length;
+  const estimatedCapacity =
+    segment.state === "current"
+      ? Math.max(4, Math.round(segment.share * 120))
+      : Math.max(3, Math.round(segment.share * 160));
+
+  if (labelLength <= estimatedCapacity) {
+    return "10px";
+  }
+
+  if (labelLength <= estimatedCapacity + 2) {
+    return "9px";
+  }
+
+  if (segment.share < 0.045 || labelLength >= 11) {
+    return "8px";
+  }
+
+  return "9px";
+}
+
 function WorkOrderTimelineRow({
   order,
   blocked,
@@ -575,6 +617,7 @@ function WorkOrderTimelineRow({
   blocked: boolean;
 }) {
   const segments = buildTimelineSegments(order);
+  const timelineTrackTemplate = getTimelineTrackTemplate(segments);
   const priority = priorityTag(order.priority);
   const overdue = isOverdue(order.due_date);
 
@@ -663,13 +706,14 @@ function WorkOrderTimelineRow({
           <>
             <div
               style={{
-                display: "flex",
+                display: "grid",
+                gridTemplateColumns: timelineTrackTemplate,
                 gap: "3px",
                 width: "100%",
-                alignItems: "stretch",
+                alignItems: "start",
               }}
             >
-              {segments.map((segment) => {
+              {segments.map((segment, index) => {
                 let backgroundColor = ui.surfaceSoft;
                 let borderStyle = `1px dashed ${ui.border}`;
                 if (segment.state === "completed") {
@@ -680,34 +724,6 @@ function WorkOrderTimelineRow({
                   borderStyle = `1px solid ${currentInk}`;
                 }
 
-                return (
-                  <div
-                    key={segment.name}
-                    title={segment.name}
-                    aria-label={segment.name}
-                    style={{
-                      flexGrow: segment.weight,
-                      flexBasis: 0,
-                      minWidth: 0,
-                      height: segment.state === "current" ? "14px" : "12px",
-                      borderRadius: "4px",
-                      backgroundColor,
-                      border: borderStyle,
-                      boxShadow:
-                        segment.state === "current"
-                          ? `0 0 0 2px ${blocked ? ui.redSoft : ui.blueSoft}, 0 3px 10px ${
-                              blocked ? "rgba(180, 35, 24, 0.16)" : "rgba(37, 85, 199, 0.18)"
-                            }`
-                          : undefined,
-                      transition: "background-color 180ms ease",
-                    }}
-                  />
-                );
-              })}
-            </div>
-
-            <div style={{ display: "flex", gap: "3px", width: "100%" }}>
-              {segments.map((segment, index) => {
                 const color =
                   segment.state === "current"
                     ? currentInk
@@ -715,26 +731,37 @@ function WorkOrderTimelineRow({
                       ? timelineCompletedInk
                       : ui.mutedSoft;
                 const showLabel = shouldShowTimelineLabel(segment, index, segments.length);
+                const labelFontSize = getTimelineLabelFontSize(segment);
                 return (
                   <div
                     key={segment.name}
                     title={segment.name}
                     aria-label={segment.name}
                     style={{
-                      flexGrow: segment.weight,
-                      flexBasis: 0,
                       minWidth: 0,
-                      fontSize: "10px",
-                      lineHeight: 1.2,
-                      color,
-                      fontWeight: segment.state === "current" ? 700 : 500,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "clip",
-                      textAlign: "center",
-                      padding: "0 1px",
+                      display: "grid",
+                      justifyItems: "center",
+                      alignContent: "start",
+                      rowGap: "4px",
                     }}
                   >
+                    <div
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        height: segment.state === "current" ? "14px" : "12px",
+                        borderRadius: "4px",
+                        backgroundColor,
+                        border: borderStyle,
+                        boxShadow:
+                          segment.state === "current"
+                            ? `0 0 0 2px ${blocked ? ui.redSoft : ui.blueSoft}, 0 3px 10px ${
+                                blocked ? "rgba(180, 35, 24, 0.16)" : "rgba(37, 85, 199, 0.18)"
+                              }`
+                            : undefined,
+                        transition: "background-color 180ms ease",
+                      }}
+                    />
                     {showLabel ? (
                       segment.state === "current" ? (
                         <span
@@ -743,16 +770,38 @@ function WorkOrderTimelineRow({
                             alignItems: "center",
                             justifyContent: "center",
                             maxWidth: "100%",
+                            minWidth: 0,
                             padding: "1px 6px",
                             borderRadius: "999px",
                             border: `1px solid ${blocked ? ui.redBorder : ui.blueBorder}`,
                             backgroundColor: blocked ? ui.redSoft : ui.blueSoft,
+                            fontSize: labelFontSize,
+                            lineHeight: 1.15,
+                            boxSizing: "border-box",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
                           }}
                         >
                           {segment.name}
                         </span>
                       ) : (
-                        segment.shortName
+                        <span
+                          style={{
+                            minWidth: 0,
+                            padding: "0 1px",
+                            fontSize: labelFontSize,
+                            lineHeight: 1.2,
+                            color,
+                            fontWeight: 500,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "clip",
+                            textAlign: "center",
+                          }}
+                        >
+                          {segment.shortName}
+                        </span>
                       )
                     ) : (
                       ""
@@ -1300,12 +1349,12 @@ function PlanningPageContent() {
       style={{
         minHeight: "100vh",
         backgroundColor: ui.pageBg,
-        padding: "32px 40px 40px",
+        padding: "var(--layout-page-py) var(--layout-page-px) var(--layout-page-px)",
         fontFamily: "var(--font-inter), var(--font-geist-sans), sans-serif",
         color: ui.text,
       }}
     >
-      <div style={{ maxWidth: "1440px" }}>
+      <div style={{ width: "100%", maxWidth: "var(--layout-content-max-w)", marginInline: "auto" }}>
         <PageHeader
           title="Shared Planning"
           description="Overview of active work orders, current next steps, assignments and blocking reasons."
@@ -1316,7 +1365,7 @@ function PlanningPageContent() {
                 aria-label="Shared Planning views"
                 style={{
                   display: "inline-flex",
-                  padding: "4px",
+                  padding: "3px",
                   borderRadius: "12px",
                   backgroundColor: ui.surfaceSoft,
                   border: `1px solid ${ui.border}`,
@@ -1338,13 +1387,13 @@ function PlanningPageContent() {
                       aria-selected={isActive}
                       onClick={() => setActiveTab(tab.id)}
                       style={{
-                        padding: "7px 16px",
+                        padding: "6px 14px",
                         borderRadius: "8px",
                         border: "1px solid transparent",
                         backgroundColor: isActive ? ui.surface : "transparent",
                         borderColor: isActive ? ui.border : "transparent",
                         color: isActive ? ui.text : ui.muted,
-                        fontSize: "13px",
+                        fontSize: "var(--fs-sm)",
                         fontWeight: 650,
                         letterSpacing: "0.005em",
                         cursor: "pointer",
@@ -1368,7 +1417,7 @@ function PlanningPageContent() {
 
         {activeTab === "list" && (
         <>
-        <section style={{ ...sectionCardStyle, marginBottom: "24px" }}>
+        <section style={{ ...sectionCardStyle, marginBottom: "var(--gap-section)" }}>
           <div style={sectionHeaderStyle}>
             <div>
               <h2 style={sectionTitleStyle}>Open work orders</h2>
@@ -1387,7 +1436,7 @@ function PlanningPageContent() {
 
           {openOrders.length > 0 ? (
             <div style={tableWrapStyle}>
-              <table style={{ ...tableBaseStyle, minWidth: "1080px" }}>
+              <table style={{ ...tableBaseStyle, minWidth: "980px" }}>
                 <thead>
                   <tr>
                     <th style={{ ...tableHeaderCellStyle, ...roundedTableHeaderStyle("left") }}>WO</th>

@@ -39,13 +39,13 @@ export function PageHeader({
   description,
   actions,
   tabs,
-  marginBottom = 16,
+  marginBottom = 12,
 }: PageHeaderProps) {
   return (
     <header
       style={{
         marginBottom,
-        paddingBottom: tabs ? 0 : 12,
+        paddingBottom: tabs ? 0 : 10,
         borderBottom: tabs ? undefined : `1px solid ${HEADER_TOKENS.border}`,
         fontFamily: FONT_STACK,
         color: HEADER_TOKENS.text,
@@ -56,20 +56,20 @@ export function PageHeader({
           display: "flex",
           alignItems: "flex-start",
           justifyContent: "space-between",
-          gap: "16px",
+          gap: "var(--gap-default)",
           flexWrap: "wrap",
         }}
       >
-        <div style={{ minWidth: 0, flex: "1 1 420px" }}>
+        <div style={{ minWidth: 0, flex: "1 1 360px" }}>
           {eyebrow && (
             <div
               style={{
-                fontSize: "11px",
+                fontSize: "var(--fs-meta)",
                 fontWeight: 700,
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 color: HEADER_TOKENS.mutedSoft,
-                marginBottom: "6px",
+                marginBottom: "4px",
               }}
             >
               {eyebrow}
@@ -79,11 +79,11 @@ export function PageHeader({
           <h1
             style={{
               margin: 0,
-              fontSize: "30px",
+              fontSize: "clamp(28px, 2.4vw, 34px)",
               lineHeight: 1.08,
-              fontWeight: 750,
+              fontWeight: 700,
               color: HEADER_TOKENS.text,
-              letterSpacing: "-0.03em",
+              letterSpacing: "-0.02em",
             }}
           >
             {title}
@@ -92,11 +92,11 @@ export function PageHeader({
           {description && (
             <p
               style={{
-                margin: "6px 0 0",
-                fontSize: "14px",
+                margin: "4px 0 0",
+                fontSize: "var(--fs-md)",
                 lineHeight: 1.5,
                 color: HEADER_TOKENS.muted,
-                maxWidth: "820px",
+                maxWidth: "680px",
               }}
             >
               {description}
@@ -109,7 +109,7 @@ export function PageHeader({
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "10px",
+              gap: "var(--gap-tight)",
               flexShrink: 0,
               alignSelf: "flex-start",
               paddingTop: "2px",
@@ -123,15 +123,15 @@ export function PageHeader({
       {tabs && (
         <div
           style={{
-            marginTop: "16px",
-            paddingTop: "12px",
-            paddingBottom: "12px",
+            marginTop: "var(--gap-default)",
+            paddingTop: "10px",
+            paddingBottom: "10px",
             borderTop: `1px solid ${HEADER_TOKENS.border}`,
             borderBottom: `1px solid ${HEADER_TOKENS.border}`,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            gap: "12px",
+            gap: "10px",
             flexWrap: "wrap",
           }}
         >

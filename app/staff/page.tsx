@@ -352,7 +352,7 @@ function StaffPageContent() {
   const pageStyle: React.CSSProperties = {
     minHeight: "100vh",
     backgroundColor: ui.pageBg,
-    padding: "32px 40px 40px",
+    padding: "var(--layout-page-py) var(--layout-page-px) var(--layout-page-px)",
     fontFamily: FONT_STACK,
     color: ui.text,
   };
@@ -411,7 +411,11 @@ function StaffPageContent() {
   const absencesThisWindow = groupedAbsences.filter((a) => a.start_date <= threeWeekCutoff);
   const absencesLater = groupedAbsences.filter((a) => a.start_date > threeWeekCutoff);
 
-  const shellStyle: React.CSSProperties = { maxWidth: "1180px" };
+  const shellStyle: React.CSSProperties = {
+    width: "100%",
+    maxWidth: "var(--layout-content-max-w-narrow)",
+    marginInline: "auto",
+  };
 
   const sectionCard: React.CSSProperties = {
     backgroundColor: ui.surface,

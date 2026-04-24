@@ -60,7 +60,7 @@ function BacklogPageContent() {
   const pageStyle: React.CSSProperties = {
     minHeight: "100vh",
     backgroundColor: ui.pageBg,
-    padding: "32px 40px 40px",
+    padding: "var(--layout-page-py) var(--layout-page-px) var(--layout-page-px)",
     fontFamily: FONT_STACK,
     color: ui.text,
   };
@@ -68,43 +68,46 @@ function BacklogPageContent() {
   if (loading) {
     return (
       <main style={pageStyle}>
-        <div style={{ color: ui.muted, fontSize: "14px" }}>Loading...</div>
+        <div style={{ color: ui.muted, fontSize: "var(--fs-body)" }}>Loading...</div>
       </main>
     );
   }
 
   const shellStyle: React.CSSProperties = {
-    maxWidth: "1440px",
+    width: "100%",
+    maxWidth: "var(--layout-content-max-w)",
+    marginInline: "auto",
   };
 
   const sectionCardStyle: React.CSSProperties = {
     backgroundColor: ui.surface,
     border: `1px solid ${ui.border}`,
-    borderRadius: "14px",
+    borderRadius: "var(--card-radius)",
     boxShadow: ui.shadow,
-    padding: "16px 18px",
+    padding: "var(--card-py) var(--card-px)",
+    minWidth: 0,
   };
 
   const sectionHeaderStyle: React.CSSProperties = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "14px",
-    marginBottom: "12px",
+    gap: "var(--gap-default)",
+    marginBottom: "10px",
     flexWrap: "wrap",
   };
 
   const sectionTitleStyle: React.CSSProperties = {
     margin: 0,
-    fontSize: "16px",
+    fontSize: "var(--fs-heading)",
     fontWeight: 650,
     color: ui.text,
     letterSpacing: "-0.015em",
   };
 
   const sectionDescriptionStyle: React.CSSProperties = {
-    margin: "3px 0 0",
-    fontSize: "13px",
+    margin: "2px 0 0",
+    fontSize: "var(--fs-body)",
     color: ui.muted,
     lineHeight: 1.5,
   };
@@ -112,12 +115,12 @@ function BacklogPageContent() {
   const countBadgeStyle: React.CSSProperties = {
     display: "inline-flex",
     alignItems: "center",
-    padding: "3px 9px",
+    padding: "3px 8px",
     borderRadius: "999px",
     border: `1px solid ${ui.border}`,
     backgroundColor: ui.surfaceMuted,
     color: ui.muted,
-    fontSize: "12px",
+    fontSize: "var(--fs-sm)",
     fontWeight: 650,
     lineHeight: 1.2,
     whiteSpace: "nowrap",
@@ -134,13 +137,13 @@ function BacklogPageContent() {
     borderCollapse: "separate",
     borderSpacing: 0,
     width: "100%",
-    minWidth: "1120px",
+    minWidth: "960px",
   };
 
   const cellStyle: React.CSSProperties = {
-    padding: "10px 14px",
+    padding: "8px 12px",
     borderBottom: `1px solid ${ui.border}`,
-    fontSize: "14px",
+    fontSize: "var(--fs-body)",
     lineHeight: 1.45,
     overflowWrap: "anywhere",
     verticalAlign: "top",
@@ -154,7 +157,7 @@ function BacklogPageContent() {
     fontWeight: 650,
     color: ui.muted,
     backgroundColor: ui.surfaceMuted,
-    fontSize: "13px",
+    fontSize: "var(--fs-sm)",
     letterSpacing: "0.02em",
     position: "sticky",
     top: 0,
@@ -165,12 +168,12 @@ function BacklogPageContent() {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "8px 12px",
+    padding: "6px 10px",
     borderRadius: "999px",
     border: `1px solid ${ui.blueBorder}`,
     backgroundColor: ui.blueSoft,
     color: ui.blue,
-    fontSize: "12px",
+    fontSize: "var(--fs-sm)",
     fontWeight: 700,
     lineHeight: 1.2,
     textDecoration: "none",
@@ -253,12 +256,12 @@ function BacklogPageContent() {
           ) : (
             <div
               style={{
-                padding: "14px",
+                padding: "12px",
                 borderRadius: "10px",
                 backgroundColor: ui.surface,
                 border: `1px dashed ${ui.borderStrong}`,
                 color: ui.muted,
-                fontSize: "13px",
+                fontSize: "var(--fs-body)",
               }}
             >
               No inactive work orders.
