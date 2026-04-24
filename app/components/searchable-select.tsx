@@ -52,7 +52,6 @@ export function SearchableSelect({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Scroll highlighted item into view
   useEffect(() => {
     if (!hasQuery || !listRef.current) return;
     const items = listRef.current.children;
@@ -92,11 +91,7 @@ export function SearchableSelect({
       <input
         type="text"
         value={query}
-        placeholder={
-          value
-            ? `${selectedOption?.label || value} — type to search another`
-            : placeholder
-        }
+        placeholder={value ? selectedOption?.label || value : placeholder}
         onChange={(e) => {
           setQuery(e.target.value);
           setHighlightIndex(0);

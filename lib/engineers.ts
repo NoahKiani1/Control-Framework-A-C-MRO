@@ -19,6 +19,11 @@ type GetEngineerAbsencesOptions = {
   orderBy?: OrderBy | OrderBy[];
 };
 
+type DatedAbsence = {
+  engineer_id: number;
+  absence_date: string;
+};
+
 type OrderableQuery = {
   order: (column: string, options: { ascending: boolean }) => unknown;
 };
@@ -48,6 +53,25 @@ export function filterEngineersStartedOnDateKey<T extends EmploymentDatedEnginee
   dateKey: string,
 ): T[] {
   return engineers.filter((engineer) => isEngineerStartedOnDateKey(engineer, dateKey));
+}
+
+export function getAbsentEngineerIdSetForDateKey<T extends DatedAbsence>(
+  absences: T[],
+  dateKey: string,
+): Set<number> {
+  return new Set(
+    absences
+      .filter((absence) => absence.absence_date === dateKey)
+      .map((absence) => absence.engineer_id),
+  );
+}
+
+export function isEngineerAbsentOnDateKey<T extends DatedAbsence>(
+  engineerId: number,
+  absences: T[],
+  dateKey: string,
+): boolean {
+  return getAbsentEngineerIdSetForDateKey(absences, dateKey).has(engineerId);
 }
 
 function applyOrderBy<T>(query: T, orderBy?: OrderBy | OrderBy[]): T {

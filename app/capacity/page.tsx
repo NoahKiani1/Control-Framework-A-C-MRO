@@ -11,7 +11,7 @@ import {
 } from "@/lib/engineers";
 import { getWorkOrders } from "@/lib/work-orders";
 import { calculateWeekCapacity, type WeekCapacity, type OrderCapacity } from "@/lib/capacity";
-import { isRfqBlockedState } from "@/lib/work-order-rules";
+import { isBlocked } from "@/lib/work-order-rules";
 import {
   RESTRICTION_LABELS,
   RESTRICTION_BLOCKED_STEPS,
@@ -67,6 +67,21 @@ function formatAnimatedNumber(value: number, decimals: number): string {
   if (decimals === 0) return String(Math.round(value));
   const rounded = Number(value.toFixed(decimals));
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(decimals);
+}
+
+function formatProcessStepLabel(step: string): string {
+  return step === "EASA-Form 1" ? "EASA Form 1" : step;
+}
+
+function formatReadableList(values: string[]): string {
+  if (values.length === 0) return "";
+  if (values.length === 1) return values[0];
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
+}
+
+function formatBlockedStepList(steps: string[]): string {
+  return formatReadableList(steps.map(formatProcessStepLabel));
 }
 
 function AnimatedNumber({
@@ -209,30 +224,28 @@ function CapacityPageContent() {
   const excludedOrders: ExcludedOrder[] = allOrders
     .filter((o) => {
       if (!o.due_date) return true;
-      if (o.hold_reason) return true;
-      if (isRfqBlockedState(o.rfq_state)) return true;
+      if (isBlocked(o)) return true;
       if (o.current_process_step === READY_TO_CLOSE_STEP) return true;
       return false;
     })
     .map((o) => {
       let reason = "";
       if (!o.due_date) reason = "No due date";
-      else if (o.hold_reason) reason = `Blocked: ${o.hold_reason}`;
-      else if (isRfqBlockedState(o.rfq_state)) reason = "RFQ blocked";
+      else if (o.hold_reason?.trim()) reason = `Blocked: ${o.hold_reason.trim()}`;
+      else if (isBlocked(o)) reason = "RFQ blocked";
       else if (o.current_process_step === READY_TO_CLOSE_STEP) reason = "Ready to close";
       return { ...o, reason };
     });
 
   const ordersNoDueDate = excludedOrders.filter((o) => !o.due_date);
   const ordersBlocked = excludedOrders.filter(
-    (o) => o.due_date && (o.hold_reason || isRfqBlockedState(o.rfq_state)),
+    (o) => o.due_date && isBlocked(o),
   );
   const ordersEasa = excludedOrders.filter(
     (o) =>
       o.due_date &&
       o.current_process_step === READY_TO_CLOSE_STEP &&
-      !o.hold_reason &&
-      !isRfqBlockedState(o.rfq_state),
+      !isBlocked(o),
   );
 
   type RestrictionWarning = {
@@ -525,7 +538,20 @@ function CapacityPageContent() {
 
   function restrictionWarningTitle(warning: RestrictionWarning): string {
     const dayLabel = `${warning.unavailableDates.length} day${warning.unavailableDates.length !== 1 ? "s" : ""}`;
-    return `${warning.label} unavailable on ${dayLabel}`;
+    return `No engineer available for ${formatBlockedStepList(warning.blockedSteps)} on ${dayLabel}`;
+  }
+
+  function restrictionWarningDescription(warning: RestrictionWarning): string {
+    return `${formatBlockedStepList(warning.blockedSteps)} cannot be scheduled on these dates because no qualified engineer is available.`;
+  }
+
+  function restrictionWarningImpact(warning: RestrictionWarning): string {
+    const requiredStepText =
+      warning.blockedSteps.length === 1
+        ? formatBlockedStepList(warning.blockedSteps)
+        : `one of these steps: ${formatBlockedStepList(warning.blockedSteps)}`;
+
+    return `${warning.affectedOrders.length} order${warning.affectedOrders.length !== 1 ? "s may" : " may"} be delayed because they still require ${requiredStepText}.`;
   }
 
   const warningGroupCount =
@@ -1040,7 +1066,7 @@ function CapacityPageContent() {
                                 lineHeight: 1.5,
                               }}
                             >
-                              No available engineer can do {w.blockedSteps.join(", ")} on these dates.
+                              {restrictionWarningDescription(w)}
                             </div>
                           </div>
                           <ChevronIcon />
@@ -1054,11 +1080,7 @@ function CapacityPageContent() {
 
                         <div style={calloutStyle}>
                           <p style={{ margin: 0, fontSize: "var(--fs-body)", color: ui.text, lineHeight: 1.6 }}>
-                            <AnimatedNumber value={w.affectedOrders.length} /> order{w.affectedOrders.length !== 1 ? "s still" : " still"} need{" "}
-                            {w.restriction === "certification"
-                              ? "a qualified engineer available for certification"
-                              : "these steps done on a day when a qualified engineer is present"}
-                            .
+                            {restrictionWarningImpact(w)}
                           </p>
 
                           <div style={{ ...tableWrapStyle, marginTop: "10px" }}>

@@ -19,6 +19,7 @@ import {
   filterEngineersStartedOnDateKey,
   getEngineers,
   getEngineerAbsences,
+  getAbsentEngineerIdSetForDateKey,
   deletePastEngineerAbsences,
   isEngineerStartedOnDateKey,
 } from "@/lib/engineers";
@@ -585,6 +586,10 @@ function DashboardPageContent() {
   const todayStr = toLocalDateKey(new Date());
   const engineerMap = new Map(engineers.map((e) => [e.id, e]));
   const todayStartedEngineers = filterEngineersStartedOnDateKey(engineers, todayStr);
+  const todayAbsentEngineerIds = getAbsentEngineerIdSetForDateKey(absences, todayStr);
+  const todayPresentEngineers = todayStartedEngineers.filter(
+    (engineer) => !todayAbsentEngineerIds.has(engineer.id),
+  );
   const absenceDates = absences
     .filter((a) => a.absence_date >= todayStr)
     .filter((a) => {
@@ -1463,7 +1468,7 @@ function DashboardPageContent() {
                 color: COLORS.blue,
               }}
             >
-              <AnimatedNumber value={todayStartedEngineers.length} />
+              <AnimatedNumber value={todayPresentEngineers.length} />
             </div>
           </StatTile>
         </section>

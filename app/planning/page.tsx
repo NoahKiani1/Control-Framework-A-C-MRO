@@ -29,7 +29,11 @@ import {
   sortOrders,
 } from "@/lib/work-order-rules";
 import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
-import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
+import {
+  getAbsentEngineerIdSetForDateKey,
+  getEngineerAbsences,
+  getEngineers,
+} from "@/lib/engineers";
 import { getWorkOrders, updateWorkOrderAndFetch } from "@/lib/work-orders";
 import {
   ExtraAction,
@@ -475,7 +479,6 @@ type TimelineSegment = {
 /** Labels stay selective so the timeline reads as an operational control, not a caption list. */
 const SEGMENT_LABEL_MIN_SHARE = 0.03;
 const EDGE_SEGMENT_LABEL_MIN_SHARE = 0.025;
-const CURRENT_SEGMENT_LABEL_MIN_SHARE = 0.03;
 
 function getTimelineTrackTemplate(segments: TimelineSegment[]): string {
   return segments
@@ -1065,9 +1068,7 @@ function PlanningPageContent() {
 
       setShopStaff(engineers);
       setTodayAbsentEngineerIds(
-        absences
-          .filter((absence) => absence.absence_date === today)
-          .map((absence) => absence.engineer_id),
+        Array.from(getAbsentEngineerIdSetForDateKey(absences, today)),
       );
       setOrders(
         sortOrders(

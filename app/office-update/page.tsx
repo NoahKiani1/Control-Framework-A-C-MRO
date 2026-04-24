@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RequireRole } from "@/app/components/require-role";
-import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
+import {
+  getAbsentEngineerIdSetForDateKey,
+  getEngineerAbsences,
+  getEngineers,
+} from "@/lib/engineers";
 import { getWorkOrders, updateWorkOrderAndFetch } from "@/lib/work-orders";
 import { createExtraAction } from "@/lib/extra-actions";
 import {
@@ -257,9 +261,7 @@ function OfficeUpdatePageContent() {
       setShopStaff(staffData.filter((s) => s.role === "shop"));
       setOfficeStaff(staffData.filter((s) => s.role === "office"));
       setTodayAbsentEngineerIds(
-        absenceData
-          .filter((absence) => absence.absence_date === today)
-          .map((absence) => absence.engineer_id),
+        Array.from(getAbsentEngineerIdSetForDateKey(absenceData, today)),
       );
       setOrders(
         applySuggestedAssignmentsForCurrentStep(
@@ -445,6 +447,13 @@ function OfficeUpdatePageContent() {
     if (todayAbsentShopEngineerNames.has(form.assigned_person_team)) {
       setSaveStatus(
         `${form.assigned_person_team} is absent today. Choose another engineer or Shop (default).`,
+      );
+      return;
+    }
+
+    if (todayAbsentShopEngineerNames.has(form.action_owner)) {
+      setSaveStatus(
+        `${form.action_owner} is absent today. Choose another owner.`,
       );
       return;
     }
@@ -1154,10 +1163,17 @@ function OfficeUpdatePageContent() {
                                   </optgroup>
                                 )}
                                 {shopStaff.length > 0 && (
-                                  <optgroup label="Shop">
-                                    {shopStaff.map((s) => (
-                                      <option key={s.id} value={s.name}>
+                                    <optgroup label="Shop">
+                                      {shopStaff.map((s) => (
+                                      <option
+                                        key={s.id}
+                                        value={s.name}
+                                        disabled={todayAbsentEngineerIdSet.has(s.id)}
+                                      >
                                         {s.name}
+                                        {todayAbsentEngineerIdSet.has(s.id)
+                                          ? " (absent today)"
+                                          : ""}
                                       </option>
                                     ))}
                                   </optgroup>

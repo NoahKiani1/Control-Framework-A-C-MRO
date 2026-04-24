@@ -1,6 +1,6 @@
 import { PROCESS_STEPS, READY_TO_CLOSE_STEP, resolveStepsForOrder } from "@/lib/process-steps";
 import { filterEngineersStartedOnDateKey } from "@/lib/engineers";
-import { isRfqBlockedState } from "@/lib/work-order-rules";
+import { isBlocked } from "@/lib/work-order-rules";
 import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
 
 // === PROCESS STAPPEN MET GEWICHT (dummy, later aanpasbaar) ===
@@ -282,8 +282,7 @@ export function calculateWeekCapacity(
   // Calculate required hours per day per order and distribute across weeks
   const filteredOrders = orders.filter((o) => {
     if (!o.due_date) return false;
-    if (o.hold_reason) return false;
-    if (isRfqBlockedState(o.rfq_state)) return false;
+    if (isBlocked(o)) return false;
     if (o.current_process_step === READY_TO_CLOSE_STEP) return false;
     return true;
   });

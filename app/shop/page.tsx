@@ -17,7 +17,6 @@ import {
   normalizeAssignedPersonTeam,
   normalizeRfqState,
   priorityTag,
-  sortOrders,
 } from "@/lib/work-order-rules";
 import {
   getEngineerAbsences,
@@ -216,12 +215,63 @@ type AdditionalTaskItem =
   | { kind: "wo-action"; due: string | null; order: WorkOrder }
   | { kind: "extra-action"; due: string | null; action: ExtraAction };
 
+function shopPriorityRank(priority: string | null | undefined): number {
+  const tag = priorityTag(priority);
+  if (tag === "AOG") return 0;
+  if (tag === "PRIO") return 1;
+  return 2;
+}
+
+function compareShopDueDatePriority(
+  dueA: string | null,
+  priorityA: string | null | undefined,
+  dueB: string | null,
+  priorityB: string | null | undefined,
+): number {
+  if (!dueA && !dueB) return shopPriorityRank(priorityA) - shopPriorityRank(priorityB);
+  if (!dueA) return 1;
+  if (!dueB) return -1;
+
+  const dueCompare = dueA.localeCompare(dueB);
+  if (dueCompare !== 0) return dueCompare;
+
+  return shopPriorityRank(priorityA) - shopPriorityRank(priorityB);
+}
+
+function sortShopOrders(items: WorkOrder[]): WorkOrder[] {
+  return [...items].sort((a, b) => {
+    const compare = compareShopDueDatePriority(
+      a.due_date,
+      a.priority,
+      b.due_date,
+      b.priority,
+    );
+
+    if (compare !== 0) return compare;
+    return a.work_order_id.localeCompare(b.work_order_id);
+  });
+}
+
 function sortAdditionalTaskItems(items: AdditionalTaskItem[]): AdditionalTaskItem[] {
   return [...items].sort((a, b) => {
-    if (!a.due && !b.due) return 0;
-    if (!a.due) return 1;
-    if (!b.due) return -1;
-    return a.due.localeCompare(b.due);
+    const compare = compareShopDueDatePriority(
+      a.due,
+      a.kind === "wo-action" ? a.order.priority : null,
+      b.due,
+      b.kind === "wo-action" ? b.order.priority : null,
+    );
+
+    if (compare !== 0) return compare;
+
+    if (a.kind === "wo-action" && b.kind === "wo-action") {
+      return a.order.work_order_id.localeCompare(b.order.work_order_id);
+    }
+
+    if (a.kind === "extra-action" && b.kind === "extra-action") {
+      return a.action.id - b.action.id;
+    }
+
+    return a.kind === "wo-action" ? -1 : 1;
   });
 }
 
@@ -298,7 +348,9 @@ function ShopPageContent() {
       );
 
       setOrders(
-        sortOrders(sanitizeActiveShopAssignments(suggestedOrders, engineerData)),
+        sortShopOrders(
+          sanitizeActiveShopAssignments(suggestedOrders, engineerData),
+        ),
       );
       setEngineers(engineerData);
       setLoading(false);

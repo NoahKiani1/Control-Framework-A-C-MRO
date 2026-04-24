@@ -11,9 +11,23 @@ import {
   applySuggestedAssignmentsForCurrentStep,
   autoAssignForStep,
 } from "@/lib/auto-assign";
-import { getEngineerAbsences, getEngineers } from "@/lib/engineers";
-import { formatDate, normalizeAssignedPersonTeam } from "@/lib/work-order-rules";
-import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
+import {
+  getAbsentEngineerIdSetForDateKey,
+  getEngineerAbsences,
+  getEngineers,
+} from "@/lib/engineers";
+import {
+  formatDate,
+  getCorrectiveActionCompletionPayload,
+  getCorrectiveActionContext,
+  hasActiveCorrectiveAction,
+  isBlocked,
+  localDateKey as workOrderLocalDateKey,
+  normalizeAssignedPersonTeam,
+  sortOrders,
+  applyTodayQualificationBlocks,
+} from "@/lib/work-order-rules";
+import { getWorkOrders, updateWorkOrder, updateWorkOrderAndFetch } from "@/lib/work-orders";
 import {
   ExtraAction,
   deleteExtraAction,
@@ -39,9 +53,22 @@ type WorkOrder = {
   included_process_steps: string[] | null;
 };
 
+type CorrectiveActionTaskItem = {
+  kind: "corrective-action";
+  order: WorkOrder;
+};
+
+type ExtraActionTaskItem = {
+  kind: "extra-action";
+  action: ExtraAction;
+};
+
+type TaskItem = CorrectiveActionTaskItem | ExtraActionTaskItem;
+
 type StaffMember = {
   id: number;
   name: string;
+  role: string | null;
   restrictions: string[] | null;
   employment_start_date?: string | null;
 };
@@ -54,14 +81,6 @@ type Absence = {
 type ShopUpdateClientProps = {
   variant: "desktop" | "tablet";
 };
-
-function localDateKey(date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
 
 const COLORS = {
   pageBg: "#f2efe9",
@@ -91,11 +110,13 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const majorSectionGap = isTablet ? "52px" : "44px";
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
+  const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [completedStep, setCompletedStep] = useState("");
   const [stepTouched, setStepTouched] = useState(false);
   const [holdReason, setHoldReason] = useState("");
   const [requiredNextAction, setRequiredNextAction] = useState("");
+  const [actionOwner, setActionOwner] = useState("");
   const [isBlockedUpdate, setIsBlockedUpdate] = useState(false);
   const [todayAbsentEngineerIds, setTodayAbsentEngineerIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,10 +125,13 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const [extraActionToClose, setExtraActionToClose] = useState<ExtraAction | null>(null);
   const [extraActionCloseStatus, setExtraActionCloseStatus] = useState("");
   const [isClosingExtraAction, setIsClosingExtraAction] = useState(false);
+  const [correctiveActionToClose, setCorrectiveActionToClose] = useState<WorkOrder | null>(null);
+  const [correctiveActionCloseStatus, setCorrectiveActionCloseStatus] = useState("");
+  const [isClosingCorrectiveAction, setIsClosingCorrectiveAction] = useState(false);
 
   useEffect(() => {
     async function load() {
-      const today = localDateKey();
+      const today = workOrderLocalDateKey();
       const [data, staffData, absenceData, extras] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select:
@@ -117,9 +141,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
           orderBy: { column: "work_order_id", ascending: false },
         }),
         getEngineers<StaffMember>({
-          select: "id, name, restrictions",
+          select: "id, name, role, restrictions",
           isActive: true,
-          role: "shop",
           startedOn: today,
           orderBy: { column: "name" },
         }),
@@ -131,28 +154,39 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       ]);
 
       setExtraActions(sortExtraActionsByDueDate(extras));
+      const filteredOrders = data.filter(
+        (order) => order.current_process_step !== READY_TO_CLOSE_STEP,
+      );
+      const withQualificationBlocks = applyTodayQualificationBlocks(
+        filteredOrders,
+        staffData,
+        absenceData,
+        today,
+      );
       setOrders(
-        applySuggestedAssignmentsForCurrentStep(
-          data.filter((order) => order.current_process_step !== READY_TO_CLOSE_STEP),
-          staffData,
-          new Set(
-            staffData
-              .filter((engineer) =>
-                absenceData.some(
-                  (absence) =>
-                    absence.absence_date === today &&
-                    absence.engineer_id === engineer.id,
-                ),
-              )
-              .map((engineer) => engineer.name),
+        sortOrders(
+          applySuggestedAssignmentsForCurrentStep(
+            withQualificationBlocks,
+            staffData.filter((staffMember) => staffMember.role === "shop"),
+            new Set(
+              staffData
+                .filter((engineer) =>
+                  engineer.role === "shop" &&
+                  absenceData.some(
+                    (absence) =>
+                      absence.absence_date === today &&
+                      absence.engineer_id === engineer.id,
+                  ),
+                )
+                .map((engineer) => engineer.name),
+            ),
           ),
         ),
       );
-      setShopStaff(staffData);
+      setShopStaff(staffData.filter((staffMember) => staffMember.role === "shop"));
+      setOfficeStaff(staffData.filter((staffMember) => staffMember.role === "office"));
       setTodayAbsentEngineerIds(
-        absenceData
-          .filter((absence) => absence.absence_date === today)
-          .map((absence) => absence.engineer_id),
+        Array.from(getAbsentEngineerIdSetForDateKey(absenceData, today)),
       );
       setLoading(false);
     }
@@ -163,6 +197,14 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const selectedOrder = useMemo(
     () => orders.find((o) => o.work_order_id === selectedId),
     [orders, selectedId],
+  );
+
+  const openOrders = useMemo(
+    () =>
+      orders.filter(
+        (order) => !isBlocked(order) && !hasActiveCorrectiveAction(order),
+      ),
+    [orders],
   );
 
   const todayAbsentEngineerIdSet = useMemo(
@@ -184,6 +226,31 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     selectedOrder?.work_order_type || null,
     selectedOrder?.included_process_steps ?? null,
   );
+
+  const engineerNames = useMemo(
+    () => new Set(shopStaff.map((staffMember) => staffMember.name)),
+    [shopStaff],
+  );
+
+  const taskItems = useMemo(() => {
+    const correctiveActions = orders
+      .filter((order) => {
+        if (!hasActiveCorrectiveAction(order)) return false;
+        const owner = getCorrectiveActionContext(order).owner;
+        return owner ? engineerNames.has(owner) : false;
+      })
+      .map<TaskItem>((order) => ({
+        kind: "corrective-action",
+        order,
+      }));
+
+    const additionalTasks = sortExtraActionsByDueDate(extraActions).map<TaskItem>((action) => ({
+      kind: "extra-action",
+      action,
+    }));
+
+    return [...additionalTasks, ...correctiveActions];
+  }, [engineerNames, extraActions, orders]);
 
   const previewNextStep =
     selectedOrder && completedStep
@@ -215,6 +282,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setStepTouched(false);
     setHoldReason(order.hold_reason || "");
     setRequiredNextAction(order.required_next_action || "");
+    setActionOwner(order.hold_reason?.trim() ? order.action_owner || "" : "");
     setIsBlockedUpdate(hasBlocker);
     setSaveStatus("");
   }
@@ -230,6 +298,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     if (!blocked) {
       setHoldReason("");
       setRequiredNextAction("");
+      setActionOwner("");
     }
   }
 
@@ -243,6 +312,18 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     if (isClosingExtraAction) return;
     setExtraActionToClose(null);
     setExtraActionCloseStatus("");
+  }
+
+  function openCloseCorrectiveActionConfirmation(order: WorkOrder) {
+    setCorrectiveActionToClose(order);
+    setCorrectiveActionCloseStatus("");
+    setIsClosingCorrectiveAction(false);
+  }
+
+  function closeCloseCorrectiveActionConfirmation() {
+    if (isClosingCorrectiveAction) return;
+    setCorrectiveActionToClose(null);
+    setCorrectiveActionCloseStatus("");
   }
 
   async function confirmCloseExtraAction() {
@@ -266,6 +347,36 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setIsClosingExtraAction(false);
   }
 
+  async function confirmCloseCorrectiveAction() {
+    if (!correctiveActionToClose) return;
+
+    setIsClosingCorrectiveAction(true);
+    setCorrectiveActionCloseStatus("Saving...");
+
+    const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
+      correctiveActionToClose.work_order_id,
+      getCorrectiveActionCompletionPayload(),
+      "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, included_process_steps",
+    );
+
+    if (error || !savedOrder) {
+      setCorrectiveActionCloseStatus(
+        `Error: ${error?.message || "Unable to complete the corrective action."}`,
+      );
+      setIsClosingCorrectiveAction(false);
+      return;
+    }
+
+    setOrders((prev) =>
+      prev.map((order) =>
+        order.work_order_id === savedOrder.work_order_id ? savedOrder : order,
+      ),
+    );
+    setCorrectiveActionToClose(null);
+    setCorrectiveActionCloseStatus("");
+    setIsClosingCorrectiveAction(false);
+  }
+
   async function saveUpdate() {
     if (!selectedId || !selectedOrder) return;
 
@@ -279,6 +390,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
+    if (todayAbsentShopEngineerNames.has(actionOwner)) {
+      setSaveStatus(`${actionOwner} is absent today. Choose another owner.`);
+      return;
+    }
+
     const nextProcessStep =
       getNextProcessStepAfterCompletedForOrder(
         selectedOrder.work_order_type,
@@ -288,6 +404,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
     const normalizedHoldReason = holdReason.trim();
     const normalizedRequiredNextAction = requiredNextAction.trim();
+    const normalizedActionOwner = actionOwner.trim();
     const assignedPersonTeam = autoAssignForStep(
       selectedOrder.assigned_person_team,
       nextProcessStep,
@@ -305,7 +422,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
         isBlockedUpdate && normalizedRequiredNextAction
           ? normalizedRequiredNextAction
           : null,
-      action_owner: isBlockedUpdate ? selectedOrder.action_owner || null : null,
+      action_owner: isBlockedUpdate && normalizedActionOwner ? normalizedActionOwner : null,
       action_status: isBlockedUpdate ? "Open" : null,
       action_closed: false,
       last_manual_update: new Date().toISOString(),
@@ -336,6 +453,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setStepTouched(false);
     setHoldReason("");
     setRequiredNextAction("");
+    setActionOwner("");
     setIsBlockedUpdate(false);
     setSaveStatus(`${savedId} updated. Select the next work order.`);
   }
@@ -448,7 +566,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     );
   }
 
-  const workOrderOptions = orders.map((o) => ({
+  const workOrderOptions = openOrders.map((o) => ({
     value: o.work_order_id,
     label: `${o.work_order_id} - PN: ${o.part_number || "-"} - ${o.customer || "-"} - ${o.work_order_type || "-"}${aogPrioritySuffix(o)}`,
   }));
@@ -470,7 +588,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
             Search for a work order to update
           </h2>
           <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
-            {orders.length} active work orders available.
+            {openOrders.length} open work orders available.
           </p>
 
           <div
@@ -519,7 +637,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                 style={inputStyle}
               >
                 <option value="">Select from list...</option>
-                {orders.map((o) => (
+                {openOrders.map((o) => (
                   <option key={o.work_order_id} value={o.work_order_id}>
                     {o.work_order_id} - {o.part_number || "-"} - {o.customer || "-"}
                   </option>
@@ -650,6 +768,41 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                         placeholder="Action required..."
                         style={inputStyle}
                       />
+                      <div>
+                        <div style={eyebrowStyle}>Action owner</div>
+                        <select
+                          value={actionOwner}
+                          onChange={(e) => setActionOwner(e.target.value)}
+                          style={inputStyle}
+                        >
+                          <option value="">Select owner...</option>
+                          {officeStaff.length > 0 && (
+                            <optgroup label="Office">
+                              {officeStaff.map((staffMember) => (
+                                <option key={staffMember.id} value={staffMember.name}>
+                                  {staffMember.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {shopStaff.length > 0 && (
+                            <optgroup label="Shop">
+                              {shopStaff.map((staffMember) => (
+                                <option
+                                  key={staffMember.id}
+                                  value={staffMember.name}
+                                  disabled={todayAbsentEngineerIdSet.has(staffMember.id)}
+                                >
+                                  {staffMember.name}
+                                  {todayAbsentEngineerIdSet.has(staffMember.id)
+                                    ? " (absent today)"
+                                    : ""}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                      </div>
                       <div style={{ fontSize: isTablet ? "15px" : "var(--fs-sm)", color: COLORS.textSoft, paddingTop: "2px" }}>
                         Status will be saved as <strong>Open</strong>.
                       </div>
@@ -680,16 +833,30 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
             Complete an additional task
           </h2>
           <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
-            {extraActions.length === 0
+            {taskItems.length === 0
               ? "No additional tasks outstanding."
-              : `${extraActions.length} additional task${extraActions.length !== 1 ? "s" : ""} outstanding.`}
+              : `${taskItems.length} additional task${taskItems.length !== 1 ? "s" : ""} outstanding.`}
           </p>
 
-          {extraActions.length > 0 && (
+          {taskItems.length > 0 && (
             <div style={{ display: "grid", gap: isTablet ? "14px" : "10px" }}>
-              {extraActions.map((action) => (
+              {taskItems.map((item) => {
+                const isCorrectiveAction = item.kind === "corrective-action";
+                const description = isCorrectiveAction
+                  ? getCorrectiveActionContext(item.order).action || "-"
+                  : item.action.description;
+                const responsible = isCorrectiveAction
+                  ? normalizeAssignedPersonTeam(getCorrectiveActionContext(item.order).owner)
+                  : normalizeAssignedPersonTeam(item.action.responsible_person_team);
+                const dueDateLabel = isCorrectiveAction ? "-" : formatDate(item.action.due_date);
+
+                return (
                 <div
-                  key={action.id}
+                  key={
+                    isCorrectiveAction
+                      ? `corrective-${item.order.work_order_id}`
+                      : `extra-${item.action.id}`
+                  }
                   style={{
                     display: "grid",
                     gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 0.8fr) auto",
@@ -704,30 +871,35 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                   <div style={{ minWidth: 0 }}>
                     <div style={eyebrowStyle}>Description</div>
                     <div style={{ fontSize: isTablet ? "18px" : "var(--fs-md)", fontWeight: 600, color: COLORS.text }}>
-                      {action.description}
+                      {description}
                     </div>
                   </div>
                   <div style={{ minWidth: 0 }}>
                     <div style={eyebrowStyle}>Responsible</div>
                     <div style={{ fontSize: isTablet ? "16px" : "var(--fs-body)", color: COLORS.text }}>
-                      {normalizeAssignedPersonTeam(action.responsible_person_team)}
+                      {responsible}
                     </div>
                   </div>
                   <div style={{ minWidth: 0 }}>
                     <div style={eyebrowStyle}>Due date</div>
                     <div style={{ fontSize: isTablet ? "16px" : "var(--fs-body)", color: COLORS.text }}>
-                      {formatDate(action.due_date)}
+                      {dueDateLabel}
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => openCloseExtraActionConfirmation(action)}
+                    onClick={() =>
+                      isCorrectiveAction
+                        ? openCloseCorrectiveActionConfirmation(item.order)
+                        : openCloseExtraActionConfirmation(item.action)
+                    }
                     style={{ ...primaryBtn, width: isTablet ? "100%" : undefined }}
                   >
                     Complete
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -851,6 +1023,120 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                 disabled={isClosingExtraAction}
               >
                 Complete task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {correctiveActionToClose && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(31, 41, 55, 0.28)",
+            display: "grid",
+            placeItems: "center",
+            padding: isTablet ? "22px" : "24px",
+            zIndex: 60,
+          }}
+          onMouseDown={closeCloseCorrectiveActionConfirmation}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: isTablet ? "620px" : "480px",
+              backgroundColor: "#fcfaf6",
+              border: `1px solid ${COLORS.borderStrong}`,
+              borderRadius: isTablet ? "24px" : "16px",
+              boxShadow: "0 20px 50px rgba(31, 41, 55, 0.18)",
+              padding: isTablet ? "22px" : "16px",
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div style={{ marginBottom: "12px" }}>
+              <div style={eyebrowStyle}>Complete corrective action</div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: isTablet ? "26px" : "var(--fs-title)",
+                  fontWeight: 700,
+                  letterSpacing: "-0.02em",
+                  color: COLORS.text,
+                  lineHeight: 1.15,
+                }}
+              >
+                {getCorrectiveActionContext(correctiveActionToClose).action || "-"}
+              </h2>
+            </div>
+
+            <div style={{ ...innerCard, display: "grid", gap: isTablet ? "14px" : "8px" }}>
+              <div>
+                <div style={eyebrowStyle}>Work order</div>
+                <div style={{ fontSize: isTablet ? "17px" : "var(--fs-body)", color: COLORS.text }}>
+                  {correctiveActionToClose.work_order_id}
+                </div>
+              </div>
+              <div>
+                <div style={eyebrowStyle}>Responsible</div>
+                <div style={{ fontSize: isTablet ? "17px" : "var(--fs-body)", color: COLORS.text }}>
+                  {normalizeAssignedPersonTeam(getCorrectiveActionContext(correctiveActionToClose).owner)}
+                </div>
+              </div>
+              <div>
+                <div style={eyebrowStyle}>Due date</div>
+                <div style={{ fontSize: isTablet ? "17px" : "var(--fs-body)", color: COLORS.text }}>
+                  -
+                </div>
+              </div>
+
+              <StatusNote color="green" large={isTablet}>
+                Completing this action removes the block and puts the work order back on open.
+              </StatusNote>
+
+              {correctiveActionCloseStatus && (
+                <StatusNote
+                  color={correctiveActionCloseStatus.startsWith("Error:") ? "red" : "neutral"}
+                  large={isTablet}
+                >
+                  {correctiveActionCloseStatus}
+                </StatusNote>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: isTablet ? "14px" : "8px",
+                marginTop: isTablet ? "18px" : "12px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={closeCloseCorrectiveActionConfirmation}
+                style={{
+                  padding: isTablet ? "16px 20px" : "9px 14px",
+                  borderRadius: isTablet ? "15px" : "8px",
+                  border: `1px solid ${COLORS.borderStrong}`,
+                  backgroundColor: COLORS.panelBg,
+                  color: COLORS.text,
+                  fontSize: isTablet ? "17px" : "var(--fs-body)",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  minHeight: isTablet ? "58px" : undefined,
+                }}
+                disabled={isClosingCorrectiveAction}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmCloseCorrectiveAction()}
+                style={primaryBtn}
+                disabled={isClosingCorrectiveAction}
+              >
+                Complete action
               </button>
             </div>
           </div>

@@ -79,7 +79,7 @@ export function isRfqBlockedState(state: string | null | undefined): boolean {
 }
 
 export function isBlocked(order: BlockableOrder): boolean {
-  if (order.hold_reason) return true;
+  if (order.hold_reason?.trim()) return true;
   if (isRfqBlockedState(order.rfq_state)) return true;
   return false;
 }
