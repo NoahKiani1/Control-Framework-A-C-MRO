@@ -225,6 +225,16 @@ function sortAdditionalTaskItems(items: AdditionalTaskItem[]): AdditionalTaskIte
   });
 }
 
+function isShopOwnedTask(owner: string | null, engineers: Engineer[]): boolean {
+  const normalizedOwner = normalizeAssignedPersonTeam(owner);
+
+  if (normalizedOwner === DEFAULT_ASSIGNED_PERSON_TEAM) {
+    return true;
+  }
+
+  return engineers.some((engineer) => engineer.name === normalizedOwner);
+}
+
 function ShopPageContent() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
@@ -459,14 +469,21 @@ function ShopPageContent() {
 
   const nonBlockedOrders = orders.filter((o) => !isBlocked(o));
   const blockedOrders = orders.filter((o) => isBlocked(o));
-  const actionOrders = orders.filter((o) => hasActiveCorrectiveAction(o));
+  const actionOrders = orders.filter(
+    (o) =>
+      hasActiveCorrectiveAction(o) &&
+      isShopOwnedTask(getCorrectiveActionContext(o).owner, engineers),
+  );
+  const engineerAdditionalActions = extraActions.filter((action) =>
+    isShopOwnedTask(action.responsible_person_team, engineers),
+  );
   const additionalTasks: AdditionalTaskItem[] = sortAdditionalTaskItems([
     ...actionOrders.map<AdditionalTaskItem>((order) => ({
       kind: "wo-action",
       due: order.due_date,
       order,
     })),
-    ...extraActions.map<AdditionalTaskItem>((action) => ({
+    ...engineerAdditionalActions.map<AdditionalTaskItem>((action) => ({
       kind: "extra-action",
       due: action.due_date,
       action,
