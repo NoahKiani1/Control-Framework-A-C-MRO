@@ -17,6 +17,7 @@ import {
   getEngineers,
 } from "@/lib/engineers";
 import {
+  DEFAULT_ASSIGNED_PERSON_TEAM,
   formatDate,
   getCorrectiveActionCompletionPayload,
   getCorrectiveActionContext,
@@ -27,6 +28,7 @@ import {
   sortOrders,
   applyTodayQualificationBlocks,
 } from "@/lib/work-order-rules";
+import { getRestrictionForStep } from "@/lib/restrictions";
 import { getWorkOrders, updateWorkOrder, updateWorkOrderAndFetch } from "@/lib/work-orders";
 import {
   ExtraAction,
@@ -405,12 +407,17 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const normalizedHoldReason = holdReason.trim();
     const normalizedRequiredNextAction = requiredNextAction.trim();
     const normalizedActionOwner = actionOwner.trim();
-    const assignedPersonTeam = autoAssignForStep(
-      selectedOrder.assigned_person_team,
-      nextProcessStep,
-      shopStaff,
-      todayAbsentShopEngineerNames,
-    );
+    const completedStepWasRestricted = !!getRestrictionForStep(completedStep);
+    const nextStepIsRestricted = !!getRestrictionForStep(nextProcessStep);
+    const assignedPersonTeam =
+      completedStepWasRestricted && !nextStepIsRestricted
+        ? DEFAULT_ASSIGNED_PERSON_TEAM
+        : autoAssignForStep(
+            selectedOrder.assigned_person_team,
+            nextProcessStep,
+            shopStaff,
+            todayAbsentShopEngineerNames,
+          );
 
     setSaveStatus("Saving...");
 
