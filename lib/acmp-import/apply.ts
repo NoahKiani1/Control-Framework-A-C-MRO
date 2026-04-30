@@ -17,6 +17,10 @@ import {
   updateWorkOrder,
   upsertWorkOrders,
 } from "@/lib/work-orders";
+import {
+  createClosedWorkOrderReportFromWorkOrder,
+  startWorkOrderDataTracking,
+} from "@/lib/work-order-data";
 import { EXISTING_ORDER_SELECT } from "./analyze";
 import {
   ExistingOrderSnapshot,
@@ -171,6 +175,27 @@ export async function applyNewOrderInserts({
     if (error) {
       return { inserted, error };
     }
+
+    const activeTrackedRows = batch.filter((row) => row.is_active);
+    for (const row of activeTrackedRows) {
+      const trackingResult = await startWorkOrderDataTracking(
+        {
+          work_order_id: row.work_order_id,
+          customer: row.customer,
+          part_number: row.part_number,
+          work_order_type: row.work_order_type,
+          current_process_step: row.current_process_step,
+          included_process_steps: row.included_process_steps,
+        },
+        importTimestamp,
+      );
+      if (trackingResult.error) {
+        console.error(
+          `Failed to start Work Order Data tracking for ${row.work_order_id}: ${trackingResult.error.message}`,
+        );
+      }
+    }
+
     inserted += batch.length;
   }
 
@@ -219,7 +244,44 @@ export async function activateRfqApprovedWorkOrder({
     last_system_update: activationTimestamp,
   });
 
+  if (!error) {
+    const trackingResult = await startWorkOrderDataTracking(
+      {
+        work_order_id: current.work_order_id,
+        customer: current.customer,
+        part_number: current.part_number,
+        work_order_type: current.work_order_type,
+        current_process_step: nextStep,
+        included_process_steps: current.included_process_steps,
+      },
+      activationTimestamp,
+    );
+    if (trackingResult.error) {
+      console.error(
+        `Failed to start Work Order Data tracking for ${workOrderId}: ${trackingResult.error.message}`,
+      );
+    }
+  }
+
   return { error: error ?? null };
+}
+
+export async function finalizeClosedWorkOrderReports({
+  closedWorkOrders,
+}: {
+  closedWorkOrders: { work_order_id: string; close_date: string | null }[];
+}): Promise<void> {
+  for (const closed of closedWorkOrders) {
+    const result = await createClosedWorkOrderReportFromWorkOrder({
+      workOrderId: closed.work_order_id,
+      closeDate: closed.close_date,
+    });
+    if (result.error) {
+      console.error(
+        `Failed to finalize Work Order Data report for ${closed.work_order_id}: ${result.error.message}`,
+      );
+    }
+  }
 }
 
 export async function applyDeletions({

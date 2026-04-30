@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import { Navigation } from "./navigation";
-import { AcmpPendingGate } from "./components/acmp-pending-gate";
+import { GlobalGates } from "./components/global-gates";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -40,7 +40,7 @@ export default function RootLayout({
           <Navigation />
           <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
         </div>
-        <AcmpPendingGate />
+        <GlobalGates />
       </body>
     </html>
   );

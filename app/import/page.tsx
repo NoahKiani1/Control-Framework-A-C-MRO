@@ -10,6 +10,7 @@ import {
 import {
   applyDeletions,
   applyExistingOrderUpdates,
+  finalizeClosedWorkOrderReports,
   recordImportRun,
 } from "@/lib/acmp-import/apply";
 import {
@@ -153,6 +154,10 @@ function ImportPageContent() {
         return;
       }
     }
+
+    await finalizeClosedWorkOrderReports({
+      closedWorkOrders: analysis.closedWorkOrders,
+    });
 
     const { deleted, closedRemoved } = await applyDeletions({
       oldIds: analysis.oldIds,

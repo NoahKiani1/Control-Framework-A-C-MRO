@@ -38,6 +38,7 @@ import {
 } from "@/lib/extra-actions";
 import { SearchableSelect } from "@/app/components/searchable-select";
 import { PageHeader } from "@/app/components/page-header";
+import { recordTrackedShopStepCompletion } from "@/lib/work-order-data";
 
 type WorkOrder = {
   work_order_id: string;
@@ -46,6 +47,7 @@ type WorkOrder = {
   work_order_type: string | null;
   current_process_step: string | null;
   hold_reason: string | null;
+  rfq_state: string | null;
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;
@@ -53,7 +55,11 @@ type WorkOrder = {
   priority: string | null;
   assigned_person_team: string | null;
   included_process_steps: string[] | null;
+  data_tracking_enabled: boolean | null;
 };
+
+const SHOP_UPDATE_WORK_ORDER_SELECT =
+  "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, included_process_steps, data_tracking_enabled";
 
 type CorrectiveActionTaskItem = {
   kind: "corrective-action";
@@ -136,8 +142,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       const today = workOrderLocalDateKey();
       const [data, staffData, absenceData, extras] = await Promise.all([
         getWorkOrders<WorkOrder>({
-          select:
-            "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, included_process_steps",
+          select: SHOP_UPDATE_WORK_ORDER_SELECT,
           isOpen: true,
           isActive: true,
           orderBy: { column: "work_order_id", ascending: false },
@@ -358,7 +363,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
       correctiveActionToClose.work_order_id,
       getCorrectiveActionCompletionPayload(),
-      "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, included_process_steps",
+      SHOP_UPDATE_WORK_ORDER_SELECT,
     );
 
     if (error || !savedOrder) {
@@ -381,6 +386,12 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
   async function saveUpdate() {
     if (!selectedId || !selectedOrder) return;
+
+    if (isBlocked(selectedOrder) || hasActiveCorrectiveAction(selectedOrder)) {
+      setSaveStatus("This work order is blocked and cannot be updated by shop.");
+      setSelectedId("");
+      return;
+    }
 
     if (!completedStep) {
       setSaveStatus("Please choose the completed step.");
@@ -440,6 +451,19 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     if (error) {
       setSaveStatus(`Error: ${error.message}`);
       return;
+    }
+
+    if (selectedOrder.data_tracking_enabled) {
+      const trackingResult = await recordTrackedShopStepCompletion({
+        selectedOrder,
+        completedStep,
+        nextProcessStep,
+      });
+      if (trackingResult.error) {
+        console.error(
+          `Failed to record Work Order Data step for ${selectedOrder.work_order_id}: ${trackingResult.error.message}`,
+        );
+      }
     }
 
     setOrders((prev) =>

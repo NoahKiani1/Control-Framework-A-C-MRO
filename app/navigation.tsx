@@ -12,6 +12,7 @@ import {
   Upload,
   Users,
   Archive,
+  Database,
   Monitor,
   BriefcaseBusiness,
   LogOut,
@@ -45,6 +46,7 @@ const navGroups: NavGroup[] = [
       { href: "/import", label: "AcMP Import", icon: Upload },
       { href: "/staff", label: "Staff Management", icon: Users },
       { href: "/backlog", label: "Inactive Work Orders", icon: Archive },
+      { href: "/work-order-data", label: "Work Order Data", icon: Database },
     ],
   },
   {

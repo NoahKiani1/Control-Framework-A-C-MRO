@@ -27,6 +27,7 @@ import {
 } from "@/lib/work-order-rules";
 import { SearchableSelect } from "@/app/components/searchable-select";
 import { PageHeader } from "@/app/components/page-header";
+import { startWorkOrderDataTracking } from "@/lib/work-order-data";
 
 type WorkOrder = {
   work_order_id: string;
@@ -523,6 +524,22 @@ function OfficeUpdatePageContent() {
     if (error) {
       setSaveStatus(`Error: ${error.message}`);
       return;
+    }
+
+    if (isActivating && savedOrder) {
+      const trackingResult = await startWorkOrderDataTracking({
+        work_order_id: savedOrder.work_order_id,
+        customer: savedOrder.customer,
+        part_number: savedOrder.part_number,
+        work_order_type: savedOrder.work_order_type,
+        current_process_step: nextProcessStep,
+        included_process_steps: savedOrder.included_process_steps,
+      });
+      if (trackingResult.error) {
+        console.error(
+          `Failed to start Work Order Data tracking for ${savedOrder.work_order_id}: ${trackingResult.error.message}`,
+        );
+      }
     }
 
     setOrders((prev) =>

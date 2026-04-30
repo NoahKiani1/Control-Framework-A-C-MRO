@@ -39,6 +39,7 @@ export type ImportAnalysis = {
   rfqActivationCandidates: RfqActivationCandidate[];
   oldIds: string[];
   closedIds: string[];
+  closedWorkOrders: { work_order_id: string; close_date: string | null }[];
   tooOld: number;
   closedSkipped: number;
   skipped: number;

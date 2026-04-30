@@ -36,6 +36,7 @@ export async function analyzeImportRows(
   let closedCount = 0;
   const oldIds: string[] = [];
   const closedIds: string[] = [];
+  const closedWorkOrders: { work_order_id: string; close_date: string | null }[] = [];
   const parsed: ParsedRow[] = [];
   const rawByWorkOrderId: Record<string, Record<string, unknown>> = {};
 
@@ -55,6 +56,7 @@ export async function analyzeImportRows(
     const closeDate = parseExcelDate(row["Close Date"]);
     if (closeDate) {
       closedIds.push(workOrderId);
+      closedWorkOrders.push({ work_order_id: workOrderId, close_date: closeDate });
       closedCount++;
       continue;
     }
@@ -118,6 +120,7 @@ export async function analyzeImportRows(
     rfqActivationCandidates,
     oldIds,
     closedIds,
+    closedWorkOrders,
     tooOld: oldCount,
     closedSkipped: closedCount,
     skipped: skipCount,
