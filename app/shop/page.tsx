@@ -4,7 +4,7 @@ import Image from "next/image";
 import { Public_Sans } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
 import { RequireRole } from "@/app/components/require-role";
-import { READY_TO_CLOSE_STEP } from "@/lib/process-steps";
+import { READY_TO_CLOSE_STEP, resolveStepsForOrder } from "@/lib/process-steps";
 import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
@@ -43,6 +43,7 @@ type WorkOrder = {
   action_closed: boolean | null;
   last_manual_update: string | null;
   last_system_update: string | null;
+  included_process_steps: string[] | null;
 };
 
 type Engineer = {
@@ -89,11 +90,14 @@ const COLORS = {
 };
 
 const CARD_OPEN_BG = "#f1f6f2";
-const CARD_OPEN_BORDER = "#cedbd2";
 const CARD_BLOCKED_BG = "#f7ece9";
-const CARD_BLOCKED_BORDER = "#e4c9c3";
 const CARD_ACTION_BG = "#f5ecd7";
-const CARD_ACTION_BORDER = "#e5cf9a";
+const CARD_OUTLINE = "#7d8696";
+const CARD_OPEN_BORDER = CARD_OUTLINE;
+const CARD_BLOCKED_BORDER = CARD_OUTLINE;
+const CARD_ACTION_BORDER = CARD_OUTLINE;
+const CARD_SHADOW =
+  "0 1px 2px rgba(15, 20, 30, 0.06), 0 4px 10px rgba(15, 20, 30, 0.05)";
 
 const HEADER_BG = "#1b2230";
 const HEADER_BORDER = "#0f141d";
@@ -125,6 +129,172 @@ function sanitizeActiveShopAssignments<T extends { assigned_person_team: string 
   });
 }
 
+type TimelineSegment = {
+  name: string;
+  state: "completed" | "current" | "upcoming";
+};
+
+const TIMELINE_COMPLETED_BG = "#d5e8db";
+const TIMELINE_COMPLETED_BORDER = "#b1d2bb";
+const TIMELINE_COMPLETED_INK = "#166534";
+const TIMELINE_UPCOMING_INK = "#7d8696";
+/**
+ * 12px is the largest font size at which the longest step name
+ * ("Penetrant Testing", 17 chars) still fits in a 10-segment timeline at the
+ * shop wall's typical viewport width. Used uniformly so every label reads at
+ * the same scale, regardless of state.
+ */
+const TIMELINE_LABEL_FONT_SIZE = "12px";
+
+function buildTimelineSegments(
+  workOrderType: string | null,
+  currentStep: string | null,
+  includedSteps: string[] | null,
+): TimelineSegment[] {
+  if (!workOrderType) return [];
+  const resolvedSteps = resolveStepsForOrder(workOrderType, includedSteps);
+  if (resolvedSteps.length === 0) return [];
+
+  const currentIdx = currentStep ? resolvedSteps.indexOf(currentStep) : -1;
+
+  return resolvedSteps.map((step, idx) => ({
+    name: step,
+    state:
+      currentIdx === -1
+        ? "upcoming"
+        : idx < currentIdx
+          ? "completed"
+          : idx === currentIdx
+            ? "current"
+            : "upcoming",
+  }));
+}
+
+function WorkOrderTimeline({
+  workOrderType,
+  currentStep,
+  includedSteps,
+  blocked,
+}: {
+  workOrderType: string | null;
+  currentStep: string | null;
+  includedSteps: string[] | null;
+  blocked: boolean;
+}) {
+  const segments = buildTimelineSegments(workOrderType, currentStep, includedSteps);
+  if (segments.length === 0) return null;
+
+  const currentInk = blocked ? COLORS.red : "#166534";
+  const currentSoft = blocked ? COLORS.redSoft : "#dff1e5";
+  const currentPillBorder = blocked ? "#e1b3aa" : "#a8ccb4";
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${segments.length}, minmax(0, 1fr))`,
+        gap: "4px",
+        width: "100%",
+        alignItems: "start",
+      }}
+    >
+      {segments.map((segment) => {
+        let backgroundColor: string = COLORS.soft;
+        let borderStyle = `1px dashed ${COLORS.border}`;
+        if (segment.state === "completed") {
+          backgroundColor = TIMELINE_COMPLETED_BG;
+          borderStyle = `1px solid ${TIMELINE_COMPLETED_BORDER}`;
+        } else if (segment.state === "current") {
+          backgroundColor = currentInk;
+          borderStyle = `1px solid ${currentInk}`;
+        }
+
+        const labelColor =
+          segment.state === "current"
+            ? currentInk
+            : segment.state === "completed"
+              ? TIMELINE_COMPLETED_INK
+              : TIMELINE_UPCOMING_INK;
+
+        return (
+          <div
+            key={segment.name}
+            title={segment.name}
+            aria-label={segment.name}
+            style={{
+              minWidth: 0,
+              display: "grid",
+              justifyItems: "center",
+              alignContent: "start",
+              rowGap: "5px",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                minWidth: 0,
+                height: segment.state === "current" ? "20px" : "18px",
+                borderRadius: "5px",
+                backgroundColor,
+                border: borderStyle,
+                boxShadow:
+                  segment.state === "current"
+                    ? `0 0 0 2px ${currentSoft}, 0 3px 10px rgba(15, 20, 30, 0.12)`
+                    : undefined,
+              }}
+            />
+            {segment.state === "current" ? (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  maxWidth: "100%",
+                  minWidth: 0,
+                  padding: "2px 7px",
+                  borderRadius: "999px",
+                  border: `1px solid ${currentPillBorder}`,
+                  backgroundColor: currentSoft,
+                  color: currentInk,
+                  fontFamily: "inherit",
+                  fontSize: TIMELINE_LABEL_FONT_SIZE,
+                  fontWeight: 600,
+                  lineHeight: 1.2,
+                  boxSizing: "border-box",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {segment.name}
+              </span>
+            ) : (
+              <span
+                style={{
+                  minWidth: 0,
+                  maxWidth: "100%",
+                  padding: "0 2px",
+                  fontFamily: "inherit",
+                  fontSize: TIMELINE_LABEL_FONT_SIZE,
+                  lineHeight: 1.2,
+                  color: labelColor,
+                  fontWeight: 500,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  textAlign: "center",
+                }}
+              >
+                {segment.name}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function isOverdue(dateStr: string | null): boolean {
   if (!dateStr) return false;
 
@@ -135,6 +305,28 @@ function isOverdue(dateStr: string | null): boolean {
   due.setHours(0, 0, 0, 0);
 
   return due < today;
+}
+
+function getDaysRemainingLabel(
+  dateStr: string | null,
+): { text: string; overdue: boolean } | null {
+  if (!dateStr) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const due = new Date(dateStr);
+  due.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.round(
+    (due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  if (diffDays === 0) return { text: "Due today", overdue: false };
+  if (diffDays === 1) return { text: "1 day remaining", overdue: false };
+  if (diffDays > 1) return { text: `${diffDays} days remaining`, overdue: false };
+  if (diffDays === -1) return { text: "1 day overdue", overdue: true };
+  return { text: `${Math.abs(diffDays)} days overdue`, overdue: true };
 }
 
 function AssignedPerson({
@@ -290,6 +482,7 @@ function ShopPageContent() {
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [extraActions, setExtraActions] = useState<ExtraAction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState<Date>(() => new Date());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const openSectionRef = useRef<HTMLElement | null>(null);
@@ -303,7 +496,7 @@ function ShopPageContent() {
       const [data, engineerData, absenceData, extrasData] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select:
-            "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update",
+            "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps",
           isOpen: true,
           isActive: true,
         }),
@@ -360,6 +553,11 @@ function ShopPageContent() {
 
     const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const tick = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(tick);
   }, []);
 
   useEffect(() => {
@@ -546,18 +744,31 @@ function ShopPageContent() {
 
   const cardStyle: React.CSSProperties = {
     position: "relative",
+    display: "flex",
+    flexDirection: "column",
+    rowGap: "12px",
+    padding: "10px 14px 12px 18px",
+    borderRadius: "10px",
+    borderTop: `1px solid ${COLORS.borderStrong}`,
+    borderRight: `1px solid ${COLORS.borderStrong}`,
+    borderBottom: `1px solid ${COLORS.borderStrong}`,
+    borderLeft: "none",
+    backgroundColor: COLORS.panel,
+    boxShadow: CARD_SHADOW,
+    overflow: "hidden",
+  };
+
+  const cardTopRowStyle: React.CSSProperties = {
     display: "grid",
     gridTemplateColumns:
       "minmax(200px, 22fr) minmax(150px, 18fr) minmax(260px, 40fr) minmax(232px, 20fr)",
     columnGap: "14px",
     alignItems: "stretch",
     minHeight: "104px",
-    padding: "10px 14px 10px 18px",
-    borderRadius: "10px",
-    border: `1px solid ${COLORS.border}`,
-    backgroundColor: COLORS.panel,
-    boxShadow: "0 1px 2px rgba(15, 20, 30, 0.04)",
-    overflow: "hidden",
+  };
+
+  const cardTimelineRowStyle: React.CSSProperties = {
+    paddingTop: "4px",
   };
 
   const labelStyle: React.CSSProperties = {
@@ -684,7 +895,7 @@ function ShopPageContent() {
         <div
           style={{
             display: "grid",
-            gap: "1px",
+            gap: "5px",
             alignContent: "center",
             justifyItems: "end",
             minWidth: 0,
@@ -704,6 +915,25 @@ function ShopPageContent() {
           >
             {formatDate(dueDate)}
           </div>
+          {(() => {
+            const remaining = getDaysRemainingLabel(dueDate);
+            if (!remaining) return null;
+            return (
+              <div
+                style={{
+                  color: remaining.overdue ? COLORS.red : COLORS.muted,
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  letterSpacing: "0.02em",
+                  lineHeight: 1.2,
+                  whiteSpace: "nowrap",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {remaining.text}
+              </div>
+            );
+          })()}
         </div>
       </div>
     );
@@ -736,6 +966,7 @@ function ShopPageContent() {
           }}
         />
 
+        <div style={cardTopRowStyle}>
         {/* COL 1: work order identity - ID + priority badge + part number */}
         <div
           style={{
@@ -909,6 +1140,16 @@ function ShopPageContent() {
           overdue,
           hideAssigned: blocked,
         })}
+        </div>
+
+        <div style={cardTimelineRowStyle}>
+          <WorkOrderTimeline
+            workOrderType={order.work_order_type}
+            currentStep={order.current_process_step}
+            includedSteps={order.included_process_steps}
+            blocked={blocked}
+          />
+        </div>
       </article>
     );
   }
@@ -940,6 +1181,7 @@ function ShopPageContent() {
           }}
         />
 
+        <div style={cardTopRowStyle}>
         <div
           style={{
             display: "grid",
@@ -1057,6 +1299,16 @@ function ShopPageContent() {
           overdue,
           dueLabel: "Work Order Due on",
         })}
+        </div>
+
+        <div style={cardTimelineRowStyle}>
+          <WorkOrderTimeline
+            workOrderType={order.work_order_type}
+            currentStep={order.current_process_step}
+            includedSteps={order.included_process_steps}
+            blocked={isBlocked(order)}
+          />
+        </div>
       </article>
     );
   }
@@ -1087,6 +1339,7 @@ function ShopPageContent() {
           }}
         />
 
+        <div style={cardTopRowStyle}>
         <div
           style={{
             display: "grid",
@@ -1108,16 +1361,6 @@ function ShopPageContent() {
           >
             Standalone
           </div>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            alignContent: "center",
-            gap: "2px",
-            minWidth: 0,
-          }}
-        >
           <div
             style={{
               color: COLORS.muted,
@@ -1131,6 +1374,8 @@ function ShopPageContent() {
             No work order
           </div>
         </div>
+
+        <div aria-hidden />
 
         <div
           style={{
@@ -1165,6 +1410,7 @@ function ShopPageContent() {
           overdue,
           dueLabel: "Task Due on",
         })}
+        </div>
       </article>
     );
   }
@@ -1274,7 +1520,7 @@ function ShopPageContent() {
             style={{
               display: "grid",
               gridTemplateColumns: "1fr",
-              gap: "8px",
+              gap: "14px",
               marginTop: "10px",
             }}
           >
@@ -1366,7 +1612,7 @@ function ShopPageContent() {
             style={{
               display: "grid",
               gridTemplateColumns: "1fr",
-              gap: "8px",
+              gap: "14px",
               marginTop: "10px",
             }}
           >
@@ -1399,9 +1645,9 @@ function ShopPageContent() {
       <header
         style={{
           flex: "0 0 auto",
-          display: "flex",
+          display: "grid",
+          gridTemplateColumns: "1fr auto 1fr",
           alignItems: "center",
-          justifyContent: "space-between",
           gap: "24px",
           padding: "14px 26px",
           borderBottom: `1px solid ${HEADER_BORDER}`,
@@ -1410,7 +1656,7 @@ function ShopPageContent() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          
+
           <div style={{ display: "grid", gap: "4px" }}>
             <div
               style={{
@@ -1438,7 +1684,47 @@ function ShopPageContent() {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: "6px" }}>
+        <div
+          style={{
+            display: "grid",
+            gap: "4px",
+            justifyItems: "center",
+            padding: "4px 18px",
+            borderLeft: `1px solid ${HEADER_TILE_BORDER}`,
+            borderRight: `1px solid ${HEADER_TILE_BORDER}`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: "11px",
+              fontWeight: 500,
+              letterSpacing: "0.18em",
+              color: HEADER_MUTED,
+              textTransform: "uppercase",
+            }}
+          >
+            {now.toLocaleDateString("en-GB", { weekday: "long" })}
+          </div>
+          <div
+            style={{
+              fontSize: "22px",
+              fontWeight: 600,
+              letterSpacing: "-0.015em",
+              lineHeight: 1,
+              color: HEADER_INK,
+              fontVariantNumeric: "tabular-nums",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {now.toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "6px", justifySelf: "end" }}>
           {stats.map((stat) => (
             <div
               key={stat.label}

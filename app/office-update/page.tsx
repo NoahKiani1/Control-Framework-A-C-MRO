@@ -602,7 +602,10 @@ function OfficeUpdatePageContent() {
   const sectionCard: React.CSSProperties = {
     backgroundColor: COLORS.panelBg,
     borderStyle: "solid",
-    borderWidth: "1px",
+    borderTopWidth: "1px",
+    borderRightWidth: "1px",
+    borderBottomWidth: "1px",
+    borderLeftWidth: "1px",
     borderColor: COLORS.border,
     borderTopLeftRadius: "var(--card-radius)",
     borderTopRightRadius: "var(--card-radius)",
