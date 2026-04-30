@@ -38,7 +38,10 @@ import {
 } from "@/lib/extra-actions";
 import { SearchableSelect } from "@/app/components/searchable-select";
 import { PageHeader } from "@/app/components/page-header";
-import { recordTrackedShopStepCompletion } from "@/lib/work-order-data";
+import {
+  recordTrackedShopStepCompletion,
+  syncWorkOrderDataBlockState,
+} from "@/lib/work-order-data";
 
 type WorkOrder = {
   work_order_id: string;
@@ -169,6 +172,17 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
         staffData,
         absenceData,
         today,
+      );
+      void Promise.all(
+        withQualificationBlocks.map((order) =>
+          syncWorkOrderDataBlockState(order).then((result) => {
+            if (result.error) {
+              console.error(
+                `Failed to sync Work Order Data block state for ${order.work_order_id}: ${result.error.message}`,
+              );
+            }
+          }),
+        ),
       );
       setOrders(
         sortOrders(
@@ -374,6 +388,13 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
+    const blockResult = await syncWorkOrderDataBlockState(savedOrder);
+    if (blockResult.error) {
+      console.error(
+        `Failed to sync Work Order Data block state for ${savedOrder.work_order_id}: ${blockResult.error.message}`,
+      );
+    }
+
     setOrders((prev) =>
       prev.map((order) =>
         order.work_order_id === savedOrder.work_order_id ? savedOrder : order,
@@ -464,6 +485,18 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
           `Failed to record Work Order Data step for ${selectedOrder.work_order_id}: ${trackingResult.error.message}`,
         );
       }
+    }
+
+    const nextOrder = {
+      ...selectedOrder,
+      ...payload,
+      current_process_step: nextProcessStep,
+    };
+    const blockResult = await syncWorkOrderDataBlockState(nextOrder);
+    if (blockResult.error) {
+      console.error(
+        `Failed to sync Work Order Data block state for ${selectedOrder.work_order_id}: ${blockResult.error.message}`,
+      );
     }
 
     setOrders((prev) =>

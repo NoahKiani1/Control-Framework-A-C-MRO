@@ -24,6 +24,12 @@ export type ExistingOrderSnapshot = ParsedRow & {
   current_process_step: string | null;
   assigned_person_team: string | null;
   included_process_steps: string[] | null;
+  hold_reason: string | null;
+  required_next_action: string | null;
+  action_owner: string | null;
+  action_status: string | null;
+  action_closed: boolean | null;
+  data_tracking_enabled: boolean | null;
 };
 
 export type RfqActivationCandidate = ParsedRow & {

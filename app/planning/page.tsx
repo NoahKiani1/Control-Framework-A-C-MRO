@@ -42,6 +42,7 @@ import {
   sortExtraActionsByDueDate,
   updateExtraActionAndFetch,
 } from "@/lib/extra-actions";
+import { syncWorkOrderDataBlockState } from "@/lib/work-order-data";
 
 type WorkOrder = {
   work_order_id: string;
@@ -61,6 +62,7 @@ type WorkOrder = {
   last_manual_update: string | null;
   last_system_update: string | null;
   included_process_steps: string[] | null;
+  data_tracking_enabled: boolean | null;
 };
 
 type StaffMember = {
@@ -87,7 +89,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps";
+  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps, data_tracking_enabled";
 
 const ui = {
   pageBg: "#f2efe9",
@@ -455,17 +457,9 @@ function DueDateCell({ value }: { value: string | null }) {
 }
 
 function LastUpdateCell({ value }: { value: string | null }) {
-  return (
-    <>
-      {formatDate(value)}
-      {isStale(value) && (
-        <span className="stale-warning">
-          ⚠
-          <span className="stale-tooltip">Not updated in over 2 weeks</span>
-        </span>
-      )}
-    </>
-  );
+  const stale = isStale(value);
+
+  return <span style={stale ? { color: ui.red, fontWeight: 600 } : undefined}>{formatDate(value)}</span>;
 }
 
 type TimelineSegment = {
@@ -1065,6 +1059,17 @@ function PlanningPageContent() {
         absences,
         today,
       );
+      void Promise.all(
+        withQualificationBlocks.map((order) =>
+          syncWorkOrderDataBlockState(order).then((result) => {
+            if (result.error) {
+              console.error(
+                `Failed to sync Work Order Data block state for ${order.work_order_id}: ${result.error.message}`,
+              );
+            }
+          }),
+        ),
+      );
 
       setShopStaff(engineers);
       setTodayAbsentEngineerIds(
@@ -1331,6 +1336,13 @@ function PlanningPageContent() {
       setActionStatus(`Error: ${error?.message || "Unable to complete the corrective action."}`);
       setIsCompletingAction(false);
       return;
+    }
+
+    const blockResult = await syncWorkOrderDataBlockState(savedOrder);
+    if (blockResult.error) {
+      console.error(
+        `Failed to sync Work Order Data block state for ${savedOrder.work_order_id}: ${blockResult.error.message}`,
+      );
     }
 
     setOrders((prev) =>

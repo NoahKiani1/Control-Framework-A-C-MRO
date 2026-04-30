@@ -27,7 +27,10 @@ import {
 } from "@/lib/work-order-rules";
 import { SearchableSelect } from "@/app/components/searchable-select";
 import { PageHeader } from "@/app/components/page-header";
-import { startWorkOrderDataTracking } from "@/lib/work-order-data";
+import {
+  stopWorkOrderDataTracking,
+  syncWorkOrderDataBlockState,
+} from "@/lib/work-order-data";
 
 type WorkOrder = {
   work_order_id: string;
@@ -36,6 +39,7 @@ type WorkOrder = {
   priority: string | null;
   assigned_person_team: string | null;
   hold_reason: string | null;
+  rfq_state: string | null;
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;
@@ -45,6 +49,7 @@ type WorkOrder = {
   current_process_step: string | null;
   part_number: string | null;
   included_process_steps: string[] | null;
+  data_tracking_enabled: boolean | null;
 };
 
 type StepVariant = "standard" | "custom";
@@ -139,7 +144,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, required_next_action, action_owner, action_status, action_closed, is_active, work_order_type, current_process_step, part_number, included_process_steps";
+  "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, is_active, work_order_type, current_process_step, part_number, included_process_steps, data_tracking_enabled";
 
 function localDateKey(date = new Date()): string {
   const year = date.getFullYear();
@@ -470,6 +475,7 @@ function OfficeUpdatePageContent() {
     setSaveStatus("Saving...");
 
     const isActivating = !selectedOrder.is_active && form.is_active;
+    const isDeactivating = selectedOrder.is_active && !form.is_active;
     const preservedStep = selectedOrder.current_process_step?.trim() || "";
     const normalizedIncludedSteps = normalizeIncludedSteps(
       selectedOrder.work_order_type,
@@ -526,18 +532,18 @@ function OfficeUpdatePageContent() {
       return;
     }
 
-    if (isActivating && savedOrder) {
-      const trackingResult = await startWorkOrderDataTracking({
-        work_order_id: savedOrder.work_order_id,
-        customer: savedOrder.customer,
-        part_number: savedOrder.part_number,
-        work_order_type: savedOrder.work_order_type,
-        current_process_step: nextProcessStep,
-        included_process_steps: savedOrder.included_process_steps,
-      });
+    if (isDeactivating) {
+      const trackingResult = await stopWorkOrderDataTracking(selectedId);
       if (trackingResult.error) {
         console.error(
-          `Failed to start Work Order Data tracking for ${savedOrder.work_order_id}: ${trackingResult.error.message}`,
+          `Failed to stop Work Order Data tracking for ${selectedId}: ${trackingResult.error.message}`,
+        );
+      }
+    } else if (savedOrder) {
+      const blockResult = await syncWorkOrderDataBlockState(savedOrder);
+      if (blockResult.error) {
+        console.error(
+          `Failed to sync Work Order Data block state for ${savedOrder.work_order_id}: ${blockResult.error.message}`,
         );
       }
     }

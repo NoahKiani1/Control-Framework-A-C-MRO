@@ -20,6 +20,7 @@ import {
 import {
   createClosedWorkOrderReportFromWorkOrder,
   startWorkOrderDataTracking,
+  syncWorkOrderDataBlockState,
 } from "@/lib/work-order-data";
 import { EXISTING_ORDER_SELECT } from "./analyze";
 import {
@@ -112,6 +113,32 @@ export async function applyExistingOrderUpdates({
     if (error) {
       return { updated, error };
     }
+
+    for (const row of batch) {
+      const current = currentMap.get(row.work_order_id);
+      if (!current?.data_tracking_enabled) continue;
+
+      const blockResult = await syncWorkOrderDataBlockState(
+        {
+          ...current,
+          ...row,
+          data_tracking_enabled: current.data_tracking_enabled,
+          hold_reason: current.hold_reason,
+          required_next_action: current.required_next_action,
+          action_owner: current.action_owner,
+          action_status: current.action_status,
+          action_closed: current.action_closed,
+        },
+        row.last_system_update ?? importTimestamp,
+      );
+
+      if (blockResult.error) {
+        console.error(
+          `Failed to sync Work Order Data block state for ${row.work_order_id}: ${blockResult.error.message}`,
+        );
+      }
+    }
+
     updated += batch.length;
   }
 
@@ -193,6 +220,20 @@ export async function applyNewOrderInserts({
         console.error(
           `Failed to start Work Order Data tracking for ${row.work_order_id}: ${trackingResult.error.message}`,
         );
+        continue;
+      }
+
+      const blockResult = await syncWorkOrderDataBlockState(
+        {
+          ...row,
+          data_tracking_enabled: true,
+        },
+        row.last_system_update ?? importTimestamp,
+      );
+      if (blockResult.error) {
+        console.error(
+          `Failed to sync Work Order Data block state for ${row.work_order_id}: ${blockResult.error.message}`,
+        );
       }
     }
 
@@ -205,8 +246,8 @@ export async function applyNewOrderInserts({
 /**
  * Activate an existing inactive work order after Office approved the RFQ
  * review. Keeps the work order's current process step / assignee if they are
- * already set, otherwise falls back to the standard defaults that new
- * activations use.
+ * already set, otherwise falls back to the standard defaults. Work Order Data
+ * tracking intentionally stays off because the order has been inactive.
  */
 export async function activateRfqApprovedWorkOrder({
   workOrderId,
@@ -243,25 +284,6 @@ export async function activateRfqApprovedWorkOrder({
     assigned_person_team: nextAssigned,
     last_system_update: activationTimestamp,
   });
-
-  if (!error) {
-    const trackingResult = await startWorkOrderDataTracking(
-      {
-        work_order_id: current.work_order_id,
-        customer: current.customer,
-        part_number: current.part_number,
-        work_order_type: current.work_order_type,
-        current_process_step: nextStep,
-        included_process_steps: current.included_process_steps,
-      },
-      activationTimestamp,
-    );
-    if (trackingResult.error) {
-      console.error(
-        `Failed to start Work Order Data tracking for ${workOrderId}: ${trackingResult.error.message}`,
-      );
-    }
-  }
 
   return { error: error ?? null };
 }

@@ -29,6 +29,7 @@ import {
   READY_TO_CLOSE_STEP,
   resolveStepsForOrder,
 } from "@/lib/process-steps";
+import { syncWorkOrderDataBlockState } from "@/lib/work-order-data";
 
 type WorkOrder = {
   work_order_id: string;
@@ -50,6 +51,7 @@ type WorkOrder = {
   included_process_steps: string[] | null;
   is_open: boolean;
   is_active: boolean;
+  data_tracking_enabled: boolean | null;
 };
 
 type Engineer = {
@@ -832,6 +834,16 @@ function DashboardPageContent() {
     if (error) {
       window.alert(`Error: ${error.message}`);
       return;
+    }
+
+    const blockResult = await syncWorkOrderDataBlockState({
+      ...order,
+      ...payload,
+    });
+    if (blockResult.error) {
+      console.error(
+        `Failed to sync Work Order Data block state for ${order.work_order_id}: ${blockResult.error.message}`,
+      );
     }
 
     setOrders((prev) =>

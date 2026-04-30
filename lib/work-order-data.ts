@@ -4,6 +4,11 @@ import {
   getCompletableStepsForOrder,
   resolveStepsForOrder,
 } from "@/lib/process-steps";
+import {
+  blockReason,
+  hasActiveCorrectiveAction,
+  isBlocked,
+} from "@/lib/work-order-rules";
 
 export const OUT_OF_SEQUENCE_ISSUE =
   "Steps were not completed in process order. Step-level durations are unreliable.";
@@ -16,7 +21,7 @@ const DAY_SECONDS = 86400;
 
 export type WorkOrderEventPayload = {
   work_order_id: string;
-  event_type: "activated" | "step_completed";
+  event_type: "activated" | "step_completed" | "blocked_started" | "blocked_ended";
   occurred_at?: string;
   previous_step?: string | null;
   completed_step?: string | null;
@@ -27,6 +32,7 @@ export type WorkOrderEventPayload = {
   part_number?: string | null;
   customer?: string | null;
   included_process_steps?: string[] | null;
+  block_reason?: string | null;
 };
 
 export type TrackedWorkOrder = {
@@ -41,6 +47,15 @@ export type TrackedWorkOrder = {
   sequence_valid?: boolean | null;
   sequence_issue?: string | null;
   included_process_steps?: string[] | null;
+};
+
+export type WorkOrderDataBlockStateOrder = TrackedWorkOrder & {
+  hold_reason?: string | null;
+  rfq_state?: string | null;
+  required_next_action?: string | null;
+  action_owner?: string | null;
+  action_status?: string | null;
+  action_closed?: boolean | null;
 };
 
 export type StepDurationDays = Record<string, number | "NaN">;
@@ -76,6 +91,7 @@ export type WorkOrderEvent = {
   part_number: string | null;
   customer: string | null;
   included_process_steps: string[] | null;
+  block_reason: string | null;
 };
 
 export type WorkOrderDataFilters = {
@@ -100,20 +116,25 @@ type WorkOrderEventInsert = WorkOrderEventPayload & {
   is_in_sequence: boolean;
 };
 
-function isMissingIncludedProcessStepsColumnError(error: {
+function isMissingOptionalEventColumnError(error: {
   code?: string;
   message?: string;
 }): boolean {
   return (
     error.code === "PGRST204" &&
-    Boolean(error.message?.includes("included_process_steps"))
+    (Boolean(error.message?.includes("included_process_steps")) ||
+      Boolean(error.message?.includes("block_reason")))
   );
 }
 
-function withoutIncludedProcessSteps(
+function withoutOptionalEventColumns(
   payload: WorkOrderEventInsert,
-): Omit<WorkOrderEventInsert, "included_process_steps"> {
-  const { included_process_steps: _includedProcessSteps, ...fallbackPayload } = payload;
+): Omit<WorkOrderEventInsert, "included_process_steps" | "block_reason"> {
+  const {
+    included_process_steps: _includedProcessSteps,
+    block_reason: _blockReason,
+    ...fallbackPayload
+  } = payload;
   return fallbackPayload;
 }
 
@@ -142,6 +163,79 @@ function secondsBetween(start: string | null, end: string | null): number | null
 
 function daysBetween(start: string | null, end: string | null): number | null {
   const seconds = secondsBetween(start, end);
+  if (seconds === null) return null;
+  return roundDays(seconds / DAY_SECONDS);
+}
+
+type PauseInterval = {
+  start: string;
+  end: string | null;
+};
+
+function msFromTimestamp(value: string | null): number | null {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+function getPauseIntervals(events: WorkOrderEvent[]): PauseInterval[] {
+  const intervals: PauseInterval[] = [];
+  let openStart: string | null = null;
+
+  for (const event of events) {
+    if (event.event_type === "blocked_started" && !openStart) {
+      openStart = event.occurred_at;
+    } else if (event.event_type === "blocked_ended" && openStart) {
+      intervals.push({ start: openStart, end: event.occurred_at });
+      openStart = null;
+    }
+  }
+
+  if (openStart) {
+    intervals.push({ start: openStart, end: null });
+  }
+
+  return intervals;
+}
+
+function pausedSecondsBetween(
+  start: string | null,
+  end: string | null,
+  intervals: PauseInterval[],
+): number {
+  const startMs = msFromTimestamp(start);
+  const endMs = msFromTimestamp(end);
+  if (startMs === null || endMs === null || endMs <= startMs) return 0;
+
+  return intervals.reduce((total, interval) => {
+    const intervalStartMs = msFromTimestamp(interval.start);
+    const intervalEndMs = msFromTimestamp(interval.end) ?? endMs;
+    if (intervalStartMs === null || intervalEndMs <= startMs) return total;
+
+    const overlapStart = Math.max(startMs, intervalStartMs);
+    const overlapEnd = Math.min(endMs, intervalEndMs);
+    if (overlapEnd <= overlapStart) return total;
+
+    return total + Math.round((overlapEnd - overlapStart) / 1000);
+  }, 0);
+}
+
+function activeSecondsBetween(
+  start: string | null,
+  end: string | null,
+  intervals: PauseInterval[],
+): number | null {
+  const seconds = secondsBetween(start, end);
+  if (seconds === null) return null;
+  return Math.max(0, seconds - pausedSecondsBetween(start, end, intervals));
+}
+
+function activeDaysBetween(
+  start: string | null,
+  end: string | null,
+  intervals: PauseInterval[],
+): number | null {
+  const seconds = activeSecondsBetween(start, end, intervals);
   if (seconds === null) return null;
   return roundDays(seconds / DAY_SECONDS);
 }
@@ -246,8 +340,17 @@ function calculateClosedReportTiming(
 
   const activatedAt = getActivationTimestamp(order, events);
   const certificationSelectedAt = getCertificationTimestamp(order, events);
-  const totalSecondsToEasa = secondsBetween(activatedAt, certificationSelectedAt);
-  const totalDaysToCertification = daysBetween(activatedAt, certificationSelectedAt);
+  const pauseIntervals = getPauseIntervals(events);
+  const totalSecondsToEasa = activeSecondsBetween(
+    activatedAt,
+    certificationSelectedAt,
+    pauseIntervals,
+  );
+  const totalDaysToCertification = activeDaysBetween(
+    activatedAt,
+    certificationSelectedAt,
+    pauseIntervals,
+  );
   const hasOutOfSequenceEvent = events.some((event) => event.is_in_sequence === false);
   const completedSequence = completedEvents.map((event) => event.completed_step);
   const missingStep = expectedCompletableSteps.find(
@@ -290,7 +393,9 @@ function calculateClosedReportTiming(
 
   for (const step of expectedCompletableSteps) {
     const event = completedByStep.get(step);
-    const days = event ? daysBetween(previousTimestamp, event.occurred_at) : null;
+    const days = event
+      ? activeDaysBetween(previousTimestamp, event.occurred_at, pauseIntervals)
+      : null;
     stepDurationsDays[step] = days ?? "NaN";
     previousTimestamp = event?.occurred_at ?? previousTimestamp;
   }
@@ -317,10 +422,10 @@ export async function recordWorkOrderEvent(
   const { error } = await supabase.from("work_order_events").insert(insertPayload);
 
   if (error) {
-    if (isMissingIncludedProcessStepsColumnError(error)) {
+    if (isMissingOptionalEventColumnError(error)) {
       const { error: fallbackError } = await supabase
         .from("work_order_events")
-        .insert(withoutIncludedProcessSteps(insertPayload));
+        .insert(withoutOptionalEventColumns(insertPayload));
 
       if (!fallbackError) {
         return { data: null, error: null };
@@ -368,6 +473,186 @@ export async function startWorkOrderDataTracking(
     included_process_steps: order.included_process_steps ?? null,
     is_in_sequence: true,
   });
+}
+
+export async function stopWorkOrderDataTracking(
+  workOrderId: string,
+): Promise<HelperResult> {
+  const { error: updateError } = await supabase
+    .from("work_orders")
+    .update({
+      data_tracking_enabled: false,
+      data_tracking_started_at: null,
+      easa_selected_at: null,
+      sequence_valid: null,
+      sequence_issue: null,
+    })
+    .eq("work_order_id", workOrderId);
+
+  if (updateError) {
+    console.error("Failed to stop Work Order Data tracking", updateError);
+    return { data: null, error: { message: updateError.message } };
+  }
+
+  const { error: eventsError } = await supabase
+    .from("work_order_events")
+    .delete()
+    .eq("work_order_id", workOrderId);
+
+  if (eventsError) {
+    console.error("Failed to remove Work Order Data events", eventsError);
+    return { data: null, error: { message: eventsError.message } };
+  }
+
+  const { error: reportError } = await supabase
+    .from("closed_work_order_reports")
+    .delete()
+    .eq("work_order_id", workOrderId);
+
+  if (reportError) {
+    console.error("Failed to remove closed Work Order Data report", reportError);
+    return { data: null, error: { message: reportError.message } };
+  }
+
+  return { data: null, error: null };
+}
+
+export function workOrderDataBlockReason(
+  order: WorkOrderDataBlockStateOrder,
+): string | null {
+  if (isBlocked(order)) return blockReason(order);
+
+  if (hasActiveCorrectiveAction(order)) {
+    return order.action_owner?.trim()
+      ? `Corrective action: ${order.required_next_action?.trim()} (${order.action_owner.trim()})`
+      : `Corrective action: ${order.required_next_action?.trim()}`;
+  }
+
+  return null;
+}
+
+export function isWorkOrderDataBlocked(
+  order: WorkOrderDataBlockStateOrder,
+): boolean {
+  return Boolean(workOrderDataBlockReason(order));
+}
+
+export async function syncWorkOrderDataBlockState(
+  order: WorkOrderDataBlockStateOrder,
+  occurredAt = new Date().toISOString(),
+): Promise<HelperResult> {
+  if (!order.data_tracking_enabled) {
+    return { data: null, error: null };
+  }
+
+  const nextBlockReason = workOrderDataBlockReason(order);
+  const { data: latestEvents, error: latestError } = await supabase
+    .from("work_order_events")
+    .select("event_type, block_reason")
+    .eq("work_order_id", order.work_order_id)
+    .in("event_type", ["blocked_started", "blocked_ended"])
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1);
+
+  if (latestError) {
+    if (isMissingOptionalEventColumnError(latestError)) {
+      return syncWorkOrderDataBlockStateWithoutBlockReason(order, occurredAt);
+    }
+
+    console.error("Failed to inspect Work Order Data block state", latestError);
+    return { data: null, error: { message: latestError.message } };
+  }
+
+  const latestEvent = latestEvents?.[0] as
+    | { event_type: string; block_reason: string | null }
+    | undefined;
+  const currentlyPaused = latestEvent?.event_type === "blocked_started";
+
+  if (nextBlockReason && !currentlyPaused) {
+    return recordWorkOrderEvent({
+      work_order_id: order.work_order_id,
+      event_type: "blocked_started",
+      occurred_at: occurredAt,
+      next_step: order.current_process_step,
+      work_order_type: order.work_order_type,
+      part_number: order.part_number,
+      customer: order.customer,
+      included_process_steps: order.included_process_steps ?? null,
+      block_reason: nextBlockReason,
+      is_in_sequence: true,
+    });
+  }
+
+  if (!nextBlockReason && currentlyPaused) {
+    return recordWorkOrderEvent({
+      work_order_id: order.work_order_id,
+      event_type: "blocked_ended",
+      occurred_at: occurredAt,
+      next_step: order.current_process_step,
+      work_order_type: order.work_order_type,
+      part_number: order.part_number,
+      customer: order.customer,
+      included_process_steps: order.included_process_steps ?? null,
+      block_reason: latestEvent?.block_reason ?? null,
+      is_in_sequence: true,
+    });
+  }
+
+  return { data: null, error: null };
+}
+
+async function syncWorkOrderDataBlockStateWithoutBlockReason(
+  order: WorkOrderDataBlockStateOrder,
+  occurredAt: string,
+): Promise<HelperResult> {
+  const nextBlockReason = workOrderDataBlockReason(order);
+  const { data: latestEvents, error: latestError } = await supabase
+    .from("work_order_events")
+    .select("event_type")
+    .eq("work_order_id", order.work_order_id)
+    .in("event_type", ["blocked_started", "blocked_ended"])
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1);
+
+  if (latestError) {
+    console.error("Failed to inspect Work Order Data block state", latestError);
+    return { data: null, error: { message: latestError.message } };
+  }
+
+  const latestEvent = latestEvents?.[0] as { event_type: string } | undefined;
+  const currentlyPaused = latestEvent?.event_type === "blocked_started";
+
+  if (nextBlockReason && !currentlyPaused) {
+    return recordWorkOrderEvent({
+      work_order_id: order.work_order_id,
+      event_type: "blocked_started",
+      occurred_at: occurredAt,
+      next_step: order.current_process_step,
+      work_order_type: order.work_order_type,
+      part_number: order.part_number,
+      customer: order.customer,
+      included_process_steps: order.included_process_steps ?? null,
+      is_in_sequence: true,
+    });
+  }
+
+  if (!nextBlockReason && currentlyPaused) {
+    return recordWorkOrderEvent({
+      work_order_id: order.work_order_id,
+      event_type: "blocked_ended",
+      occurred_at: occurredAt,
+      next_step: order.current_process_step,
+      work_order_type: order.work_order_type,
+      part_number: order.part_number,
+      customer: order.customer,
+      included_process_steps: order.included_process_steps ?? null,
+      is_in_sequence: true,
+    });
+  }
+
+  return { data: null, error: null };
 }
 
 export async function recordTrackedShopStepCompletion({
