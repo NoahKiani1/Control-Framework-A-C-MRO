@@ -15,6 +15,7 @@ import {
   sortOrders,
 } from "@/lib/work-order-rules";
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
+import { archiveCompletedCorrectiveAction } from "@/lib/completed-tasks";
 import {
   filterEngineersStartedOnDateKey,
   getEngineers,
@@ -45,6 +46,8 @@ type WorkOrder = {
   action_owner: string | null;
   action_status: string | null;
   action_closed: boolean | null;
+  action_created_at: string | null;
+  action_closed_at: string | null;
   last_manual_update: string | null;
   last_system_update: string | null;
   work_order_type: string | null;
@@ -820,13 +823,23 @@ function DashboardPageContent() {
 
     if (!confirmed) return;
 
+    const closedAt = new Date().toISOString();
+    const archiveResult = await archiveCompletedCorrectiveAction(order, closedAt);
+
+    if (archiveResult.error) {
+      window.alert(`Error: ${archiveResult.error.message}`);
+      return;
+    }
+
     const payload = {
       action_status: "Done",
       action_closed: true,
+      action_closed_at: closedAt,
       hold_reason: null,
       required_next_action: null,
       action_owner: null,
-      last_manual_update: new Date().toISOString(),
+      action_created_at: null,
+      last_manual_update: closedAt,
     };
 
     const { error } = await updateWorkOrder(order.work_order_id, payload);

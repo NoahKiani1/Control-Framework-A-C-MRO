@@ -18,6 +18,8 @@ export const EASA_MISSING_ISSUE =
 
 const MISSING_STEP_ISSUE_PREFIX = "Missing included process step completion";
 const DAY_SECONDS = 86400;
+const ACMP_CLOSE_FALLBACK_HOUR = 16;
+const ACMP_CLOSE_FALLBACK_MINUTE = 30;
 
 export type WorkOrderEventPayload = {
   work_order_id: string;
@@ -153,6 +155,22 @@ function yearFromDate(value: string | null | undefined): number {
   return new Date().getFullYear();
 }
 
+function acmpCloseTimestamp(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Date(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    ACMP_CLOSE_FALLBACK_HOUR,
+    ACMP_CLOSE_FALLBACK_MINUTE,
+    0,
+    0,
+  ).toISOString();
+}
+
 function secondsBetween(start: string | null, end: string | null): number | null {
   if (!start || !end) return null;
   const startMs = new Date(start).getTime();
@@ -283,6 +301,7 @@ function getActivationTimestamp(
 function getCertificationTimestamp(
   order: TrackedWorkOrder,
   events: WorkOrderEvent[],
+  fallbackCloseTimestamp: string | null = null,
 ): string | null {
   return (
     order.easa_selected_at ??
@@ -291,6 +310,7 @@ function getCertificationTimestamp(
         event.event_type === "step_completed" &&
         event.completed_step === FINAL_PROCESS_STEP,
     )?.occurred_at ??
+    fallbackCloseTimestamp ??
     null
   );
 }
@@ -302,6 +322,7 @@ function invalidDurationsForSteps(steps: string[]): StepDurationDays {
 function calculateClosedReportTiming(
   order: TrackedWorkOrder,
   events: WorkOrderEvent[],
+  closeDate: string | null,
 ): {
   activatedAt: string | null;
   certificationSelectedAt: string | null;
@@ -324,12 +345,43 @@ function calculateClosedReportTiming(
   const includedProcessStepsForReport =
     resolvedProcessSteps.length > 0 ? resolvedProcessSteps : includedProcessSteps;
   const expectedSet = new Set(expectedCompletableSteps);
-  const completedEvents = events.filter(
+  const fallbackCloseTimestamp = acmpCloseTimestamp(closeDate);
+  const actualCompletedEvents = events.filter(
     (event) =>
       event.event_type === "step_completed" &&
       event.completed_step &&
       expectedSet.has(event.completed_step),
   );
+  const hasFinalStepCompletion = actualCompletedEvents.some(
+    (event) => event.completed_step === FINAL_PROCESS_STEP,
+  );
+  const finalStepIsExpected = expectedSet.has(FINAL_PROCESS_STEP);
+  const completedEvents =
+    fallbackCloseTimestamp && finalStepIsExpected && !hasFinalStepCompletion
+      ? [
+          ...actualCompletedEvents,
+          {
+            id: Number.MAX_SAFE_INTEGER,
+            work_order_id: order.work_order_id,
+            event_type: "step_completed",
+            occurred_at: fallbackCloseTimestamp,
+            previous_step: null,
+            completed_step: FINAL_PROCESS_STEP,
+            next_step: null,
+            expected_step: FINAL_PROCESS_STEP,
+            is_in_sequence: true,
+            work_order_type: order.work_order_type,
+            part_number: order.part_number,
+            customer: order.customer,
+            included_process_steps: includedProcessSteps,
+            block_reason: null,
+          },
+        ].sort((a, b) => {
+          const timeDiff =
+            new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime();
+          return timeDiff || a.id - b.id;
+        })
+      : actualCompletedEvents;
   const completedByStep = new Map<string, WorkOrderEvent>();
 
   for (const event of completedEvents) {
@@ -339,7 +391,11 @@ function calculateClosedReportTiming(
   }
 
   const activatedAt = getActivationTimestamp(order, events);
-  const certificationSelectedAt = getCertificationTimestamp(order, events);
+  const certificationSelectedAt = getCertificationTimestamp(
+    order,
+    events,
+    fallbackCloseTimestamp,
+  );
   const pauseIntervals = getPauseIntervals(events);
   const totalSecondsToEasa = activeSecondsBetween(
     activatedAt,
@@ -761,6 +817,7 @@ export async function createClosedWorkOrderReportFromWorkOrder({
   const timing = calculateClosedReportTiming(
     trackedOrder,
     (eventRows as WorkOrderEvent[]) || [],
+    closeDate,
   );
 
   const { error: reportError } = await supabase

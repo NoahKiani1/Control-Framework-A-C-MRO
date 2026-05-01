@@ -37,11 +37,14 @@ import {
 import { getWorkOrders, updateWorkOrderAndFetch } from "@/lib/work-orders";
 import {
   ExtraAction,
-  deleteExtraAction,
   getExtraActions,
   sortExtraActionsByDueDate,
   updateExtraActionAndFetch,
 } from "@/lib/extra-actions";
+import {
+  archiveCompletedCorrectiveAction,
+  completeExtraAction,
+} from "@/lib/completed-tasks";
 import { syncWorkOrderDataBlockState } from "@/lib/work-order-data";
 
 type WorkOrder = {
@@ -59,6 +62,8 @@ type WorkOrder = {
   action_owner: string | null;
   action_status: string | null;
   action_closed: boolean | null;
+  action_created_at: string | null;
+  action_closed_at: string | null;
   last_manual_update: string | null;
   last_system_update: string | null;
   included_process_steps: string[] | null;
@@ -89,7 +94,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps, data_tracking_enabled";
+  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, last_manual_update, last_system_update, included_process_steps, data_tracking_enabled";
 
 const ui = {
   pageBg: "#f2efe9",
@@ -1234,9 +1239,9 @@ function PlanningPageContent() {
     if (!extraActionToClose) return;
 
     setIsClosingExtraAction(true);
-    setExtraActionCloseStatus("Deleting...");
+    setExtraActionCloseStatus("Saving...");
 
-    const { error } = await deleteExtraAction(extraActionToClose.id);
+    const { error } = await completeExtraAction(extraActionToClose);
 
     if (error) {
       setExtraActionCloseStatus(`Error: ${error.message}`);
@@ -1326,9 +1331,21 @@ function PlanningPageContent() {
     setIsCompletingAction(true);
     setActionStatus("Saving...");
 
+    const closedAt = new Date().toISOString();
+    const archiveResult = await archiveCompletedCorrectiveAction(
+      actionConfirmationOrder,
+      closedAt,
+    );
+
+    if (archiveResult.error) {
+      setActionStatus(`Error: ${archiveResult.error.message}`);
+      setIsCompletingAction(false);
+      return;
+    }
+
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
       actionConfirmationOrder.work_order_id,
-      getCorrectiveActionCompletionPayload(),
+      getCorrectiveActionCompletionPayload(closedAt),
       WORK_ORDER_SELECT,
     );
 

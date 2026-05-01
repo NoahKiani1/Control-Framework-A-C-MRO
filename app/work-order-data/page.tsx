@@ -233,9 +233,9 @@ function WorkOrderDataContent() {
       "Part Number",
       "Work Order Type",
       "Activated At",
-      "Certification Selected At",
-      "Total Days to Certification",
-      "Total Time to Certification",
+      "Certification / Close At",
+      "Total Days to Certification / Close",
+      "Total Time to Certification / Close",
       "Sequence Valid",
       "Sequence Issue",
       ...stepColumns.map(stepHeader),
@@ -394,7 +394,7 @@ function WorkOrderDataContent() {
             ["Valid sequences", summary.validSequences],
             ["Invalid sequences", summary.invalidSequences],
             [
-              "Average time to Certification",
+              "Average time to Certification / Close",
               formatDaysDuration(summary.averageDaysToCertification),
             ],
           ].map(([label, value]) => (
@@ -481,8 +481,8 @@ function WorkOrderDataContent() {
                     <th style={headerStyle}>Part Number</th>
                     <th style={headerStyle}>Work Order Type</th>
                     <th style={headerStyle}>Activated At</th>
-                    <th style={headerStyle}>Certification Selected At</th>
-                    <th style={headerStyle}>Total Time to Certification</th>
+                    <th style={headerStyle}>Certification / Close At</th>
+                    <th style={headerStyle}>Total Time to Certification / Close</th>
                     <th style={headerStyle}>Sequence Status</th>
                     <th style={headerStyle}>Sequence Issue</th>
                   </tr>

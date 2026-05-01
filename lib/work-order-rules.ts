@@ -148,9 +148,11 @@ export function getCorrectiveActionCompletionPayload(
   return {
     action_status: "Done",
     action_closed: true,
+    action_closed_at: timestamp,
     hold_reason: null,
     required_next_action: null,
     action_owner: null,
+    action_created_at: null,
     last_manual_update: timestamp,
   };
 }

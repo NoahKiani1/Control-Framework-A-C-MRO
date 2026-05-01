@@ -44,6 +44,8 @@ type WorkOrder = {
   action_owner: string | null;
   action_status: string | null;
   action_closed: boolean | null;
+  action_created_at: string | null;
+  action_closed_at: string | null;
   is_active: boolean;
   work_order_type: string | null;
   current_process_step: string | null;
@@ -144,7 +146,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, is_active, work_order_type, current_process_step, part_number, included_process_steps, data_tracking_enabled";
+  "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, is_active, work_order_type, current_process_step, part_number, included_process_steps, data_tracking_enabled";
 
 function localDateKey(date = new Date()): string {
   const year = date.getFullYear();
@@ -483,6 +485,7 @@ function OfficeUpdatePageContent() {
     );
     const includedStepsForSave =
       normalizedIncludedSteps.length > 0 ? normalizedIncludedSteps : null;
+    const nowIso = new Date().toISOString();
     const nextProcessStep =
       (isActivating ? form.activation_process_step.trim() : "") ||
       preservedStep ||
@@ -490,6 +493,17 @@ function OfficeUpdatePageContent() {
         selectedOrder.work_order_type,
         includedStepsForSave,
       );
+    const sameCorrectiveAction =
+      selectedOrder.required_next_action?.trim() === normalizedRequiredAction &&
+      selectedOrder.action_owner?.trim() === normalizedActionOwner &&
+      selectedOrder.action_status !== "Done" &&
+      !selectedOrder.action_closed;
+    const actionCreatedAt =
+      isBlockedUpdate && normalizedRequiredAction
+        ? sameCorrectiveAction && selectedOrder.action_created_at
+          ? selectedOrder.action_created_at
+          : nowIso
+        : null;
 
     const payload = {
       due_date: form.due_date || null,
@@ -513,12 +527,14 @@ function OfficeUpdatePageContent() {
         isBlockedUpdate && normalizedActionOwner ? normalizedActionOwner : null,
       action_status: isBlockedUpdate ? "Open" : null,
       action_closed: false,
+      action_created_at: actionCreatedAt,
+      action_closed_at: null,
       is_active: form.is_active,
       current_process_step: isActivating ? nextProcessStep : selectedOrder.current_process_step,
       included_process_steps: isActivating
         ? includedStepsForSave
         : selectedOrder.included_process_steps,
-      last_manual_update: new Date().toISOString(),
+      last_manual_update: nowIso,
     };
 
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(

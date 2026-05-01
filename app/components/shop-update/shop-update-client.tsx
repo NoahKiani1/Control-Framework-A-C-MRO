@@ -32,10 +32,13 @@ import { getRestrictionForStep } from "@/lib/restrictions";
 import { getWorkOrders, updateWorkOrder, updateWorkOrderAndFetch } from "@/lib/work-orders";
 import {
   ExtraAction,
-  deleteExtraAction,
   getExtraActions,
   sortExtraActionsByDueDate,
 } from "@/lib/extra-actions";
+import {
+  archiveCompletedCorrectiveAction,
+  completeExtraAction,
+} from "@/lib/completed-tasks";
 import { SearchableSelect } from "@/app/components/searchable-select";
 import { PageHeader } from "@/app/components/page-header";
 import {
@@ -55,6 +58,8 @@ type WorkOrder = {
   action_owner: string | null;
   action_status: string | null;
   action_closed: boolean | null;
+  action_created_at: string | null;
+  action_closed_at: string | null;
   priority: string | null;
   assigned_person_team: string | null;
   included_process_steps: string[] | null;
@@ -62,7 +67,7 @@ type WorkOrder = {
 };
 
 const SHOP_UPDATE_WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, priority, assigned_person_team, included_process_steps, data_tracking_enabled";
+  "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, priority, assigned_person_team, included_process_steps, data_tracking_enabled";
 
 type CorrectiveActionTaskItem = {
   kind: "corrective-action";
@@ -351,9 +356,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     if (!extraActionToClose) return;
 
     setIsClosingExtraAction(true);
-    setExtraActionCloseStatus("Deleting...");
+    setExtraActionCloseStatus("Saving...");
 
-    const { error } = await deleteExtraAction(extraActionToClose.id);
+    const { error } = await completeExtraAction(extraActionToClose);
 
     if (error) {
       setExtraActionCloseStatus(`Error: ${error.message}`);
@@ -374,9 +379,21 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setIsClosingCorrectiveAction(true);
     setCorrectiveActionCloseStatus("Saving...");
 
+    const closedAt = new Date().toISOString();
+    const archiveResult = await archiveCompletedCorrectiveAction(
+      correctiveActionToClose,
+      closedAt,
+    );
+
+    if (archiveResult.error) {
+      setCorrectiveActionCloseStatus(`Error: ${archiveResult.error.message}`);
+      setIsClosingCorrectiveAction(false);
+      return;
+    }
+
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
       correctiveActionToClose.work_order_id,
-      getCorrectiveActionCompletionPayload(),
+      getCorrectiveActionCompletionPayload(closedAt),
       SHOP_UPDATE_WORK_ORDER_SELECT,
     );
 
@@ -439,6 +456,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const normalizedHoldReason = holdReason.trim();
     const normalizedRequiredNextAction = requiredNextAction.trim();
     const normalizedActionOwner = actionOwner.trim();
+    const nowIso = new Date().toISOString();
     const completedStepWasRestricted = !!getRestrictionForStep(completedStep);
     const nextStepIsRestricted = !!getRestrictionForStep(nextProcessStep);
     const assignedPersonTeam =
@@ -464,7 +482,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       action_owner: isBlockedUpdate && normalizedActionOwner ? normalizedActionOwner : null,
       action_status: isBlockedUpdate ? "Open" : null,
       action_closed: false,
-      last_manual_update: new Date().toISOString(),
+      action_created_at: isBlockedUpdate && normalizedRequiredNextAction ? nowIso : null,
+      action_closed_at: null,
+      last_manual_update: nowIso,
     };
 
     const { error } = await updateWorkOrder(selectedId, payload);

@@ -13,6 +13,7 @@ import {
   Users,
   Archive,
   Database,
+  ListChecks,
   Monitor,
   BriefcaseBusiness,
   LogOut,
@@ -47,6 +48,7 @@ const navGroups: NavGroup[] = [
       { href: "/staff", label: "Staff Management", icon: Users },
       { href: "/backlog", label: "Inactive Work Orders", icon: Archive },
       { href: "/work-order-data", label: "Work Order Data", icon: Database },
+      { href: "/completed-tasks", label: "Completed Tasks", icon: ListChecks },
     ],
   },
   {

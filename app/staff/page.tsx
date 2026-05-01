@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Pencil } from "lucide-react";
+import { ChevronDown, ChevronUp, Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 import { RequireRole } from "@/app/components/require-role";
 import {
@@ -105,6 +105,7 @@ function StaffPageContent() {
   const [absenceDate, setAbsenceDate] = useState("");
   const [absenceEndDate, setAbsenceEndDate] = useState("");
   const [absenceReason, setAbsenceReason] = useState("");
+  const [laterAbsencesOpen, setLaterAbsencesOpen] = useState(false);
 
   const [saveStatus, setSaveStatus] = useState("");
 
@@ -611,6 +612,22 @@ function StaffPageContent() {
     fontWeight: 650,
     lineHeight: 1.2,
     whiteSpace: "nowrap",
+  };
+
+  const inlineLinkButtonStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: 0,
+    border: "none",
+    background: "transparent",
+    color: ui.blue,
+    fontSize: "12.5px",
+    fontWeight: 600,
+    textDecoration: "none",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    lineHeight: 1.2,
   };
 
   const tableWrapStyle: React.CSSProperties = {
@@ -1367,17 +1384,18 @@ function StaffPageContent() {
                   {absencesThisWindow.length} in next 3 weeks
                 </span>
                 {absencesLater.length > 0 && (
-                  <a
-                    href="#later-upcoming-absences"
-                    style={{
-                      color: ui.blue,
-                      fontSize: "12.5px",
-                      fontWeight: 600,
-                      textDecoration: "none",
-                    }}
+                  <button
+                    type="button"
+                    aria-controls="later-upcoming-absences"
+                    aria-expanded={laterAbsencesOpen}
+                    onClick={() => setLaterAbsencesOpen((open) => !open)}
+                    style={inlineLinkButtonStyle}
                   >
-                    View {absencesLater.length} later ↓
-                  </a>
+                    <span>
+                      {laterAbsencesOpen ? "Hide" : "View"} {absencesLater.length} later
+                    </span>
+                    {laterAbsencesOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
                 )}
               </div>
             </div>
@@ -1404,6 +1422,29 @@ function StaffPageContent() {
                   </div>
                 )}
               </div>
+
+              {/* Later upcoming absences */}
+              {absencesLater.length > 0 && laterAbsencesOpen && (
+                <div id="later-upcoming-absences" style={innerCard}>
+                  <div style={sectionHeaderRow}>
+                    <div style={{ minWidth: 0 }}>
+                      <label style={innerLabelStyle}>Later upcoming absences</label>
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "12.5px",
+                          color: ui.muted,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        These absences start after the current 3-week capacity window.
+                      </p>
+                    </div>
+                    <span style={countBadgeStyle}>{absencesLater.length}</span>
+                  </div>
+                  {renderAbsenceTable(absencesLater)}
+                </div>
+              )}
 
               {/* Add absence form */}
               <div style={innerCard}>
@@ -1474,29 +1515,6 @@ function StaffPageContent() {
                   </button>
                 </div>
               </div>
-
-              {/* Later upcoming absences */}
-              {absencesLater.length > 0 && (
-                <div id="later-upcoming-absences" style={innerCard}>
-                  <div style={sectionHeaderRow}>
-                    <div style={{ minWidth: 0 }}>
-                      <label style={innerLabelStyle}>Later upcoming absences</label>
-                      <p
-                        style={{
-                          margin: "0",
-                          fontSize: "12.5px",
-                          color: ui.muted,
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        These absences start after the current 3-week capacity window.
-                      </p>
-                    </div>
-                    <span style={countBadgeStyle}>{absencesLater.length}</span>
-                  </div>
-                  {renderAbsenceTable(absencesLater)}
-                </div>
-              )}
             </div>
           </section>
         </div>
