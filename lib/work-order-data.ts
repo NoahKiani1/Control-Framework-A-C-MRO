@@ -10,6 +10,7 @@ import {
   hasActiveCorrectiveAction,
   isBlocked,
 } from "@/lib/work-order-rules";
+import { zonedDateTimeToUtcIso } from "@/lib/time-zone";
 
 export const OUT_OF_SEQUENCE_ISSUE =
   "Steps were not completed in process order. Step-level durations are unreliable.";
@@ -21,6 +22,7 @@ const MISSING_STEP_ISSUE_PREFIX = "Missing included process step completion";
 const DAY_SECONDS = 86400;
 const ACMP_CLOSE_FALLBACK_HOUR = 16;
 const ACMP_CLOSE_FALLBACK_MINUTE = 30;
+const ACMP_CLOSE_TIME_ZONE = "Europe/Amsterdam";
 
 export type WorkOrderEventPayload = {
   work_order_id: string;
@@ -161,15 +163,14 @@ function acmpCloseTimestamp(value: string | null | undefined): string | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
 
-  return new Date(
-    date.getUTCFullYear(),
-    date.getUTCMonth(),
-    date.getUTCDate(),
-    ACMP_CLOSE_FALLBACK_HOUR,
-    ACMP_CLOSE_FALLBACK_MINUTE,
-    0,
-    0,
-  ).toISOString();
+  return zonedDateTimeToUtcIso({
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    hour: ACMP_CLOSE_FALLBACK_HOUR,
+    minute: ACMP_CLOSE_FALLBACK_MINUTE,
+    timeZone: ACMP_CLOSE_TIME_ZONE,
+  });
 }
 
 function secondsBetween(start: string | null, end: string | null): number | null {

@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AppRole, getCurrentProfile } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import {
   PendingAcmpReviewSummary,
   getPendingAcmpReviewSummary,
 } from "@/lib/acmp-import/pending";
+import { ACMP_PENDING_REVIEW_REFRESH_EVENT } from "./acmp-pending-events";
 
 const HIDDEN_PATHS = new Set([
   "/login",
@@ -103,10 +105,41 @@ export function AcmpPendingGate({ suppress = false }: AcmpPendingGateProps) {
     const id = window.setInterval(() => {
       void refresh();
     }, POLL_INTERVAL_MS);
+    const handleImportRefresh = () => {
+      void refresh();
+    };
+    window.addEventListener(
+      ACMP_PENDING_REVIEW_REFRESH_EVENT,
+      handleImportRefresh,
+    );
+
+    const channel = supabase
+      .channel("acmp-pending-review-gate")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pending_acmp_work_orders",
+        },
+        () => {
+          void refresh();
+        },
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          void refresh();
+        }
+      });
 
     return () => {
       active = false;
       window.clearInterval(id);
+      window.removeEventListener(
+        ACMP_PENDING_REVIEW_REFRESH_EVENT,
+        handleImportRefresh,
+      );
+      void supabase.removeChannel(channel);
     };
   }, [role, hiddenForPath, suppress]);
 

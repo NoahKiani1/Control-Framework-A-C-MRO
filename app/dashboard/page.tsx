@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { dispatchAcmpPendingReviewRefresh } from "@/app/components/acmp-pending-events";
 import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
@@ -141,6 +142,8 @@ type DropboxImportSummary = {
   };
 };
 
+type DropboxStatusTone = "info" | "success" | "error";
+
 // Refined palette — modern, clean, professional
 const COLORS = {
   // Surfaces
@@ -175,6 +178,19 @@ const COLORS = {
 
 const FONT_STACK =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+function formatDropboxImportStatus(summary: DropboxImportSummary): string {
+  if (summary.failedFiles > 0 && summary.processedFiles === 0) {
+    return "AcMP import failed.";
+  }
+  if (summary.failedFiles > 0) {
+    return "AcMP import finished with errors.";
+  }
+  if (summary.processedFiles > 0 || summary.ignoredDuplicateFiles > 0) {
+    return "AcMP import successful.";
+  }
+  return "No new AcMP export found.";
+}
 
 function isDueThisWeek(dateStr: string | null): boolean {
   if (!dateStr) return false;
@@ -523,11 +539,11 @@ function DashboardPageContent() {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [dropboxBusy, setDropboxBusy] = useState(false);
   const [dropboxStatus, setDropboxStatus] = useState("");
+  const [dropboxStatusTone, setDropboxStatusTone] =
+    useState<DropboxStatusTone>("info");
   const [dropboxCandidates, setDropboxCandidates] = useState<DropboxCandidate[]>(
     [],
   );
-  const [dropboxSummary, setDropboxSummary] =
-    useState<DropboxImportSummary | null>(null);
 
   const loadDashboardData = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -607,7 +623,7 @@ function DashboardPageContent() {
 
   async function checkDropboxNow() {
     setDropboxBusy(true);
-    setDropboxSummary(null);
+    setDropboxStatusTone("info");
     setDropboxStatus("Checking Dropbox...");
     try {
       const payload = await fetchJson<{ candidates: DropboxCandidate[] }>(
@@ -617,15 +633,14 @@ function DashboardPageContent() {
       if (payload.candidates.length === 0) {
         setDropboxStatus("No new AcMP export found.");
       } else if (payload.candidates.length === 1) {
-        setDropboxStatus(
-          `New AcMP export found: ${payload.candidates[0].filename}`,
-        );
+        setDropboxStatus("1 AcMP export ready to import.");
       } else {
         setDropboxStatus(
-          `${payload.candidates.length} new AcMP exports found.`,
+          `${payload.candidates.length} AcMP exports ready to import.`,
         );
       }
     } catch (error) {
+      setDropboxStatusTone("error");
       setDropboxStatus(
         error instanceof Error ? `Error: ${error.message}` : "Dropbox check failed.",
       );
@@ -636,19 +651,20 @@ function DashboardPageContent() {
 
   async function importDropboxNow() {
     setDropboxBusy(true);
+    setDropboxStatusTone("info");
     setDropboxStatus("Importing AcMP exports...");
     try {
       const summary = await fetchJson<DropboxImportSummary>(
         "/api/acmp/dropbox/import",
         { method: "POST" },
       );
-      setDropboxSummary(summary);
       setDropboxCandidates([]);
-      setDropboxStatus(
-        `Dropbox import complete. ${summary.processedFiles} processed, ${summary.ignoredDuplicateFiles} duplicate ignored, ${summary.failedFiles} failed.`,
-      );
+      setDropboxStatusTone(summary.failedFiles > 0 ? "error" : "success");
+      setDropboxStatus(formatDropboxImportStatus(summary));
+      dispatchAcmpPendingReviewRefresh();
       await loadDashboardData();
     } catch (error) {
+      setDropboxStatusTone("error");
       setDropboxStatus(
         error instanceof Error ? `Error: ${error.message}` : "Dropbox import failed.",
       );
@@ -1402,6 +1418,24 @@ function DashboardPageContent() {
     },
   };
 
+  const dropboxStatusPalette = {
+    info: {
+      color: COLORS.textSoft,
+      backgroundColor: COLORS.surface,
+      borderColor: COLORS.borderStrong,
+    },
+    success: {
+      color: COLORS.green,
+      backgroundColor: COLORS.greenSoft,
+      borderColor: "#a7f3d0",
+    },
+    error: {
+      color: COLORS.red,
+      backgroundColor: COLORS.redSoft,
+      borderColor: "#fecaca",
+    },
+  }[dropboxStatusTone];
+
   return (
     <main
       style={{
@@ -1444,6 +1478,56 @@ function DashboardPageContent() {
                 <RefreshCw size={15} strokeWidth={2.2} />
                 Check AcMP export
               </button>
+
+              {dropboxStatus && (
+                <span
+                  role="status"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    minHeight: "34px",
+                    maxWidth: "240px",
+                    padding: "7px 10px",
+                    borderRadius: "8px",
+                    backgroundColor: dropboxStatusPalette.backgroundColor,
+                    color: dropboxStatusPalette.color,
+                    border: `1px solid ${dropboxStatusPalette.borderColor}`,
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    lineHeight: 1.25,
+                    whiteSpace: "normal",
+                    overflowWrap: "anywhere",
+                    fontFamily: FONT_STACK,
+                  }}
+                >
+                  {dropboxStatus}
+                </span>
+              )}
+
+              {dropboxCandidates.length > 0 && (
+                <button
+                  type="button"
+                  disabled={dropboxBusy}
+                  onClick={() => void importDropboxNow()}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    minHeight: "34px",
+                    padding: "8px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    backgroundColor: COLORS.blue,
+                    color: "white",
+                    fontWeight: 700,
+                    cursor: dropboxBusy ? "wait" : "pointer",
+                    fontSize: "13px",
+                    fontFamily: FONT_STACK,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Import now
+                </button>
+              )}
 
               <button
                 type="button"
@@ -1488,115 +1572,6 @@ function DashboardPageContent() {
             </>
           }
         />
-
-        {/* TOP STATS STRIP — capacity (prominent), active, engineers */}
-        {(dropboxStatus || dropboxCandidates.length > 0 || dropboxSummary) && (
-          <section
-            style={{
-              marginBottom: "var(--gap-section)",
-              padding: "12px 14px",
-              border: `1px solid ${COLORS.border}`,
-              borderRadius: "8px",
-              backgroundColor: COLORS.surface,
-              boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
-            }}
-          >
-            {dropboxStatus && (
-              <div
-                style={{
-                  color: COLORS.text,
-                  fontWeight: 700,
-                  marginBottom:
-                    dropboxCandidates.length > 0 || dropboxSummary ? "10px" : 0,
-                }}
-              >
-                {dropboxStatus}
-              </div>
-            )}
-
-            {dropboxCandidates.length > 0 && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div style={{ color: COLORS.textSoft }}>
-                  {dropboxCandidates.length === 1
-                    ? `New AcMP export found: ${dropboxCandidates[0].filename}`
-                    : `${dropboxCandidates.length} new AcMP exports found.`}
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    type="button"
-                    disabled={dropboxBusy}
-                    onClick={() => void importDropboxNow()}
-                    style={{
-                      padding: "7px 12px",
-                      borderRadius: "8px",
-                      border: "none",
-                      backgroundColor: COLORS.blue,
-                      color: "white",
-                      fontWeight: 700,
-                      cursor: dropboxBusy ? "wait" : "pointer",
-                      fontSize: "13px",
-                      fontFamily: FONT_STACK,
-                    }}
-                  >
-                    Import now
-                  </button>
-                  <Link
-                    href="/import"
-                    style={{
-                      padding: "7px 12px",
-                      borderRadius: "8px",
-                      border: `1px solid ${COLORS.borderStrong}`,
-                      color: COLORS.text,
-                      textDecoration: "none",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                    }}
-                  >
-                    Open Import page
-                  </Link>
-                </div>
-              </div>
-            )}
-
-            {dropboxSummary && (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "12px",
-                  flexWrap: "wrap",
-                  color: COLORS.textSoft,
-                }}
-              >
-                <span>{dropboxSummary.processedFiles} processed files</span>
-                <span>
-                  {dropboxSummary.ignoredDuplicateFiles} duplicate files ignored
-                </span>
-                <span>{dropboxSummary.failedFiles} failed files</span>
-                <span>
-                  {dropboxSummary.totals.pendingNewWorkOrders} new pending
-                </span>
-                <span>
-                  {dropboxSummary.totals.pendingRfqApprovedInactive} RFQ pending
-                </span>
-              </div>
-            )}
-          </section>
-        )}
 
         <section
           style={{

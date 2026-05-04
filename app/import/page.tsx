@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import * as XLSX from "xlsx";
+import { dispatchAcmpPendingReviewRefresh } from "@/app/components/acmp-pending-events";
 import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import { analyzeImportRows } from "@/lib/acmp-import/analyze";
@@ -133,6 +134,7 @@ function ImportPageContent() {
       setDropboxStatus(
         `Dropbox import complete. ${summary.processedFiles} processed, ${summary.ignoredDuplicateFiles} duplicate ignored, ${summary.failedFiles} failed.`,
       );
+      dispatchAcmpPendingReviewRefresh();
     } catch (error) {
       setDropboxStatus(
         error instanceof Error ? `Error: ${error.message}` : "Error importing Dropbox exports.",
@@ -201,6 +203,7 @@ function ImportPageContent() {
     setResults(importResult.result);
     setStep("done");
     setStatus(resultStatus(importResult.result));
+    dispatchAcmpPendingReviewRefresh();
   }
 
   const buttonStyle: React.CSSProperties = {
