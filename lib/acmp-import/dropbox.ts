@@ -15,8 +15,12 @@ export const ACMP_EXPORT_NAME_RE =
 
 const DROPBOX_API = "https://api.dropboxapi.com/2";
 const DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2";
-const DROPBOX_IMPORT_PATH = "/import";
-const DROPBOX_FAILED_PATH = "/failed";
+const DEFAULT_DROPBOX_IMPORT_PATH = "/Work Order Planning App/import";
+const DEFAULT_DROPBOX_FAILED_PATH = "/Work Order Planning App/failed";
+const DROPBOX_IMPORT_PATH =
+  process.env.ACMP_DROPBOX_IMPORT_PATH || DEFAULT_DROPBOX_IMPORT_PATH;
+const DROPBOX_FAILED_PATH =
+  process.env.ACMP_DROPBOX_FAILED_PATH || DEFAULT_DROPBOX_FAILED_PATH;
 
 export type ParsedAcmpExportFilename = {
   filename: string;
@@ -430,7 +434,7 @@ export async function importDropboxExports({
       try {
         await moveDropboxFileToFailed(candidate.pathLower, candidate.filename);
       } catch (moveError) {
-        console.error("Failed to move Dropbox file to /failed", moveError);
+        console.error("Failed to move Dropbox file to failed folder", moveError);
       }
 
       results.push({

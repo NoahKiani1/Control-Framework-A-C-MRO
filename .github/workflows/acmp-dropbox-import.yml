@@ -25,5 +25,7 @@ jobs:
           DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
           DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          ACMP_DROPBOX_IMPORT_PATH: ${{ secrets.ACMP_DROPBOX_IMPORT_PATH }}
+          ACMP_DROPBOX_FAILED_PATH: ${{ secrets.ACMP_DROPBOX_FAILED_PATH }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

@@ -4,9 +4,11 @@
 
 Upload AcMP Excel exports in Dropbox to:
 
-`/Apps/Aircraft & Component/import`
+`/Work Order Planning App/import`
 
-Because the Dropbox app uses App Folder access, API paths are relative to the app folder. The code calls Dropbox with `/import` and `/failed`, while users should upload through the Dropbox UI via `Apps` -> `Aircraft & Component` -> `import`.
+This is a normal shared Dropbox folder, not an App Folder path. The Dropbox app account must have edit access to the shared folder so it can list pending exports, delete successful imports, and move failed files.
+
+The importer reads the upload folder from `ACMP_DROPBOX_IMPORT_PATH`, defaulting to `/Work Order Planning App/import`.
 
 Automatic import runs every 5 minutes from GitHub Actions, and Office users can also trigger the same check immediately from the Dashboard refresh icon or the `/import` page.
 
@@ -49,9 +51,9 @@ Successful Dropbox Excel files are deleted from Dropbox after import.
 
 Failed Dropbox Excel files are moved to:
 
-`/Apps/Aircraft & Component/failed`
+`/Work Order Planning App/failed`
 
-The API path for that folder is `/failed`. Failed metadata rows are retained and are not automatically cleaned up.
+The importer reads the failed folder from `ACMP_DROPBOX_FAILED_PATH`, defaulting to `/Work Order Planning App/failed`. Failed metadata rows are retained and are not automatically cleaned up.
 
 Processed and ignored import metadata older than 30 days can be cleaned up by `public.cleanup_acmp_import_files()`.
 
@@ -73,7 +75,7 @@ The workflow runs:
 npm run import:dropbox
 ```
 
-Individual bad files are recorded and moved to `/failed`; the workflow exits successfully for no files, duplicate files, and per-file import failures. It exits non-zero only when infrastructure or runtime setup prevents the worker from operating.
+Individual bad files are recorded and moved to `/Work Order Planning App/failed`; the workflow exits successfully for no files, duplicate files, and per-file import failures. It exits non-zero only when infrastructure or runtime setup prevents the worker from operating.
 
 ## Required Secrets
 
@@ -82,6 +84,8 @@ Set these as GitHub Actions secrets:
 - `DROPBOX_APP_KEY`
 - `DROPBOX_APP_SECRET`
 - `DROPBOX_REFRESH_TOKEN`
+- `ACMP_DROPBOX_IMPORT_PATH`
+- `ACMP_DROPBOX_FAILED_PATH`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
@@ -90,6 +94,8 @@ Set the same values as hosting/server environment variables in the deployed app:
 - `DROPBOX_APP_KEY`
 - `DROPBOX_APP_SECRET`
 - `DROPBOX_REFRESH_TOKEN`
+- `ACMP_DROPBOX_IMPORT_PATH`
+- `ACMP_DROPBOX_FAILED_PATH`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
