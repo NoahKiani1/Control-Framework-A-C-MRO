@@ -28,6 +28,7 @@ import {
   NewOrderSetup,
   ParsedRow,
 } from "./types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const BATCH_SIZE = 500;
 
@@ -65,9 +66,11 @@ type ExistingUpdateResult = {
 export async function applyExistingOrderUpdates({
   existingOrders,
   importTimestamp,
+  client,
 }: {
   existingOrders: ParsedRow[];
   importTimestamp: string;
+  client?: SupabaseClient;
 }): Promise<ExistingUpdateResult> {
   if (existingOrders.length === 0) {
     return { updated: 0, error: null };
@@ -77,6 +80,7 @@ export async function applyExistingOrderUpdates({
   const currentData = await getWorkOrders<ExistingOrderSnapshot>({
     select: EXISTING_ORDER_SELECT,
     workOrderIds: existingIds,
+    client,
   });
   const currentMap = new Map(currentData.map((r) => [r.work_order_id, r]));
 
@@ -109,7 +113,7 @@ export async function applyExistingOrderUpdates({
       };
     });
 
-    const { error } = await upsertWorkOrders(batch);
+    const { error } = await upsertWorkOrders(batch, client);
     if (error) {
       return { updated, error };
     }
@@ -130,6 +134,7 @@ export async function applyExistingOrderUpdates({
           action_closed: current.action_closed,
         },
         row.last_system_update ?? importTimestamp,
+        client,
       );
 
       if (blockResult.error) {
@@ -164,10 +169,12 @@ export async function applyNewOrderInserts({
   newOrders,
   newOrderSetup,
   importTimestamp,
+  client,
 }: {
   newOrders: ParsedRow[];
   newOrderSetup: Record<string, NewOrderSetup>;
   importTimestamp: string;
+  client?: SupabaseClient;
 }): Promise<{ inserted: number; error: { message: string } | null }> {
   let inserted = 0;
 
@@ -198,7 +205,7 @@ export async function applyNewOrderInserts({
       };
     });
 
-    const { error } = await insertWorkOrders(batch);
+    const { error } = await insertWorkOrders(batch, client);
     if (error) {
       return { inserted, error };
     }
@@ -215,6 +222,7 @@ export async function applyNewOrderInserts({
           included_process_steps: row.included_process_steps,
         },
         importTimestamp,
+        client,
       );
       if (trackingResult.error) {
         console.error(
@@ -229,6 +237,7 @@ export async function applyNewOrderInserts({
           data_tracking_enabled: true,
         },
         row.last_system_update ?? importTimestamp,
+        client,
       );
       if (blockResult.error) {
         console.error(
@@ -252,13 +261,16 @@ export async function applyNewOrderInserts({
 export async function activateRfqApprovedWorkOrder({
   workOrderId,
   activationTimestamp,
+  client,
 }: {
   workOrderId: string;
   activationTimestamp: string;
+  client?: SupabaseClient;
 }): Promise<{ error: { message: string } | null }> {
   const [current] = await getWorkOrders<ExistingOrderSnapshot>({
     select: EXISTING_ORDER_SELECT,
     workOrderIds: [workOrderId],
+    client,
   });
 
   if (!current) {
@@ -278,25 +290,32 @@ export async function activateRfqApprovedWorkOrder({
     current.assigned_person_team,
   );
 
-  const { error } = await updateWorkOrder(workOrderId, {
-    is_active: true,
-    current_process_step: nextStep,
-    assigned_person_team: nextAssigned,
-    last_system_update: activationTimestamp,
-  });
+  const { error } = await updateWorkOrder(
+    workOrderId,
+    {
+      is_active: true,
+      current_process_step: nextStep,
+      assigned_person_team: nextAssigned,
+      last_system_update: activationTimestamp,
+    },
+    client,
+  );
 
   return { error: error ?? null };
 }
 
 export async function finalizeClosedWorkOrderReports({
   closedWorkOrders,
+  client,
 }: {
   closedWorkOrders: { work_order_id: string; close_date: string | null }[];
+  client?: SupabaseClient;
 }): Promise<void> {
   for (const closed of closedWorkOrders) {
     const result = await createClosedWorkOrderReportFromWorkOrder({
       workOrderId: closed.work_order_id,
       closeDate: closed.close_date,
+      client,
     });
     if (result.error) {
       console.error(
@@ -309,21 +328,27 @@ export async function finalizeClosedWorkOrderReports({
 export async function applyDeletions({
   oldIds,
   closedIds,
+  client,
 }: {
   oldIds: string[];
   closedIds: string[];
+  client?: SupabaseClient;
 }): Promise<{ deleted: number; closedRemoved: number }> {
   let deleted = 0;
   for (let i = 0; i < oldIds.length; i += BATCH_SIZE) {
     const batch = oldIds.slice(i, i + BATCH_SIZE);
-    await deleteWorkOrdersByIds(batch);
+    await deleteWorkOrdersByIds(batch, {}, client);
     deleted += batch.length;
   }
 
   let closedRemoved = 0;
   for (let i = 0; i < closedIds.length; i += BATCH_SIZE) {
     const batch = closedIds.slice(i, i + BATCH_SIZE);
-    const { count } = await deleteWorkOrdersByIds(batch, { withCount: true });
+    const { count } = await deleteWorkOrdersByIds(
+      batch,
+      { withCount: true },
+      client,
+    );
     closedRemoved += count || 0;
   }
 
@@ -336,19 +361,21 @@ export async function recordImportRun({
   rowsInserted,
   rowsUpdated,
   status = "done",
+  client,
 }: {
   filename: string;
   rowsProcessed: number;
   rowsInserted: number;
   rowsUpdated: number;
   status?: string;
+  client?: SupabaseClient;
 }) {
-  await clearImportRuns();
+  await clearImportRuns(client);
   await createImportRun({
     filename,
     rows_processed: rowsProcessed,
     rows_inserted: rowsInserted,
     rows_updated: rowsUpdated,
     status,
-  });
+  }, client);
 }

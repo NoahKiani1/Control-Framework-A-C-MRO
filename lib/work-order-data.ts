@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   FINAL_PROCESS_STEP,
   getCompletableStepsForOrder,
@@ -470,16 +471,17 @@ function calculateClosedReportTiming(
 
 export async function recordWorkOrderEvent(
   payload: WorkOrderEventPayload,
+  client: SupabaseClient = supabase,
 ): Promise<HelperResult> {
   const insertPayload = {
     ...payload,
     is_in_sequence: payload.is_in_sequence ?? true,
   };
-  const { error } = await supabase.from("work_order_events").insert(insertPayload);
+  const { error } = await client.from("work_order_events").insert(insertPayload);
 
   if (error) {
     if (isMissingOptionalEventColumnError(error)) {
-      const { error: fallbackError } = await supabase
+      const { error: fallbackError } = await client
         .from("work_order_events")
         .insert(withoutOptionalEventColumns(insertPayload));
 
@@ -501,8 +503,9 @@ export async function recordWorkOrderEvent(
 export async function startWorkOrderDataTracking(
   order: TrackedWorkOrder,
   startedAt = new Date().toISOString(),
+  client: SupabaseClient = supabase,
 ): Promise<HelperResult> {
-  const { error: updateError } = await supabase
+  const { error: updateError } = await client
     .from("work_orders")
     .update({
       data_tracking_enabled: true,
@@ -528,7 +531,7 @@ export async function startWorkOrderDataTracking(
     customer: order.customer,
     included_process_steps: order.included_process_steps ?? null,
     is_in_sequence: true,
-  });
+  }, client);
 }
 
 export async function stopWorkOrderDataTracking(
@@ -596,13 +599,14 @@ export function isWorkOrderDataBlocked(
 export async function syncWorkOrderDataBlockState(
   order: WorkOrderDataBlockStateOrder,
   occurredAt = new Date().toISOString(),
+  client: SupabaseClient = supabase,
 ): Promise<HelperResult> {
   if (!order.data_tracking_enabled) {
     return { data: null, error: null };
   }
 
   const nextBlockReason = workOrderDataBlockReason(order);
-  const { data: latestEvents, error: latestError } = await supabase
+  const { data: latestEvents, error: latestError } = await client
     .from("work_order_events")
     .select("event_type, block_reason")
     .eq("work_order_id", order.work_order_id)
@@ -613,7 +617,11 @@ export async function syncWorkOrderDataBlockState(
 
   if (latestError) {
     if (isMissingOptionalEventColumnError(latestError)) {
-      return syncWorkOrderDataBlockStateWithoutBlockReason(order, occurredAt);
+      return syncWorkOrderDataBlockStateWithoutBlockReason(
+        order,
+        occurredAt,
+        client,
+      );
     }
 
     console.error("Failed to inspect Work Order Data block state", latestError);
@@ -637,7 +645,7 @@ export async function syncWorkOrderDataBlockState(
       included_process_steps: order.included_process_steps ?? null,
       block_reason: nextBlockReason,
       is_in_sequence: true,
-    });
+    }, client);
   }
 
   if (!nextBlockReason && currentlyPaused) {
@@ -652,7 +660,7 @@ export async function syncWorkOrderDataBlockState(
       included_process_steps: order.included_process_steps ?? null,
       block_reason: latestEvent?.block_reason ?? null,
       is_in_sequence: true,
-    });
+    }, client);
   }
 
   return { data: null, error: null };
@@ -661,9 +669,10 @@ export async function syncWorkOrderDataBlockState(
 async function syncWorkOrderDataBlockStateWithoutBlockReason(
   order: WorkOrderDataBlockStateOrder,
   occurredAt: string,
+  client: SupabaseClient,
 ): Promise<HelperResult> {
   const nextBlockReason = workOrderDataBlockReason(order);
-  const { data: latestEvents, error: latestError } = await supabase
+  const { data: latestEvents, error: latestError } = await client
     .from("work_order_events")
     .select("event_type")
     .eq("work_order_id", order.work_order_id)
@@ -691,7 +700,7 @@ async function syncWorkOrderDataBlockStateWithoutBlockReason(
       customer: order.customer,
       included_process_steps: order.included_process_steps ?? null,
       is_in_sequence: true,
-    });
+    }, client);
   }
 
   if (!nextBlockReason && currentlyPaused) {
@@ -705,7 +714,7 @@ async function syncWorkOrderDataBlockStateWithoutBlockReason(
       customer: order.customer,
       included_process_steps: order.included_process_steps ?? null,
       is_in_sequence: true,
-    });
+    }, client);
   }
 
   return { data: null, error: null };
@@ -781,11 +790,13 @@ export async function recordTrackedShopStepCompletion({
 export async function createClosedWorkOrderReportFromWorkOrder({
   workOrderId,
   closeDate,
+  client = supabase,
 }: {
   workOrderId: string;
   closeDate: string | null;
+  client?: SupabaseClient;
 }): Promise<HelperResult<{ created: boolean }>> {
-  const { data: order, error: orderError } = await supabase
+  const { data: order, error: orderError } = await client
     .from("work_orders")
     .select(
       "work_order_id, customer, part_number, work_order_type, current_process_step, data_tracking_enabled, data_tracking_started_at, easa_selected_at, sequence_valid, sequence_issue, included_process_steps",
@@ -803,7 +814,7 @@ export async function createClosedWorkOrderReportFromWorkOrder({
     return { data: { created: false }, error: null };
   }
 
-  const { data: eventRows, error: eventError } = await supabase
+  const { data: eventRows, error: eventError } = await client
     .from("work_order_events")
     .select("*")
     .eq("work_order_id", workOrderId)
@@ -820,7 +831,7 @@ export async function createClosedWorkOrderReportFromWorkOrder({
     closeDate,
   );
 
-  const { error: reportError } = await supabase
+  const { error: reportError } = await client
     .from("closed_work_order_reports")
     .upsert(
       {

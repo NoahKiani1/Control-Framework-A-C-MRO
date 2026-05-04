@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
@@ -31,6 +32,7 @@ import {
   resolveStepsForOrder,
 } from "@/lib/process-steps";
 import { syncWorkOrderDataBlockState } from "@/lib/work-order-data";
+import { supabase } from "@/lib/supabase";
 
 type WorkOrder = {
   work_order_id: string;
@@ -119,6 +121,24 @@ type HealthStatus = {
   bg: string;
   reason: string;
   panel: DetailPanel;
+};
+
+type DropboxCandidate = {
+  filename: string;
+  exportDate: string;
+  exportSequence: number;
+  serverModified: string | null;
+  pathLower: string;
+};
+
+type DropboxImportSummary = {
+  processedFiles: number;
+  ignoredDuplicateFiles: number;
+  failedFiles: number;
+  totals: {
+    pendingNewWorkOrders: number;
+    pendingRfqApprovedInactive: number;
+  };
 };
 
 // Refined palette — modern, clean, professional
@@ -501,60 +521,145 @@ function DashboardPageContent() {
   const [loading, setLoading] = useState(true);
   const [activePanel, setActivePanel] = useState<DetailPanel>(null);
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  const [dropboxBusy, setDropboxBusy] = useState(false);
+  const [dropboxStatus, setDropboxStatus] = useState("");
+  const [dropboxCandidates, setDropboxCandidates] = useState<DropboxCandidate[]>(
+    [],
+  );
+  const [dropboxSummary, setDropboxSummary] =
+    useState<DropboxImportSummary | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      const today = toLocalDateKey(new Date());
-      await deletePastEngineerAbsences(today);
+  const loadDashboardData = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
+    const today = toLocalDateKey(new Date());
+    await deletePastEngineerAbsences(today);
 
-      const [wo, eng, abs] = await Promise.all([
-        getWorkOrders<WorkOrder>({
-          select: "*",
-          isOpen: true,
-          isActive: true,
-        }),
-        getEngineers<Engineer>({
-          select: "*",
-          isActive: true,
-          role: "shop",
-          orderBy: { column: "name" },
-        }),
-        getEngineerAbsences<Absence>({
-          select: "id, engineer_id, absence_date",
-          fromDate: today,
-        }),
-      ]);
+    const [wo, eng, abs] = await Promise.all([
+      getWorkOrders<WorkOrder>({
+        select: "*",
+        isOpen: true,
+        isActive: true,
+      }),
+      getEngineers<Engineer>({
+        select: "*",
+        isActive: true,
+        role: "shop",
+        orderBy: { column: "name" },
+      }),
+      getEngineerAbsences<Absence>({
+        select: "id, engineer_id, absence_date",
+        fromDate: today,
+      }),
+    ]);
 
-      const startedTodayEngineers = filterEngineersStartedOnDateKey(eng, today);
+    const startedTodayEngineers = filterEngineersStartedOnDateKey(eng, today);
 
-      setOrders(
-        sortOrders(
-          applySuggestedAssignmentsForCurrentStep(
-            wo,
-            startedTodayEngineers,
-            new Set(
-              startedTodayEngineers
-                .filter((engineer) =>
-                  abs.some(
-                    (absence) =>
-                      absence.absence_date === today &&
-                      absence.engineer_id === engineer.id,
-                  ),
-                )
-                .map((engineer) => engineer.name),
-            ),
+    setOrders(
+      sortOrders(
+        applySuggestedAssignmentsForCurrentStep(
+          wo,
+          startedTodayEngineers,
+          new Set(
+            startedTodayEngineers
+              .filter((engineer) =>
+                abs.some(
+                  (absence) =>
+                    absence.absence_date === today &&
+                    absence.engineer_id === engineer.id,
+                ),
+              )
+              .map((engineer) => engineer.name),
           ),
         ),
-      );
+      ),
+    );
 
-      const shopIds = new Set(eng.map((e) => e.id));
-      setEngineers(eng);
-      setAbsences(abs.filter((a) => shopIds.has(a.engineer_id)));
-      setLoading(false);
-    }
-
-    void load();
+    const shopIds = new Set(eng.map((e) => e.id));
+    setEngineers(eng);
+    setAbsences(abs.filter((a) => shopIds.has(a.engineer_id)));
+    setLoading(false);
   }, []);
+
+  async function authHeaders(): Promise<Record<string, string>> {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    return session?.access_token
+      ? { Authorization: `Bearer ${session.access_token}` }
+      : {};
+  }
+
+  async function fetchJson<T>(
+    url: string,
+    init: RequestInit = {},
+  ): Promise<T> {
+    const headers = {
+      ...(await authHeaders()),
+      ...(init.headers ?? {}),
+    };
+    const response = await fetch(url, { ...init, headers });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload?.error?.message || "Request failed.");
+    }
+    return payload as T;
+  }
+
+  async function checkDropboxNow() {
+    setDropboxBusy(true);
+    setDropboxSummary(null);
+    setDropboxStatus("Checking Dropbox...");
+    try {
+      const payload = await fetchJson<{ candidates: DropboxCandidate[] }>(
+        "/api/acmp/dropbox/check",
+      );
+      setDropboxCandidates(payload.candidates);
+      if (payload.candidates.length === 0) {
+        setDropboxStatus("No new AcMP export found.");
+      } else if (payload.candidates.length === 1) {
+        setDropboxStatus(
+          `New AcMP export found: ${payload.candidates[0].filename}`,
+        );
+      } else {
+        setDropboxStatus(
+          `${payload.candidates.length} new AcMP exports found.`,
+        );
+      }
+    } catch (error) {
+      setDropboxStatus(
+        error instanceof Error ? `Error: ${error.message}` : "Dropbox check failed.",
+      );
+    } finally {
+      setDropboxBusy(false);
+    }
+  }
+
+  async function importDropboxNow() {
+    setDropboxBusy(true);
+    setDropboxStatus("Importing AcMP exports...");
+    try {
+      const summary = await fetchJson<DropboxImportSummary>(
+        "/api/acmp/dropbox/import",
+        { method: "POST" },
+      );
+      setDropboxSummary(summary);
+      setDropboxCandidates([]);
+      setDropboxStatus(
+        `Dropbox import complete. ${summary.processedFiles} processed, ${summary.ignoredDuplicateFiles} duplicate ignored, ${summary.failedFiles} failed.`,
+      );
+      await loadDashboardData();
+    } catch (error) {
+      setDropboxStatus(
+        error instanceof Error ? `Error: ${error.message}` : "Dropbox import failed.",
+      );
+    } finally {
+      setDropboxBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDashboardData(true);
+  }, [loadDashboardData]);
 
   if (loading) {
     return (
@@ -1313,50 +1418,186 @@ function DashboardPageContent() {
           title="Planning & Monitoring Tool"
           description="Live control of work order flow, blockers, readiness, and capacity."
           actions={
-            <button
-              type="button"
-              aria-label={`${health.label}: ${health.reason}`}
-              onClick={() => {
-                if (health.panel) {
-                  setActivePanel(health.panel);
-                }
-              }}
-              style={{
-                position: "relative",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "8px 14px",
-                borderRadius: "8px",
-                backgroundColor: health.bg,
-                color: health.color,
-                border: `1px solid ${health.color}33`,
-                fontSize: "13px",
-                fontWeight: 600,
-                whiteSpace: "nowrap",
-                cursor: health.panel ? "pointer" : "help",
-                fontFamily: FONT_STACK,
-              }}
-              className="health-status"
-            >
-              <span
+            <>
+              <button
+                type="button"
+                aria-label="Check Dropbox for new AcMP export"
+                title="Check Dropbox for new AcMP export"
+                disabled={dropboxBusy}
+                onClick={() => void checkDropboxNow()}
                 style={{
-                  width: "8px",
-                  height: "8px",
-                  borderRadius: "50%",
-                  backgroundColor: health.color,
-                  display: "inline-block",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  backgroundColor: COLORS.surface,
+                  color: COLORS.blue,
+                  border: `1px solid ${COLORS.borderStrong}`,
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  cursor: dropboxBusy ? "wait" : "pointer",
+                  fontFamily: FONT_STACK,
                 }}
-              />
-              {health.label}
-              <span className="health-status-tooltip">
-                {health.reason}
-              </span>
-            </button>
+              >
+                <RefreshCw size={15} strokeWidth={2.2} />
+                Check AcMP export
+              </button>
+
+              <button
+                type="button"
+                aria-label={`${health.label}: ${health.reason}`}
+                onClick={() => {
+                  if (health.panel) {
+                    setActivePanel(health.panel);
+                  }
+                }}
+                style={{
+                  position: "relative",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  backgroundColor: health.bg,
+                  color: health.color,
+                  border: `1px solid ${health.color}33`,
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  cursor: health.panel ? "pointer" : "help",
+                  fontFamily: FONT_STACK,
+                }}
+                className="health-status"
+              >
+                <span
+                  style={{
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "50%",
+                    backgroundColor: health.color,
+                    display: "inline-block",
+                  }}
+                />
+                {health.label}
+                <span className="health-status-tooltip">
+                  {health.reason}
+                </span>
+              </button>
+            </>
           }
         />
 
         {/* TOP STATS STRIP — capacity (prominent), active, engineers */}
+        {(dropboxStatus || dropboxCandidates.length > 0 || dropboxSummary) && (
+          <section
+            style={{
+              marginBottom: "var(--gap-section)",
+              padding: "12px 14px",
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: "8px",
+              backgroundColor: COLORS.surface,
+              boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+            }}
+          >
+            {dropboxStatus && (
+              <div
+                style={{
+                  color: COLORS.text,
+                  fontWeight: 700,
+                  marginBottom:
+                    dropboxCandidates.length > 0 || dropboxSummary ? "10px" : 0,
+                }}
+              >
+                {dropboxStatus}
+              </div>
+            )}
+
+            {dropboxCandidates.length > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ color: COLORS.textSoft }}>
+                  {dropboxCandidates.length === 1
+                    ? `New AcMP export found: ${dropboxCandidates[0].filename}`
+                    : `${dropboxCandidates.length} new AcMP exports found.`}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    disabled={dropboxBusy}
+                    onClick={() => void importDropboxNow()}
+                    style={{
+                      padding: "7px 12px",
+                      borderRadius: "8px",
+                      border: "none",
+                      backgroundColor: COLORS.blue,
+                      color: "white",
+                      fontWeight: 700,
+                      cursor: dropboxBusy ? "wait" : "pointer",
+                      fontSize: "13px",
+                      fontFamily: FONT_STACK,
+                    }}
+                  >
+                    Import now
+                  </button>
+                  <Link
+                    href="/import"
+                    style={{
+                      padding: "7px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${COLORS.borderStrong}`,
+                      color: COLORS.text,
+                      textDecoration: "none",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                    }}
+                  >
+                    Open Import page
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {dropboxSummary && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                  color: COLORS.textSoft,
+                }}
+              >
+                <span>{dropboxSummary.processedFiles} processed files</span>
+                <span>
+                  {dropboxSummary.ignoredDuplicateFiles} duplicate files ignored
+                </span>
+                <span>{dropboxSummary.failedFiles} failed files</span>
+                <span>
+                  {dropboxSummary.totals.pendingNewWorkOrders} new pending
+                </span>
+                <span>
+                  {dropboxSummary.totals.pendingRfqApprovedInactive} RFQ pending
+                </span>
+              </div>
+            )}
+          </section>
+        )}
+
         <section
           style={{
             display: "grid",

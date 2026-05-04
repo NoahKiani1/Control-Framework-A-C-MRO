@@ -4,83 +4,52 @@ import { useState } from "react";
 import * as XLSX from "xlsx";
 import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
+import { analyzeImportRows } from "@/lib/acmp-import/analyze";
 import {
-  analyzeImportRows,
-} from "@/lib/acmp-import/analyze";
-import {
-  applyDeletions,
-  applyExistingOrderUpdates,
-  finalizeClosedWorkOrderReports,
-  recordImportRun,
-} from "@/lib/acmp-import/apply";
-import {
-  PendingAcmpInsertRow,
-  upsertPendingAcmpWorkOrders,
-} from "@/lib/acmp-import/pending";
+  type AcmpImportResult,
+  runAcmpImportFromRows,
+} from "@/lib/acmp-import/run";
+import { createBufferSha256 } from "@/lib/acmp-import/signature";
 import {
   ImportAnalysis,
-  ParsedRow,
   RfqActivationCandidate,
 } from "@/lib/acmp-import/types";
+import { supabase } from "@/lib/supabase";
 
-type ImportResults = {
-  processed: number;
-  updated: number;
-  deleted: number;
-  closedRemoved: number;
-  closedSkipped: number;
-  tooOld: number;
-  skipped: number;
-  pendingNewWorkOrders: number;
-  pendingRfqApprovedInactive: number;
+type DropboxCandidate = {
+  filename: string;
+  exportDate: string;
+  exportSequence: number;
+  serverModified: string | null;
+  pathLower: string;
 };
 
-function buildNewOrderPendingRows(
-  newOrders: ParsedRow[],
-  rawByWorkOrderId: Record<string, Record<string, unknown>>,
-  filename: string,
-): PendingAcmpInsertRow[] {
-  return newOrders.map((order) => ({
-    work_order_id: order.work_order_id,
-    customer: order.customer,
-    rfq_state: order.rfq_state,
-    last_system_update: order.last_system_update,
-    is_open: order.is_open,
-    work_order_type: order.work_order_type,
-    part_number: order.part_number,
-    source_filename: filename || null,
-    raw_payload: (rawByWorkOrderId[order.work_order_id] as
-      | Record<string, unknown>
-      | undefined) || null,
-    review_type: "new_work_order",
-    previous_rfq_state: null,
-    current_process_step: null,
-    assigned_person_team: null,
-  }));
-}
+type DropboxImportSummary = {
+  processedFiles: number;
+  ignoredDuplicateFiles: number;
+  failedFiles: number;
+  totals: AcmpImportResult;
+};
 
-function buildRfqApprovedInactivePendingRows(
-  candidates: RfqActivationCandidate[],
-  rawByWorkOrderId: Record<string, Record<string, unknown>>,
-  filename: string,
-): PendingAcmpInsertRow[] {
-  return candidates.map((order) => ({
-    work_order_id: order.work_order_id,
-    customer: order.customer,
-    rfq_state: order.rfq_state,
-    last_system_update: order.last_system_update,
-    is_open: order.is_open,
-    work_order_type: order.work_order_type,
-    part_number: order.part_number,
-    source_filename: filename || null,
-    raw_payload: (rawByWorkOrderId[order.work_order_id] as
-      | Record<string, unknown>
-      | undefined) || null,
-    review_type: "rfq_approved_inactive",
-    previous_rfq_state: order.previous_rfq_state,
-    current_process_step: order.current_process_step,
-    assigned_person_team: order.assigned_person_team,
-  }));
+function resultStatus(result: AcmpImportResult): string {
+  const parts: string[] = [];
+  if (result.pendingNewWorkOrders > 0) {
+    parts.push(
+      `${result.pendingNewWorkOrders} new work order${
+        result.pendingNewWorkOrders === 1 ? "" : "s"
+      }`,
+    );
+  }
+  if (result.pendingRfqApprovedInactive > 0) {
+    parts.push(
+      `${result.pendingRfqApprovedInactive} RFQ-approved inactive work order${
+        result.pendingRfqApprovedInactive === 1 ? "" : "s"
+      }`,
+    );
+  }
+  return parts.length > 0
+    ? `Import complete. ${parts.join(" and ")} added to AcMP Review.`
+    : "Import complete!";
 }
 
 function ImportPageContent() {
@@ -88,7 +57,90 @@ function ImportPageContent() {
   const [step, setStep] = useState<"upload" | "review" | "done">("upload");
   const [analysis, setAnalysis] = useState<ImportAnalysis | null>(null);
   const [fileName, setFileName] = useState("");
-  const [results, setResults] = useState<ImportResults | null>(null);
+  const [fileSha256, setFileSha256] = useState<string | null>(null);
+  const [rowsToImport, setRowsToImport] = useState<Record<string, unknown>[]>(
+    [],
+  );
+  const [results, setResults] = useState<AcmpImportResult | null>(null);
+  const [dropboxStatus, setDropboxStatus] = useState("");
+  const [dropboxCandidates, setDropboxCandidates] = useState<
+    DropboxCandidate[]
+  >([]);
+  const [dropboxSummary, setDropboxSummary] =
+    useState<DropboxImportSummary | null>(null);
+  const [dropboxBusy, setDropboxBusy] = useState(false);
+
+  async function authHeaders(): Promise<Record<string, string>> {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    return session?.access_token
+      ? { Authorization: `Bearer ${session.access_token}` }
+      : {};
+  }
+
+  async function fetchJson<T>(
+    url: string,
+    init: RequestInit = {},
+  ): Promise<T> {
+    const headers = {
+      ...(await authHeaders()),
+      ...(init.headers ?? {}),
+    };
+    const response = await fetch(url, { ...init, headers });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload?.error?.message || "Request failed.");
+    }
+    return payload as T;
+  }
+
+  async function checkDropbox() {
+    setDropboxBusy(true);
+    setDropboxSummary(null);
+    setDropboxStatus("Checking Dropbox...");
+    try {
+      const payload = await fetchJson<{ candidates: DropboxCandidate[] }>(
+        "/api/acmp/dropbox/check",
+      );
+      setDropboxCandidates(payload.candidates);
+      setDropboxStatus(
+        payload.candidates.length === 0
+          ? "No Dropbox AcMP exports found."
+          : `${payload.candidates.length} Dropbox AcMP export${
+              payload.candidates.length === 1 ? "" : "s"
+            } found.`,
+      );
+    } catch (error) {
+      setDropboxStatus(
+        error instanceof Error ? `Error: ${error.message}` : "Error checking Dropbox.",
+      );
+    } finally {
+      setDropboxBusy(false);
+    }
+  }
+
+  async function importDropboxNow() {
+    setDropboxBusy(true);
+    setDropboxStatus("Importing Dropbox exports...");
+    try {
+      const summary = await fetchJson<DropboxImportSummary>(
+        "/api/acmp/dropbox/import",
+        { method: "POST" },
+      );
+      setDropboxSummary(summary);
+      setDropboxCandidates([]);
+      setDropboxStatus(
+        `Dropbox import complete. ${summary.processedFiles} processed, ${summary.ignoredDuplicateFiles} duplicate ignored, ${summary.failedFiles} failed.`,
+      );
+    } catch (error) {
+      setDropboxStatus(
+        error instanceof Error ? `Error: ${error.message}` : "Error importing Dropbox exports.",
+      );
+    } finally {
+      setDropboxBusy(false);
+    }
+  }
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -96,11 +148,17 @@ function ImportPageContent() {
 
     setStatus("Reading file...");
     setFileName(file.name);
+    setFileSha256(null);
+    setResults(null);
 
     const data = await file.arrayBuffer();
+    const checksum = await createBufferSha256(data);
     const workbook = XLSX.read(data);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet);
+
+    setRowsToImport(rows);
+    setFileSha256(checksum);
 
     setStatus("Analyzing rows...");
     const result = await analyzeImportRows(rows);
@@ -111,112 +169,38 @@ function ImportPageContent() {
   }
 
   async function doImport() {
-    if (!analysis) return;
+    if (!analysis || rowsToImport.length === 0) return;
 
     setStatus("Importing...");
 
-    const importTimestamp = new Date().toISOString();
-
-    const {
-      updated,
-      error: updateError,
-    } = await applyExistingOrderUpdates({
-      existingOrders: analysis.existingOrders,
-      importTimestamp,
+    const importResult = await runAcmpImportFromRows({
+      rows: rowsToImport,
+      filename: fileName,
+      sourceType: "manual",
+      fileSha256,
     });
 
-    if (updateError) {
-      setStatus(`Error: ${updateError.message}`);
+    if (importResult.error) {
+      setStatus(`Error: ${importResult.error.message}`);
       return;
     }
 
-    const pendingRows: PendingAcmpInsertRow[] = [
-      ...buildNewOrderPendingRows(
-        analysis.newOrders,
-        analysis.rawByWorkOrderId,
-        fileName,
-      ),
-      ...buildRfqApprovedInactivePendingRows(
-        analysis.rfqActivationCandidates,
-        analysis.rawByWorkOrderId,
-        fileName,
-      ),
-    ];
-
-    if (pendingRows.length > 0) {
-      const { error: pendingError } =
-        await upsertPendingAcmpWorkOrders(pendingRows);
-
-      if (pendingError) {
-        setStatus(
-          `Error saving pending AcMP review rows: ${pendingError.message}`,
-        );
-        return;
-      }
+    if (importResult.duplicate) {
+      setStatus("This AcMP export has already been imported. No changes were made.");
+      setStep("upload");
+      setAnalysis(null);
+      setRowsToImport([]);
+      return;
     }
 
-    await finalizeClosedWorkOrderReports({
-      closedWorkOrders: analysis.closedWorkOrders,
-    });
+    if (!importResult.result) {
+      setStatus("Import finished without result details.");
+      return;
+    }
 
-    const { deleted, closedRemoved } = await applyDeletions({
-      oldIds: analysis.oldIds,
-      closedIds: analysis.closedIds,
-    });
-
-    await recordImportRun({
-      filename: fileName,
-      rowsProcessed:
-        analysis.newOrders.length +
-        analysis.existingOrders.length +
-        analysis.tooOld +
-        analysis.skipped +
-        analysis.closedSkipped,
-      rowsInserted: 0,
-      rowsUpdated: updated,
-    });
-
-    const pendingNewWorkOrders = analysis.newOrders.length;
-    const pendingRfqApprovedInactive = analysis.rfqActivationCandidates.length;
-
-    setResults({
-      processed:
-        analysis.newOrders.length +
-        analysis.existingOrders.length +
-        analysis.tooOld +
-        analysis.skipped +
-        analysis.closedSkipped,
-      updated,
-      deleted,
-      closedRemoved,
-      closedSkipped: analysis.closedSkipped,
-      tooOld: analysis.tooOld,
-      skipped: analysis.skipped,
-      pendingNewWorkOrders,
-      pendingRfqApprovedInactive,
-    });
+    setResults(importResult.result);
     setStep("done");
-
-    const parts: string[] = [];
-    if (pendingNewWorkOrders > 0) {
-      parts.push(
-        `${pendingNewWorkOrders} new work order${
-          pendingNewWorkOrders === 1 ? "" : "s"
-        }`,
-      );
-    }
-    if (pendingRfqApprovedInactive > 0) {
-      parts.push(
-        `${pendingRfqApprovedInactive} RFQ-approved inactive work order${
-          pendingRfqApprovedInactive === 1 ? "" : "s"
-        }`,
-      );
-    }
-    setStatus(
-      parts.length > 0
-        ? `Import complete. ${parts.join(" and ")} added to AcMP Review.`
-        : "Import complete!",
-    );
+    setStatus(resultStatus(importResult.result));
   }
 
   const buttonStyle: React.CSSProperties = {
@@ -228,6 +212,13 @@ function ImportPageContent() {
     cursor: "pointer",
     fontWeight: 700,
     fontSize: "var(--fs-body)",
+  };
+
+  const secondaryButtonStyle: React.CSSProperties = {
+    ...buttonStyle,
+    backgroundColor: "#f8fafc",
+    color: "#1f2937",
+    border: "1px solid #d1d5db",
   };
 
   const cellStyle: React.CSSProperties = {
@@ -250,7 +241,7 @@ function ImportPageContent() {
   const panelStyle: React.CSSProperties = {
     marginBottom: "12px",
     padding: "var(--card-py) var(--card-px)",
-    borderRadius: "10px",
+    borderRadius: "8px",
     fontSize: "var(--fs-body)",
   };
 
@@ -281,234 +272,342 @@ function ImportPageContent() {
       >
         <PageHeader
           title="AcMP Import"
-          description="Upload an AcMP Excel export (.xlsx). Closed and old orders are skipped and removed. New work orders and RFQ-approved inactive work orders are sent to AcMP Review for Office to review."
+          description="Import AcMP Excel exports from Dropbox or upload an Excel file manually as a fallback. New work orders and RFQ-approved inactive work orders are sent to AcMP Review."
         />
 
-        {step === "upload" && (
-          <label
+        <section
+          style={{
+            ...panelStyle,
+            backgroundColor: "#ffffff",
+            border: "1px solid #e5e7eb",
+          }}
+        >
+          <h2
             style={{
-              display: "inline-block",
-              margin: "14px 0",
-              padding: "9px 16px",
-              backgroundColor: "#0070f3",
-              color: "white",
-              borderRadius: "6px",
-              cursor: "pointer",
-              fontWeight: "bold",
-              fontSize: "var(--fs-body)",
+              margin: "0 0 4px",
+              fontSize: "var(--fs-heading)",
+              color: "#1f2937",
             }}
           >
-            Choose file
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleFile}
-              style={{ display: "none" }}
-            />
-          </label>
-        )}
+            Dropbox AcMP Import
+          </h2>
+          <p style={{ margin: "0 0 12px", color: "#475569" }}>
+            Use this if you do not want to wait for the automatic 5-minute Dropbox sync.
+          </p>
+          <button
+            type="button"
+            style={buttonStyle}
+            disabled={dropboxBusy}
+            onClick={() => void checkDropbox()}
+          >
+            Check Dropbox now
+          </button>
 
-        {step === "review" && analysis && (
-          <>
+          {dropboxCandidates.length > 0 && (
             <div
               style={{
-                ...panelStyle,
-                backgroundColor: "#f0f8ff",
-                border: "1px solid #aad",
+                marginTop: "12px",
+                padding: "12px",
+                borderRadius: "8px",
+                border: "1px solid #bfdbfe",
+                backgroundColor: "#eff6ff",
               }}
             >
-              <strong>File analyzed: {fileName}</strong>
-              <br />
-              {existingOrders.length} existing orders (system fields will be
-              updated, manual fields remain intact)
-              <br />
-              <strong>
-                {newOrders.length} new open order
-                {newOrders.length === 1 ? "" : "s"} found — will be added to
-                AcMP Review
-              </strong>
-              <br />
-              {rfqActivationCandidates.length > 0 && (
-                <>
-                  <strong>
-                    {rfqActivationCandidates.length} inactive work order
-                    {rfqActivationCandidates.length !== 1 ? "s" : ""} now have
-                    RFQ approved — will be added to AcMP Review
-                  </strong>
-                  <br />
-                </>
-              )}
-              {closedSkipped > 0 && (
-                <>
-                  {closedSkipped} closed orders (will be skipped + removed from
-                  database)
-                  <br />
-                </>
-              )}
-              {tooOld > 0 && (
-                <>
-                  {tooOld} orders older than 1 year (will be removed)
-                  <br />
-                </>
-              )}
-              {skipped > 0 && (
-                <>
-                  {skipped} skipped (no Work Order ID)
-                  <br />
-                </>
-              )}
+              <strong>Found Dropbox exports</strong>
+              <ul style={{ margin: "8px 0", paddingLeft: "18px" }}>
+                {dropboxCandidates.map((candidate) => (
+                  <li key={candidate.pathLower}>{candidate.filename}</li>
+                ))}
+              </ul>
+              <p style={{ margin: "0 0 10px" }}>
+                Import these Dropbox exports now?
+              </p>
+              <button
+                type="button"
+                style={buttonStyle}
+                disabled={dropboxBusy}
+                onClick={() => void importDropboxNow()}
+              >
+                Import now
+              </button>
             </div>
+          )}
 
-            {rfqActivationCandidates.length > 0 && (
-              <div
-                style={{
-                  ...panelStyle,
-                  backgroundColor: "#ecfdf5",
-                  border: "1px solid #86efac",
-                }}
-              >
-                <strong>RFQ approved on inactive work orders</strong>
-                <p style={{ margin: "8px 0 4px" }}>
-                  These inactive work orders now have an approved RFQ. They
-                  will be queued for AcMP Review so Office can choose to
-                  activate them or keep them inactive.
-                </p>
-                <div style={{ overflowX: "auto", marginTop: "12px" }}>
-                  <table
-                    style={{
-                      borderCollapse: "collapse",
-                      width: "100%",
-                      tableLayout: "fixed",
-                    }}
-                  >
-                    <thead>
-                      <tr>
-                        <th style={headerStyle}>WO</th>
-                        <th style={headerStyle}>Customer</th>
-                        <th style={headerStyle}>Previous RFQ</th>
-                        <th style={headerStyle}>New RFQ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rfqActivationCandidates.map((order) => (
-                        <tr key={order.work_order_id}>
-                          <td style={{ ...cellStyle, fontWeight: 700 }}>
-                            {order.work_order_id}
-                          </td>
-                          <td style={cellStyle}>{order.customer || "-"}</td>
-                          <td style={cellStyle}>
-                            {order.previous_rfq_state || "-"}
-                          </td>
-                          <td style={cellStyle}>{order.rfq_state || "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {newOrders.length > 0 && (
-              <div
-                style={{
-                  ...panelStyle,
-                  backgroundColor: "#fff8e0",
-                  border: "1px solid #dda",
-                }}
-              >
-                <strong>
-                  {newOrders.length} new work order
-                  {newOrders.length === 1 ? "" : "s"} will be queued for AcMP
-                  Review
-                </strong>
-                <p style={{ margin: "8px 0 4px" }}>
-                  After import you will be taken to AcMP Review to configure
-                  each new work order (active, priority, due date, assignment,
-                  process steps).
-                </p>
-              </div>
-            )}
-
-            <button style={buttonStyle} onClick={doImport}>
-              Import now
-            </button>
-          </>
-        )}
-
-        {step === "done" && results && (
-          <>
-            <table style={{ borderCollapse: "collapse", marginTop: "1rem" }}>
+          {dropboxSummary && (
+            <table style={{ borderCollapse: "collapse", marginTop: "12px" }}>
               <tbody>
                 <tr>
-                  <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>
-                    Rows in file
-                  </td>
-                  <td>{results.processed}</td>
+                  <td style={cellStyle}>Processed files</td>
+                  <td style={cellStyle}>{dropboxSummary.processedFiles}</td>
                 </tr>
                 <tr>
-                  <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>
-                    New work orders added to AcMP Review
-                  </td>
-                  <td>{results.pendingNewWorkOrders}</td>
+                  <td style={cellStyle}>Duplicate files ignored</td>
+                  <td style={cellStyle}>{dropboxSummary.ignoredDuplicateFiles}</td>
                 </tr>
                 <tr>
-                  <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>
+                  <td style={cellStyle}>Failed files</td>
+                  <td style={cellStyle}>{dropboxSummary.failedFiles}</td>
+                </tr>
+                <tr>
+                  <td style={cellStyle}>New work orders added to AcMP Review</td>
+                  <td style={cellStyle}>
+                    {dropboxSummary.totals.pendingNewWorkOrders}
+                  </td>
+                </tr>
+                <tr>
+                  <td style={cellStyle}>
                     RFQ-approved inactive work orders added to AcMP Review
                   </td>
-                  <td>{results.pendingRfqApprovedInactive}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>
-                    Updated
+                  <td style={cellStyle}>
+                    {dropboxSummary.totals.pendingRfqApprovedInactive}
                   </td>
-                  <td>{results.updated}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>
-                    Closed orders skipped
-                  </td>
-                  <td>{results.closedSkipped}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>
-                    Closed orders removed from database
-                  </td>
-                  <td>{results.closedRemoved}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>
-                    Removed (older than 1 year)
-                  </td>
-                  <td>{results.deleted}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: "4px 10px", fontSize: "var(--fs-body)" }}>
-                    Skipped (no ID)
-                  </td>
-                  <td>{results.skipped}</td>
                 </tr>
               </tbody>
             </table>
+          )}
 
-            <button
-              style={{ ...buttonStyle, marginTop: "1rem", backgroundColor: "#666" }}
-              onClick={() => {
-                setStep("upload");
-                setResults(null);
-                setStatus("");
-                setAnalysis(null);
+          {dropboxStatus && (
+            <p style={{ margin: "12px 0 0" }}>
+              <strong>{dropboxStatus}</strong>
+            </p>
+          )}
+        </section>
+
+        <section
+          style={{
+            ...panelStyle,
+            backgroundColor: "#ffffff",
+            border: "1px solid #e5e7eb",
+          }}
+        >
+          <h2
+            style={{
+              margin: "0 0 4px",
+              fontSize: "var(--fs-heading)",
+              color: "#1f2937",
+            }}
+          >
+            Manual upload fallback
+          </h2>
+          <p style={{ margin: "0 0 10px", color: "#475569" }}>
+            Upload an AcMP Excel export if Dropbox is unavailable or an emergency import is needed.
+          </p>
+
+          {step === "upload" && (
+            <label
+              style={{
+                display: "inline-block",
+                margin: "4px 0 0",
+                padding: "9px 16px",
+                backgroundColor: "#0070f3",
+                color: "white",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontWeight: "bold",
+                fontSize: "var(--fs-body)",
               }}
             >
-              Start new import
-            </button>
-          </>
-        )}
+              Choose file
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFile}
+                style={{ display: "none" }}
+              />
+            </label>
+          )}
 
-        {status && (
-          <p style={{ marginTop: "1rem" }}>
-            <strong>{status}</strong>
-          </p>
-        )}
+          {step === "review" && analysis && (
+            <>
+              <div
+                style={{
+                  ...panelStyle,
+                  backgroundColor: "#f0f8ff",
+                  border: "1px solid #aad",
+                  marginTop: "12px",
+                }}
+              >
+                <strong>File analyzed: {fileName}</strong>
+                <br />
+                {existingOrders.length} existing orders (system fields will be
+                updated, manual fields remain intact)
+                <br />
+                <strong>
+                  {newOrders.length} new open order
+                  {newOrders.length === 1 ? "" : "s"} found; will be added to
+                  AcMP Review
+                </strong>
+                <br />
+                {rfqActivationCandidates.length > 0 && (
+                  <>
+                    <strong>
+                      {rfqActivationCandidates.length} inactive work order
+                      {rfqActivationCandidates.length !== 1 ? "s" : ""} now
+                      have RFQ approved; will be added to AcMP Review
+                    </strong>
+                    <br />
+                  </>
+                )}
+                {closedSkipped > 0 && (
+                  <>
+                    {closedSkipped} closed orders (will be skipped and removed
+                    from database)
+                    <br />
+                  </>
+                )}
+                {tooOld > 0 && (
+                  <>
+                    {tooOld} orders older than 1 year (will be removed)
+                    <br />
+                  </>
+                )}
+                {skipped > 0 && (
+                  <>
+                    {skipped} skipped (no Work Order ID)
+                    <br />
+                  </>
+                )}
+              </div>
+
+              {rfqActivationCandidates.length > 0 && (
+                <div
+                  style={{
+                    ...panelStyle,
+                    backgroundColor: "#ecfdf5",
+                    border: "1px solid #86efac",
+                  }}
+                >
+                  <strong>RFQ approved on inactive work orders</strong>
+                  <p style={{ margin: "8px 0 4px" }}>
+                    These inactive work orders now have an approved RFQ. They
+                    will be queued for AcMP Review so Office can choose to
+                    activate them or keep them inactive.
+                  </p>
+                  <div style={{ overflowX: "auto", marginTop: "12px" }}>
+                    <table
+                      style={{
+                        borderCollapse: "collapse",
+                        width: "100%",
+                        tableLayout: "fixed",
+                      }}
+                    >
+                      <thead>
+                        <tr>
+                          <th style={headerStyle}>WO</th>
+                          <th style={headerStyle}>Customer</th>
+                          <th style={headerStyle}>Previous RFQ</th>
+                          <th style={headerStyle}>New RFQ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rfqActivationCandidates.map((order) => (
+                          <tr key={order.work_order_id}>
+                            <td style={{ ...cellStyle, fontWeight: 700 }}>
+                              {order.work_order_id}
+                            </td>
+                            <td style={cellStyle}>{order.customer || "-"}</td>
+                            <td style={cellStyle}>
+                              {order.previous_rfq_state || "-"}
+                            </td>
+                            <td style={cellStyle}>{order.rfq_state || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {newOrders.length > 0 && (
+                <div
+                  style={{
+                    ...panelStyle,
+                    backgroundColor: "#fff8e0",
+                    border: "1px solid #dda",
+                  }}
+                >
+                  <strong>
+                    {newOrders.length} new work order
+                    {newOrders.length === 1 ? "" : "s"} will be queued for AcMP
+                    Review
+                  </strong>
+                  <p style={{ margin: "8px 0 4px" }}>
+                    After import, open AcMP Review to configure each new work order.
+                  </p>
+                </div>
+              )}
+
+              <button style={buttonStyle} onClick={() => void doImport()}>
+                Import now
+              </button>
+            </>
+          )}
+
+          {step === "done" && results && (
+            <>
+              <table style={{ borderCollapse: "collapse", marginTop: "1rem" }}>
+                <tbody>
+                  <tr>
+                    <td style={cellStyle}>Rows in file</td>
+                    <td style={cellStyle}>{results.processed}</td>
+                  </tr>
+                  <tr>
+                    <td style={cellStyle}>New work orders added to AcMP Review</td>
+                    <td style={cellStyle}>{results.pendingNewWorkOrders}</td>
+                  </tr>
+                  <tr>
+                    <td style={cellStyle}>
+                      RFQ-approved inactive work orders added to AcMP Review
+                    </td>
+                    <td style={cellStyle}>
+                      {results.pendingRfqApprovedInactive}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={cellStyle}>Updated</td>
+                    <td style={cellStyle}>{results.updated}</td>
+                  </tr>
+                  <tr>
+                    <td style={cellStyle}>Closed orders skipped</td>
+                    <td style={cellStyle}>{results.closedSkipped}</td>
+                  </tr>
+                  <tr>
+                    <td style={cellStyle}>Closed orders removed from database</td>
+                    <td style={cellStyle}>{results.closedRemoved}</td>
+                  </tr>
+                  <tr>
+                    <td style={cellStyle}>Removed (older than 1 year)</td>
+                    <td style={cellStyle}>{results.deleted}</td>
+                  </tr>
+                  <tr>
+                    <td style={cellStyle}>Skipped (no ID)</td>
+                    <td style={cellStyle}>{results.skipped}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <button
+                style={{ ...secondaryButtonStyle, marginTop: "1rem" }}
+                onClick={() => {
+                  setStep("upload");
+                  setResults(null);
+                  setStatus("");
+                  setAnalysis(null);
+                  setRowsToImport([]);
+                  setFileSha256(null);
+                }}
+              >
+                Start new import
+              </button>
+            </>
+          )}
+
+          {status && (
+            <p style={{ marginTop: "1rem" }}>
+              <strong>{status}</strong>
+            </p>
+          )}
+        </section>
       </div>
     </main>
   );

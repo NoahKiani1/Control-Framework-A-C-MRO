@@ -5,6 +5,7 @@ import {
   parseExcelDate,
 } from "@/lib/import-normalize";
 import { getExistingWorkOrderIds, getWorkOrders } from "@/lib/work-orders";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ExistingOrderSnapshot,
   ImportAnalysis,
@@ -30,6 +31,7 @@ const EXISTING_ORDER_SELECT =
 
 export async function analyzeImportRows(
   rows: Record<string, unknown>[],
+  client?: SupabaseClient,
 ): Promise<ImportAnalysis> {
   let skipCount = 0;
   let oldCount = 0;
@@ -81,7 +83,7 @@ export async function analyzeImportRows(
   }
 
   const ids = parsed.map((r) => r.work_order_id);
-  const existingIdList = await getExistingWorkOrderIds(ids);
+  const existingIdList = await getExistingWorkOrderIds(ids, client);
   const existingIds = new Set(existingIdList);
 
   const newOrders = parsed.filter((r) => !existingIds.has(r.work_order_id));
@@ -91,6 +93,7 @@ export async function analyzeImportRows(
     ? await getWorkOrders<ExistingOrderSnapshot>({
         select: EXISTING_ORDER_SELECT,
         workOrderIds: existingOrders.map((r) => r.work_order_id),
+        client,
       })
     : [];
 

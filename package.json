@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "import:dropbox": "tsx scripts/import-acmp-from-dropbox.ts",
+    "test:acmp-import": "tsx tests/acmp-import.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.102.1",
@@ -24,6 +26,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.2",
     "tailwindcss": "^4",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }

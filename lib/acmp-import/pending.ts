@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getExistingWorkOrderIds } from "@/lib/work-orders";
 import {
   PendingAcmpReviewType,
@@ -87,7 +88,10 @@ export async function getPendingAcmpReviewSummary(): Promise<PendingAcmpReviewSu
   };
 }
 
-export async function upsertPendingAcmpWorkOrders(rows: PendingAcmpInsertRow[]) {
+export async function upsertPendingAcmpWorkOrders(
+  rows: PendingAcmpInsertRow[],
+  client: SupabaseClient = supabase,
+) {
   if (rows.length === 0) return { error: null };
 
   const payload = rows.map((row) => ({
@@ -96,7 +100,7 @@ export async function upsertPendingAcmpWorkOrders(rows: PendingAcmpInsertRow[]) 
     processed_at: null,
   }));
 
-  return supabase
+  return client
     .from(PENDING_TABLE)
     .upsert(payload, {
       onConflict: "work_order_id",
@@ -121,11 +125,12 @@ export async function deletePendingAcmpWorkOrdersByIds(workOrderIds: string[]) {
  */
 export async function pruneStalePendingAcmpWorkOrders(
   workOrderIds: string[],
+  client: SupabaseClient = supabase,
 ): Promise<number> {
   if (workOrderIds.length === 0) return 0;
-  const existing = await getExistingWorkOrderIds(workOrderIds);
+  const existing = await getExistingWorkOrderIds(workOrderIds, client);
   if (existing.length === 0) return 0;
-  const { error } = await supabase
+  const { error } = await client
     .from(PENDING_TABLE)
     .delete()
     .eq("review_type", "new_work_order")
