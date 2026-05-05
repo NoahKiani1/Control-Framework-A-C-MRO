@@ -16,18 +16,20 @@ Excel files are never saved in Supabase Storage. The importer downloads each Exc
 
 ## Filename Rules
 
-Accepted filenames:
+Users may upload any valid AcMP `.xlsx` export to:
 
-- `werkorders_ddmmjj.xlsx`
-- `werkorders_ddmmjj (1).xlsx`
-- `werkorders_ddmmjj (2).xlsx`
+`/Work Order Planning App/import`
 
-Examples:
+The filename does not matter as long as it is a `.xlsx` AcMP export.
 
-- `werkorders_040526.xlsx` means export date `2026-05-04`, sequence `0`.
-- `werkorders_040526 (1).xlsx` means export date `2026-05-04`, sequence `1`.
+Accepted examples:
 
-Rejected files include temporary Office files starting with `~$`, non-`.xlsx` files, unrelated names, `werkorders_04-05-26.xlsx`, and `werkorders_04052026.xlsx`.
+- `werkorders_130326.xlsx`
+- `export.xlsx`
+- `AcMP export.xlsx`
+- `latest work orders.xlsx`
+
+Temporary Office files starting with `~$` are ignored. Non-`.xlsx` files are ignored. Folders are ignored. `.xls` files are ignored unless explicit `.xls` support is added later.
 
 ## Dashboard Refresh
 
@@ -35,7 +37,7 @@ The Dashboard header has a refresh action labeled `Check AcMP export`. It checks
 
 ## `/import` Page
 
-The `/import` page has full Dropbox import controls before the manual upload section. Office can check Dropbox, review the found export filenames, confirm import, and see a compact summary.
+The `/import` page has full Dropbox import controls before the manual upload section. Office can check Dropbox, review the found export filenames, confirm import, and see a compact summary. If multiple Excel exports are present, the page shows that only the newest file will be imported.
 
 Manual file upload remains available as an emergency fallback. It uses the same shared import runner as Dropbox imports.
 
@@ -47,7 +49,15 @@ Manual uploads are read in the browser, converted to parsed rows, and then impor
 
 ## Success And Failure Behavior
 
-Successful Dropbox Excel files are deleted from Dropbox after import.
+If multiple Excel exports are present in the import folder, only the newest by Dropbox modified time is imported. If two files have the same modified time, the deterministic fallback is the descending lowercase Dropbox path.
+
+The newest AcMP export represents the latest system state. Older Excel exports are not imported one by one.
+
+After the newest export imports successfully, all `.xlsx` exports in the import folder are deleted, including older exports. Non-`.xlsx` files and folders are not deleted.
+
+If the newest export is a duplicate by parsed `rows_signature`, it is ignored and all `.xlsx` exports in the import folder are deleted.
+
+If the newest export is invalid, corrupted, or fails during import, only the newest file is moved to the failed folder. Older Excel exports are kept for safety.
 
 Failed Dropbox Excel files are moved to:
 

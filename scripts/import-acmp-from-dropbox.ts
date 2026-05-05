@@ -13,6 +13,8 @@ async function main() {
       `processed=${summary.processedFiles}`,
       `duplicates=${summary.ignoredDuplicateFiles}`,
       `failed=${summary.failedFiles}`,
+      `candidates=${summary.candidatesFound}`,
+      `deleted_superseded=${summary.deletedSuperseded}`,
       `pending_new=${summary.totals.pendingNewWorkOrders}`,
       `pending_rfq=${summary.totals.pendingRfqApprovedInactive}`,
     ].join(" "),

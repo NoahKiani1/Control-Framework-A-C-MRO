@@ -29,6 +29,7 @@ delete from public.yearly_report_exports;
 
 -- Pending AcMP review queue + import history
 delete from public.pending_acmp_work_orders;
+delete from public.acmp_import_files;
 delete from public.import_runs;
 
 -- Operational work orders (deleted last because other tables reference these IDs)

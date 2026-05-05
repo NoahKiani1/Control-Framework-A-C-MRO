@@ -126,13 +126,15 @@ type HealthStatus = {
 
 type DropboxCandidate = {
   filename: string;
-  exportDate: string;
+  exportDate: string | null;
   exportSequence: number;
   serverModified: string | null;
   pathLower: string;
 };
 
 type DropboxImportSummary = {
+  candidatesFound?: number;
+  deletedSuperseded?: number;
   processedFiles: number;
   ignoredDuplicateFiles: number;
   failedFiles: number;
@@ -630,13 +632,14 @@ function DashboardPageContent() {
         "/api/acmp/dropbox/check",
       );
       setDropboxCandidates(payload.candidates);
-      if (payload.candidates.length === 0) {
+      const newestCandidate = payload.candidates[0];
+      if (!newestCandidate) {
         setDropboxStatus("No new AcMP export found.");
       } else if (payload.candidates.length === 1) {
-        setDropboxStatus("1 AcMP export ready to import.");
+        setDropboxStatus(`AcMP export ready: ${newestCandidate.filename}.`);
       } else {
         setDropboxStatus(
-          `${payload.candidates.length} AcMP exports ready to import.`,
+          `Multiple Excel exports found. Newest will import: ${newestCandidate.filename}. Older Excel files delete after success.`,
         );
       }
     } catch (error) {
@@ -652,7 +655,7 @@ function DashboardPageContent() {
   async function importDropboxNow() {
     setDropboxBusy(true);
     setDropboxStatusTone("info");
-    setDropboxStatus("Importing AcMP exports...");
+    setDropboxStatus("Importing AcMP export...");
     try {
       const summary = await fetchJson<DropboxImportSummary>(
         "/api/acmp/dropbox/import",
@@ -1486,7 +1489,7 @@ function DashboardPageContent() {
                     display: "inline-flex",
                     alignItems: "center",
                     minHeight: "34px",
-                    maxWidth: "240px",
+                    maxWidth: "360px",
                     padding: "7px 10px",
                     borderRadius: "8px",
                     backgroundColor: dropboxStatusPalette.backgroundColor,

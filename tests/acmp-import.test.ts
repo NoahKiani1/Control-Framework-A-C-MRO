@@ -1,30 +1,291 @@
 import assert from "node:assert/strict";
-import { parseAcmpExportFilename } from "../lib/acmp-import/dropbox";
+import * as XLSX from "xlsx";
+import {
+  dropboxListEntryToExportCandidate,
+  importDropboxExports,
+  parseAcmpExportFilename,
+  readAcmpWorkbook,
+  sortDropboxExportCandidates,
+  validateAcmpExportHeaders,
+  validateAcmpExportRows,
+  type DropboxExportCandidate,
+  type DropboxImportRuntime,
+  type DropboxListFolderEntry,
+} from "../lib/acmp-import/dropbox";
+import type { AcmpImportResult } from "../lib/acmp-import/run";
 import { createRowsSignature } from "../lib/acmp-import/signature";
 import { isProcessedRowsSignatureDuplicate } from "../lib/acmp-import/import-files";
 import { zonedDateTimeToUtcIso } from "../lib/time-zone";
 
+const SUCCESS_RESULT: AcmpImportResult = {
+  processed: 1,
+  updated: 1,
+  deleted: 0,
+  closedRemoved: 0,
+  closedSkipped: 0,
+  tooOld: 0,
+  skipped: 0,
+  pendingNewWorkOrders: 0,
+  pendingRfqApprovedInactive: 0,
+};
+
+function makeDropboxEntry(
+  name: string,
+  overrides: Partial<DropboxListFolderEntry> = {},
+): DropboxListFolderEntry {
+  return {
+    ".tag": "file",
+    name,
+    path_lower: `/work order planning app/import/${name.toLowerCase()}`,
+    rev: `rev-${name.toLowerCase()}`,
+    content_hash: `hash-${name.toLowerCase()}`,
+    server_modified: "2026-05-04T10:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeCandidate(
+  name: string,
+  serverModified: string,
+  pathLower?: string,
+): DropboxExportCandidate {
+  const candidate = dropboxListEntryToExportCandidate(
+    makeDropboxEntry(name, {
+      path_lower: pathLower ?? `/work order planning app/import/${name.toLowerCase()}`,
+      server_modified: serverModified,
+    }),
+  );
+  assert.ok(candidate);
+  return candidate;
+}
+
+function workbookBuffer(headers: string[], values: unknown[] = []): ArrayBuffer {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet([headers, values]);
+  XLSX.utils.book_append_sheet(workbook, sheet, "Export");
+  const buffer = XLSX.write(workbook, {
+    type: "buffer",
+    bookType: "xlsx",
+  }) as Buffer;
+  return buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength,
+  ) as ArrayBuffer;
+}
+
+function createMockDropboxRuntime({
+  candidates,
+  buffer = workbookBuffer(
+    [
+      "Work Order",
+      "Customer",
+      "RFQ State",
+      "CreatedOn",
+      "LastUpdatedOn",
+      "Close Date",
+      "Comp. Type",
+      "Description",
+      "Comp. Pn",
+    ],
+    ["100", "ACMP", "RFQ Send - Continue", "2026-05-01", "2026-05-04", "", "Repair", "Wheel", "PN-1"],
+  ),
+  duplicateRowsSignature = false,
+  importResult = { result: SUCCESS_RESULT, error: null },
+}: {
+  candidates: DropboxExportCandidate[];
+  buffer?: ArrayBuffer;
+  duplicateRowsSignature?: boolean;
+  importResult?: Awaited<ReturnType<DropboxImportRuntime["runImportFromRows"]>>;
+}) {
+  const deletedPaths: string[] = [];
+  const movedFiles: { pathLower: string; filename: string }[] = [];
+  const failedRecords: Parameters<DropboxImportRuntime["recordFailedImport"]>[0][] =
+    [];
+  const ignoredRecords: Parameters<
+    DropboxImportRuntime["recordIgnoredImport"]
+  >[0][] = [];
+  const importCalls: unknown[] = [];
+
+  const runtime: DropboxImportRuntime = {
+    scanCandidates: async () => candidates,
+    downloadFile: async () => buffer,
+    deleteFile: async (pathLower) => {
+      deletedPaths.push(pathLower);
+    },
+    moveFileToFailed: async (pathLower, filename) => {
+      movedFiles.push({ pathLower, filename });
+    },
+    createBufferSha256: async () => "file-sha",
+    createRowsSignature: async () => "rows-signature",
+    hasProcessedRowsSignature: async () => duplicateRowsSignature,
+    recordFailedImport: async (args) => {
+      failedRecords.push(args);
+    },
+    recordIgnoredImport: async (args) => {
+      ignoredRecords.push(args);
+    },
+    readWorkbook: readAcmpWorkbook,
+    runImportFromRows: async (args) => {
+      importCalls.push(args);
+      return importResult;
+    },
+  };
+
+  return {
+    runtime,
+    deletedPaths,
+    movedFiles,
+    failedRecords,
+    ignoredRecords,
+    importCalls,
+  };
+}
+
 async function main() {
-  assert.deepEqual(parseAcmpExportFilename("werkorders_040526.xlsx"), {
-    filename: "werkorders_040526.xlsx",
-    exportDate: "2026-05-04",
+  assert.deepEqual(parseAcmpExportFilename("werkorders_130326.xlsx"), {
+    filename: "werkorders_130326.xlsx",
+    exportDate: "2026-03-13",
     exportSequence: 0,
   });
-  assert.deepEqual(parseAcmpExportFilename("werkorders_040526 (1).xlsx"), {
-    filename: "werkorders_040526 (1).xlsx",
-    exportDate: "2026-05-04",
-    exportSequence: 1,
+  assert.deepEqual(parseAcmpExportFilename("export.xlsx"), {
+    filename: "export.xlsx",
+    exportDate: null,
+    exportSequence: 0,
   });
-  assert.deepEqual(parseAcmpExportFilename("werkorders_040526 (2).xlsx"), {
-    filename: "werkorders_040526 (2).xlsx",
-    exportDate: "2026-05-04",
-    exportSequence: 2,
+  assert.deepEqual(parseAcmpExportFilename("AcMP export.xlsx"), {
+    filename: "AcMP export.xlsx",
+    exportDate: null,
+    exportSequence: 0,
   });
-  assert.equal(parseAcmpExportFilename("werkorders_04-05-26.xlsx"), null);
-  assert.equal(parseAcmpExportFilename("werkorders_04052026.xlsx"), null);
-  assert.equal(parseAcmpExportFilename("~$werkorders_040526.xlsx"), null);
-  assert.equal(parseAcmpExportFilename("werkorders_040526.xls"), null);
-  assert.equal(parseAcmpExportFilename("planning_040526.xlsx"), null);
+  assert.deepEqual(parseAcmpExportFilename("random valid name.xlsx"), {
+    filename: "random valid name.xlsx",
+    exportDate: null,
+    exportSequence: 0,
+  });
+  assert.equal(parseAcmpExportFilename("~$werkorders_130326.xlsx"), null);
+  assert.equal(parseAcmpExportFilename("file.pdf"), null);
+  assert.equal(parseAcmpExportFilename("file.xls"), null);
+  assert.equal(
+    dropboxListEntryToExportCandidate(
+      makeDropboxEntry("folder.xlsx", {
+        ".tag": "folder",
+        path_lower: undefined,
+        rev: undefined,
+      }),
+    ),
+    null,
+  );
+
+  const newest = makeCandidate("newest.xlsx", "2026-05-04T12:00:00Z");
+  const older = makeCandidate("older.xlsx", "2026-05-04T11:00:00Z");
+  assert.equal(sortDropboxExportCandidates([older, newest])[0], newest);
+
+  const tieA = makeCandidate(
+    "a.xlsx",
+    "2026-05-04T12:00:00Z",
+    "/work order planning app/import/a.xlsx",
+  );
+  const tieZ = makeCandidate(
+    "z.xlsx",
+    "2026-05-04T12:00:00Z",
+    "/work order planning app/import/z.xlsx",
+  );
+  assert.equal(sortDropboxExportCandidates([tieA, tieZ])[0], tieZ);
+
+  assert.equal(
+    validateAcmpExportHeaders(["Work Order", "Customer", "RFQ State"]).ok,
+    true,
+  );
+  assert.equal(
+    validateAcmpExportRows([{ "Work Order": "100", Customer: "ACMP" }]).ok,
+    true,
+  );
+  const missingWorkOrder = validateAcmpExportRows([{ Customer: "ACMP" }]);
+  assert.equal(missingWorkOrder.ok, false);
+  assert.deepEqual(missingWorkOrder.missingRequired, ["Work Order"]);
+
+  {
+    const pdfPath = "/work order planning app/import/notes.pdf";
+    const candidates = [
+      dropboxListEntryToExportCandidate(makeDropboxEntry("notes.pdf")),
+      older,
+      newest,
+    ].filter((candidate): candidate is DropboxExportCandidate =>
+      Boolean(candidate),
+    );
+    const { runtime, deletedPaths, movedFiles, importCalls } =
+      createMockDropboxRuntime({ candidates });
+    const summary = await importDropboxExports({ mode: "auto", runtime });
+
+    assert.equal(summary.candidatesFound, 2);
+    assert.equal(summary.processedFiles, 1);
+    assert.equal(summary.deletedSuperseded, 1);
+    assert.deepEqual(deletedPaths, [newest.pathLower, older.pathLower]);
+    assert.equal(deletedPaths.includes(pdfPath), false);
+    assert.deepEqual(movedFiles, []);
+    assert.equal(importCalls.length, 1);
+  }
+
+  {
+    const { runtime, deletedPaths, ignoredRecords, importCalls } =
+      createMockDropboxRuntime({
+        candidates: [older, newest],
+        duplicateRowsSignature: true,
+      });
+    const summary = await importDropboxExports({
+      mode: "manual-trigger",
+      runtime,
+    });
+
+    assert.equal(summary.ignoredDuplicateFiles, 1);
+    assert.equal(summary.deletedSuperseded, 1);
+    assert.deepEqual(deletedPaths, [newest.pathLower, older.pathLower]);
+    assert.equal(importCalls.length, 0);
+    assert.equal(ignoredRecords.length, 1);
+    assert.equal(ignoredRecords[0].ignoreReason, "duplicate_rows_signature");
+  }
+
+  {
+    const { runtime, deletedPaths, movedFiles } = createMockDropboxRuntime({
+      candidates: [older, newest],
+      importResult: {
+        result: null,
+        error: { message: "Import failed during apply." },
+      },
+    });
+    const summary = await importDropboxExports({ mode: "auto", runtime });
+
+    assert.equal(summary.failedFiles, 1);
+    assert.deepEqual(deletedPaths, []);
+    assert.deepEqual(movedFiles, [
+      { pathLower: newest.pathLower, filename: newest.filename },
+    ]);
+  }
+
+  {
+    const { runtime, deletedPaths, movedFiles, failedRecords, importCalls } =
+      createMockDropboxRuntime({
+        candidates: [older, newest],
+        buffer: workbookBuffer(["Customer", "RFQ State"], ["ACMP", "RFQ Send"]),
+      });
+    const summary = await importDropboxExports({
+      mode: "manual-trigger",
+      runtime,
+    });
+
+    assert.equal(summary.failedFiles, 1);
+    assert.equal(summary.results[0].error, "Invalid AcMP export: required columns missing.");
+    assert.deepEqual(deletedPaths, []);
+    assert.deepEqual(movedFiles, [
+      { pathLower: newest.pathLower, filename: newest.filename },
+    ]);
+    assert.equal(failedRecords.length, 1);
+    assert.equal(
+      failedRecords[0].errorMessage,
+      "Invalid AcMP export: required columns missing.",
+    );
+    assert.equal(importCalls.length, 0);
+  }
 
   assert.equal(
     zonedDateTimeToUtcIso({

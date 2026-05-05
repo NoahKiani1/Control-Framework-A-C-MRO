@@ -64,7 +64,7 @@ const shopFont = Public_Sans({
   display: "swap",
 });
 const FONT_STACK = `${shopFont.style.fontFamily}, "Gotham", var(--font-geist-sans), "Geist", var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`;
-const AUTO_SCROLL_SPEED_PX_PER_SECOND = 18;
+const AUTO_SCROLL_SPEED_PX_PER_SECOND = 20;
 const AUTO_SCROLL_TOP_PAUSE_MS = 7000;
 const AUTO_SCROLL_SECTION_PAUSE_MS = 5000;
 const AUTO_SCROLL_BOTTOM_PAUSE_MS = 9000;
@@ -144,7 +144,7 @@ const TIMELINE_UPCOMING_INK = "#7d8696";
  * shop wall's typical viewport width. Used uniformly so every label reads at
  * the same scale, regardless of state.
  */
-const TIMELINE_LABEL_FONT_SIZE = "12px";
+const TIMELINE_LABEL_FONT_SIZE = "16px";
 
 function buildTimelineSegments(
   workOrderType: string | null,
@@ -170,6 +170,12 @@ function buildTimelineSegments(
   }));
 }
 
+function timelineSegmentColumn(name: string): string {
+  const minPx = Math.min(180, Math.max(76, name.length * 8 + 34));
+  const flex = Math.min(1.75, Math.max(0.85, 0.64 + name.length / 14));
+  return `minmax(${minPx}px, ${flex.toFixed(2)}fr)`;
+}
+
 function WorkOrderTimeline({
   workOrderType,
   currentStep,
@@ -183,6 +189,9 @@ function WorkOrderTimeline({
 }) {
   const segments = buildTimelineSegments(workOrderType, currentStep, includedSteps);
   if (segments.length === 0) return null;
+  const timelineColumns = segments
+    .map((segment) => timelineSegmentColumn(segment.name))
+    .join(" ");
 
   const currentInk = blocked ? COLORS.red : "#166534";
   const currentSoft = blocked ? COLORS.redSoft : "#dff1e5";
@@ -192,7 +201,7 @@ function WorkOrderTimeline({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: `repeat(${segments.length}, minmax(0, 1fr))`,
+        gridTemplateColumns: timelineColumns,
         gap: "4px",
         width: "100%",
         alignItems: "start",
@@ -226,15 +235,15 @@ function WorkOrderTimeline({
               display: "grid",
               justifyItems: "center",
               alignContent: "start",
-              rowGap: "5px",
+              rowGap: "4px",
             }}
           >
             <div
               style={{
                 width: "100%",
                 minWidth: 0,
-                height: segment.state === "current" ? "20px" : "18px",
-                borderRadius: "5px",
+                height: segment.state === "current" ? "22px" : "20px",
+                borderRadius: "6px",
                 backgroundColor,
                 border: borderStyle,
                 boxShadow:
@@ -251,14 +260,14 @@ function WorkOrderTimeline({
                   justifyContent: "center",
                   maxWidth: "100%",
                   minWidth: 0,
-                  padding: "2px 7px",
+                  padding: "2px 9px",
                   borderRadius: "999px",
                   border: `1px solid ${currentPillBorder}`,
                   backgroundColor: currentSoft,
                   color: currentInk,
                   fontFamily: "inherit",
                   fontSize: TIMELINE_LABEL_FONT_SIZE,
-                  fontWeight: 600,
+                  fontWeight: 700,
                   lineHeight: 1.2,
                   boxSizing: "border-box",
                   overflow: "hidden",
@@ -273,12 +282,12 @@ function WorkOrderTimeline({
                 style={{
                   minWidth: 0,
                   maxWidth: "100%",
-                  padding: "0 2px",
+                  padding: "0 3px",
                   fontFamily: "inherit",
                   fontSize: TIMELINE_LABEL_FONT_SIZE,
                   lineHeight: 1.2,
                   color: labelColor,
-                  fontWeight: 500,
+                  fontWeight: 600,
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -349,14 +358,14 @@ function AssignedPerson({
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          width: "84px",
-          minHeight: "40px",
-          padding: "0 10px",
+          width: "92px",
+          minHeight: "48px",
+          padding: "0 12px",
           borderRadius: "8px",
           backgroundColor: COLORS.soft,
           border: `1px solid ${COLORS.borderStrong}`,
           color: COLORS.ink,
-          fontSize: "14px",
+          fontSize: "17px",
           fontWeight: 600,
           lineHeight: 1,
           letterSpacing: "0.01em",
@@ -377,22 +386,22 @@ function AssignedPerson({
         display: "grid",
         alignItems: "end",
         justifyItems: "center",
-        width: "84px",
-        height: "84px",
+        width: "92px",
+        height: "92px",
       }}
     >
       <Image
         src={resolvedPhotoUrl}
         alt={displayName}
-        width={84}
-        height={84}
+        width={92}
+        height={92}
         unoptimized
         onError={() => setImageFailed(true)}
         style={{
-          width: "84px",
-          height: "84px",
-          maxWidth: "84px",
-          maxHeight: "84px",
+          width: "92px",
+          height: "92px",
+          maxWidth: "92px",
+          maxHeight: "92px",
           borderRadius: "0",
           objectFit: "contain",
           objectPosition: "center bottom",
@@ -711,7 +720,7 @@ function ShopPageContent() {
           >
             Aircraft & Component MRO · Workshop
           </div>
-          <div style={{ fontSize: "24px", fontWeight: 600, letterSpacing: "-0.015em" }}>Loading shop wall...</div>
+          <div style={{ fontSize: "26px", fontWeight: 600, letterSpacing: "-0.015em" }}>Loading shop wall...</div>
         </div>
       </main>
     );
@@ -746,8 +755,8 @@ function ShopPageContent() {
     position: "relative",
     display: "flex",
     flexDirection: "column",
-    rowGap: "12px",
-    padding: "10px 14px 12px 18px",
+    rowGap: "8px",
+    padding: "8px 14px 10px 18px",
     borderRadius: "10px",
     borderTop: `1px solid ${COLORS.borderStrong}`,
     borderRight: `1px solid ${COLORS.borderStrong}`,
@@ -761,19 +770,19 @@ function ShopPageContent() {
   const cardTopRowStyle: React.CSSProperties = {
     display: "grid",
     gridTemplateColumns:
-      "minmax(200px, 22fr) minmax(150px, 18fr) minmax(260px, 40fr) minmax(232px, 20fr)",
+      "minmax(280px, 22fr) minmax(220px, 20fr) minmax(360px, 32fr) minmax(340px, 26fr)",
     columnGap: "14px",
     alignItems: "stretch",
-    minHeight: "104px",
+    minHeight: "96px",
   };
 
   const cardTimelineRowStyle: React.CSSProperties = {
-    paddingTop: "4px",
+    paddingTop: "2px",
   };
 
   const labelStyle: React.CSSProperties = {
     color: COLORS.muted,
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 600,
     letterSpacing: "0.14em",
     textTransform: "uppercase",
@@ -784,10 +793,11 @@ function ShopPageContent() {
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
-      minWidth: "58px",
-      padding: "4px 10px",
+      flexShrink: 0,
+      minWidth: "70px",
+      padding: "5px 12px",
       borderRadius: "5px",
-      fontSize: "13px",
+      fontSize: "18px",
       fontWeight: 700,
       letterSpacing: "0.08em",
       border: `1px solid transparent`,
@@ -838,7 +848,6 @@ function ShopPageContent() {
     photoUrl,
     dueDate,
     overdue,
-    assignedLabel = "Assigned",
     dueLabel = "Work order due on",
     hideAssigned = false,
   }: {
@@ -855,61 +864,51 @@ function ShopPageContent() {
         style={{
           alignSelf: "stretch",
           display: "grid",
-          gridTemplateColumns: "84px minmax(132px, 1fr)",
-          gridTemplateRows: "auto auto",
-          columnGap: "12px",
-          rowGap: "4px",
+          gridTemplateColumns: hideAssigned ? "minmax(0, 1fr)" : "92px minmax(220px, 1fr)",
+          columnGap: "14px",
+          alignItems: "center",
           paddingLeft: "14px",
           borderLeft: `1px solid ${COLORS.border}`,
           minWidth: 0,
         }}
       >
-        <div
-          style={{
-            ...labelStyle,
-            visibility: hideAssigned ? "hidden" : "visible",
-          }}
-        >
-          {assignedLabel}
-        </div>
-        <div
-          style={{
-            ...labelStyle,
-            textAlign: "right",
-          }}
-        >
-          {dueLabel}
-        </div>
-        <div
-          style={{
-            visibility: hideAssigned ? "hidden" : "visible",
-            display: "grid",
-            placeItems: "center",
-            width: "84px",
-            height: "84px",
-            gridRow: 2,
-          }}
-        >
-          <AssignedPerson name={name} photoUrl={photoUrl} />
-        </div>
+        {!hideAssigned && (
+          <div
+            style={{
+              display: "grid",
+              placeItems: "center",
+              width: "92px",
+              height: "92px",
+            }}
+          >
+            <AssignedPerson name={name} photoUrl={photoUrl} />
+          </div>
+        )}
         <div
           style={{
             display: "grid",
-            gap: "5px",
+            gap: "4px",
             alignContent: "center",
             justifyItems: "end",
             minWidth: 0,
-            gridRow: 2,
           }}
         >
           <div
             style={{
+              ...labelStyle,
+              textAlign: "right",
+            }}
+          >
+            {dueLabel}
+          </div>
+          <div
+            style={{
               color: overdue ? COLORS.red : COLORS.ink,
-              fontSize: "24px",
+              fontSize: hideAssigned ? "38px" : "34px",
               fontWeight: 700,
               whiteSpace: "nowrap",
               fontVariantNumeric: "tabular-nums",
-              lineHeight: 1,
+              lineHeight: 1.0,
               letterSpacing: "-0.015em",
             }}
           >
@@ -921,13 +920,19 @@ function ShopPageContent() {
             return (
               <div
                 style={{
-                  color: remaining.overdue ? COLORS.red : COLORS.muted,
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  letterSpacing: "0.02em",
-                  lineHeight: 1.2,
+                  justifySelf: "end",
+                  color: remaining.overdue ? COLORS.red : COLORS.ink,
+                  backgroundColor: remaining.overdue ? COLORS.redSoft : "rgba(255, 255, 255, 0.58)",
+                  border: `1px solid ${remaining.overdue ? "#e1b3aa" : COLORS.borderStrong}`,
+                  borderRadius: "999px",
+                  padding: "4px 10px",
+                  fontSize: "20px",
+                  fontWeight: 750,
+                  letterSpacing: "0.01em",
+                  lineHeight: 1.05,
                   whiteSpace: "nowrap",
                   fontVariantNumeric: "tabular-nums",
+                  boxShadow: "0 1px 2px rgba(15, 20, 30, 0.05)",
                 }}
               >
                 {remaining.text}
@@ -961,7 +966,7 @@ function ShopPageContent() {
             left: 0,
             top: 0,
             bottom: 0,
-            width: "5px",
+            width: "7px",
             backgroundColor: statusColor,
           }}
         />
@@ -980,9 +985,8 @@ function ShopPageContent() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "10px",
-              flexWrap: "wrap",
-              rowGap: "4px",
+              gap: "8px",
+              flexWrap: "nowrap",
             }}
           >
             <div
@@ -993,6 +997,7 @@ function ShopPageContent() {
                 lineHeight: 0.98,
                 letterSpacing: "-0.015em",
                 fontVariantNumeric: "tabular-nums",
+                whiteSpace: "nowrap",
                 overflowWrap: "anywhere",
               }}
             >
@@ -1005,8 +1010,8 @@ function ShopPageContent() {
           <div
             style={{
               color: COLORS.muted,
-              fontSize: "16px",
-              fontWeight: 600,
+              fontSize: "32px",
+              fontWeight: 650,
               lineHeight: 1.2,
               letterSpacing: "0.01em",
               overflowWrap: "anywhere",
@@ -1022,25 +1027,36 @@ function ShopPageContent() {
           style={{
             display: "grid",
             alignContent: "center",
-            gap: "2px",
+            gap: "4px",
             minWidth: 0,
           }}
         >
           <div
             style={{
               color: COLORS.ink,
-              fontSize: "20px",
-              fontWeight: 550,
-              lineHeight: 1.15,
+              fontSize: "26px",
+              fontWeight: 600,
+              lineHeight: 1.08,
               letterSpacing: "0.002em",
               overflowWrap: "anywhere",
             }}
           >
             {order.customer || "-"}
           </div>
+          <div
+            style={{
+              color: COLORS.muted,
+              fontSize: "22px",
+              fontWeight: 550,
+              lineHeight: 1.12,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {order.work_order_type || "-"}
+          </div>
         </div>
 
-        {/* COL 3: operational message - current step, with hold reason in the right-side gap for blocked work */}
+        {/* COL 3: operational message */}
         <div
           style={{
             display: "grid",
@@ -1051,83 +1067,35 @@ function ShopPageContent() {
           }}
         >
           {blocked ? (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1fr) minmax(220px, 0.9fr)",
-                columnGap: "18px",
-                alignItems: "center",
-                minWidth: 0,
-              }}
-            >
-              <div style={{ minWidth: 0, display: "grid", gap: "3px" }}>
-                <div style={labelStyle}>Current step</div>
-                <div
-                  style={{
-                    color: COLORS.ink,
-                    fontSize: "26px",
-                    fontWeight: 650,
-                    lineHeight: 1.1,
-                    letterSpacing: "-0.01em",
-                    overflowWrap: "anywhere",
-                  }}
-                >
-                  {order.current_process_step || "-"}
-                </div>
-                <div
-                  style={{
-                    color: COLORS.muted,
-                    fontSize: "16px",
-                    fontWeight: 500,
-                    lineHeight: 1.2,
-                    overflowWrap: "anywhere",
-                  }}
-                >
-                  {order.work_order_type || "-"}
-                </div>
-              </div>
-
-              <div style={{ minWidth: 0, display: "grid", gap: "3px" }}>
-                <div style={labelStyle}>Hold reason</div>
-                <div
-                  style={{
-                    color: COLORS.red,
-                    fontSize: "18px",
-                    fontWeight: 650,
-                    lineHeight: 1.15,
-                    letterSpacing: "-0.01em",
-                    overflowWrap: "anywhere",
-                  }}
-                >
-                  {holdReasonDisplay(order)}
-                </div>
-              </div>
-            </div>
-          ) : (
             <div style={{ minWidth: 0, display: "grid", gap: "3px" }}>
-              <div style={labelStyle}>Current step</div>
+              <div style={labelStyle}>Hold reason</div>
               <div
                 style={{
-                  color: COLORS.ink,
-                  fontSize: "26px",
-                  fontWeight: 650,
-                  lineHeight: 1.1,
+                  color: COLORS.red,
+                  fontSize: "40px",
+                  fontWeight: 700,
+                  lineHeight: 1.0,
                   letterSpacing: "-0.01em",
                   overflowWrap: "anywhere",
                 }}
               >
-                {order.current_process_step || "-"}
+                {holdReasonDisplay(order)}
               </div>
+            </div>
+          ) : (
+            <div style={{ minWidth: 0, display: "grid", gap: "4px" }}>
+              <div style={labelStyle}>Current step</div>
               <div
                 style={{
-                  color: COLORS.muted,
-                  fontSize: "16px",
-                  fontWeight: 500,
-                  lineHeight: 1.2,
+                  color: COLORS.ink,
+                  fontSize: "44px",
+                  fontWeight: 700,
+                  lineHeight: 1.0,
+                  letterSpacing: "-0.012em",
                   overflowWrap: "anywhere",
                 }}
               >
-                {order.work_order_type || "-"}
+                {order.current_process_step || "-"}
               </div>
             </div>
           )}
@@ -1176,7 +1144,7 @@ function ShopPageContent() {
             left: 0,
             top: 0,
             bottom: 0,
-            width: "5px",
+            width: "7px",
             backgroundColor: COLORS.amber,
           }}
         />
@@ -1194,9 +1162,8 @@ function ShopPageContent() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "10px",
-              flexWrap: "wrap",
-              rowGap: "4px",
+              gap: "8px",
+              flexWrap: "nowrap",
             }}
           >
             <div
@@ -1207,6 +1174,7 @@ function ShopPageContent() {
                 lineHeight: 0.98,
                 letterSpacing: "-0.015em",
                 fontVariantNumeric: "tabular-nums",
+                whiteSpace: "nowrap",
                 overflowWrap: "anywhere",
               }}
             >
@@ -1219,8 +1187,8 @@ function ShopPageContent() {
           <div
             style={{
               color: COLORS.muted,
-              fontSize: "16px",
-              fontWeight: 600,
+              fontSize: "32px",
+              fontWeight: 650,
               lineHeight: 1.2,
               letterSpacing: "0.01em",
               overflowWrap: "anywhere",
@@ -1235,21 +1203,32 @@ function ShopPageContent() {
           style={{
             display: "grid",
             alignContent: "center",
-            gap: "2px",
+            gap: "4px",
             minWidth: 0,
           }}
         >
           <div
             style={{
               color: COLORS.ink,
-              fontSize: "20px",
-              fontWeight: 550,
-              lineHeight: 1.15,
+              fontSize: "26px",
+              fontWeight: 600,
+              lineHeight: 1.08,
               letterSpacing: "0.002em",
               overflowWrap: "anywhere",
             }}
           >
             {order.customer || "-"}
+          </div>
+          <div
+            style={{
+              color: COLORS.muted,
+              fontSize: "22px",
+              fontWeight: 550,
+              lineHeight: 1.12,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {order.work_order_type || "-"}
           </div>
         </div>
 
@@ -1267,9 +1246,9 @@ function ShopPageContent() {
             <div
               style={{
                 color: COLORS.ink,
-                fontSize: "25px",
-                fontWeight: 650,
-                lineHeight: 1.08,
+                fontSize: "38px",
+                fontWeight: 700,
+                lineHeight: 1.0,
                 letterSpacing: "-0.012em",
                 overflowWrap: "anywhere",
               }}
@@ -1279,8 +1258,8 @@ function ShopPageContent() {
             <div
               style={{
                 color: isBlocked(order) ? COLORS.red : COLORS.muted,
-                fontSize: "16px",
-                fontWeight: 550,
+                fontSize: "20px",
+                fontWeight: 600,
                 lineHeight: 1.2,
                 overflowWrap: "anywhere",
               }}
@@ -1334,7 +1313,7 @@ function ShopPageContent() {
             left: 0,
             top: 0,
             bottom: 0,
-            width: "5px",
+            width: "7px",
             backgroundColor: COLORS.amber,
           }}
         />
@@ -1352,7 +1331,7 @@ function ShopPageContent() {
           <div
             style={{
               color: COLORS.ink,
-              fontSize: "24px",
+              fontSize: "26px",
               fontWeight: 650,
               lineHeight: 1.05,
               letterSpacing: "-0.015em",
@@ -1364,7 +1343,7 @@ function ShopPageContent() {
           <div
             style={{
               color: COLORS.muted,
-              fontSize: "14px",
+              fontSize: "16px",
               fontWeight: 500,
               lineHeight: 1.2,
               letterSpacing: "0.005em",
@@ -1391,9 +1370,9 @@ function ShopPageContent() {
             <div
               style={{
                 color: COLORS.ink,
-                fontSize: "25px",
-                fontWeight: 650,
-                lineHeight: 1.08,
+                fontSize: "38px",
+                fontWeight: 700,
+                lineHeight: 1.0,
                 letterSpacing: "-0.012em",
                 overflowWrap: "anywhere",
               }}
@@ -1447,15 +1426,15 @@ function ShopPageContent() {
             display: "flex",
             alignItems: "baseline",
             gap: "14px",
-            padding: "2px 4px 10px 4px",
+            padding: "4px 6px 12px 6px",
             borderBottom: `1px solid ${COLORS.border}`,
           }}
         >
           <div
             aria-hidden
             style={{
-              width: "4px",
-              height: "22px",
+              width: "5px",
+              height: "26px",
               borderRadius: "2px",
               backgroundColor: accent,
               alignSelf: "center",
@@ -1464,7 +1443,7 @@ function ShopPageContent() {
           <h2
             style={{
               margin: 0,
-              fontSize: "22px",
+              fontSize: "28px",
               fontWeight: 700,
               lineHeight: 1,
               letterSpacing: "-0.015em",
@@ -1475,7 +1454,7 @@ function ShopPageContent() {
           </h2>
           <div
             style={{
-              fontSize: "22px",
+              fontSize: "32px",
               fontWeight: 600,
               lineHeight: 1,
               color: accent,
@@ -1488,7 +1467,7 @@ function ShopPageContent() {
           <div
             style={{
               marginLeft: "auto",
-              fontSize: "13px",
+              fontSize: "15px",
               fontWeight: 500,
               color: COLORS.muted,
               letterSpacing: "0.005em",
@@ -1501,13 +1480,13 @@ function ShopPageContent() {
         {list.length === 0 ? (
           <div
             style={{
-              marginTop: "10px",
-              padding: "18px",
+              marginTop: "12px",
+              padding: "22px",
               borderRadius: "10px",
               backgroundColor: COLORS.panel,
               border: `1px dashed ${COLORS.borderStrong}`,
               color: COLORS.muted,
-              fontSize: "15px",
+              fontSize: "17px",
               fontWeight: 500,
               textAlign: "center",
               letterSpacing: "0.01em",
@@ -1520,7 +1499,7 @@ function ShopPageContent() {
             style={{
               display: "grid",
               gridTemplateColumns: "1fr",
-              gap: "14px",
+              gap: "12px",
               marginTop: "10px",
             }}
           >
@@ -1539,15 +1518,15 @@ function ShopPageContent() {
             display: "flex",
             alignItems: "baseline",
             gap: "14px",
-            padding: "2px 4px 10px 4px",
+            padding: "4px 6px 12px 6px",
             borderBottom: `1px solid ${COLORS.border}`,
           }}
         >
           <div
             aria-hidden
             style={{
-              width: "4px",
-              height: "22px",
+              width: "5px",
+              height: "26px",
               borderRadius: "2px",
               backgroundColor: COLORS.amber,
               alignSelf: "center",
@@ -1556,7 +1535,7 @@ function ShopPageContent() {
           <h2
             style={{
               margin: 0,
-              fontSize: "22px",
+              fontSize: "28px",
               fontWeight: 700,
               lineHeight: 1,
               letterSpacing: "-0.015em",
@@ -1567,7 +1546,7 @@ function ShopPageContent() {
           </h2>
           <div
             style={{
-              fontSize: "22px",
+              fontSize: "32px",
               fontWeight: 600,
               lineHeight: 1,
               color: COLORS.amber,
@@ -1580,7 +1559,7 @@ function ShopPageContent() {
           <div
             style={{
               marginLeft: "auto",
-              fontSize: "13px",
+              fontSize: "15px",
               fontWeight: 500,
               color: COLORS.muted,
               letterSpacing: "0.005em",
@@ -1593,13 +1572,13 @@ function ShopPageContent() {
         {additionalTasks.length === 0 ? (
           <div
             style={{
-              marginTop: "10px",
-              padding: "18px",
+              marginTop: "12px",
+              padding: "22px",
               borderRadius: "10px",
               backgroundColor: COLORS.panel,
               border: `1px dashed ${COLORS.borderStrong}`,
               color: COLORS.muted,
-              fontSize: "15px",
+              fontSize: "17px",
               fontWeight: 500,
               textAlign: "center",
               letterSpacing: "0.01em",
@@ -1612,7 +1591,7 @@ function ShopPageContent() {
             style={{
               display: "grid",
               gridTemplateColumns: "1fr",
-              gap: "14px",
+              gap: "12px",
               marginTop: "10px",
             }}
           >
@@ -1648,8 +1627,8 @@ function ShopPageContent() {
           display: "grid",
           gridTemplateColumns: "1fr auto 1fr",
           alignItems: "center",
-          gap: "24px",
-          padding: "14px 26px",
+          gap: "28px",
+          padding: "12px 28px",
           borderBottom: `1px solid ${HEADER_BORDER}`,
           backgroundColor: HEADER_BG,
           color: HEADER_INK,
@@ -1672,7 +1651,7 @@ function ShopPageContent() {
             <h1
               style={{
                 margin: 0,
-                fontSize: "24px",
+                fontSize: "26px",
                 fontWeight: 600,
                 letterSpacing: "-0.02em",
                 lineHeight: 1,
@@ -1689,14 +1668,14 @@ function ShopPageContent() {
             display: "grid",
             gap: "4px",
             justifyItems: "center",
-            padding: "4px 18px",
+            padding: "6px 22px",
             borderLeft: `1px solid ${HEADER_TILE_BORDER}`,
             borderRight: `1px solid ${HEADER_TILE_BORDER}`,
           }}
         >
           <div
             style={{
-              fontSize: "11px",
+              fontSize: "12px",
               fontWeight: 500,
               letterSpacing: "0.18em",
               color: HEADER_MUTED,
@@ -1707,7 +1686,7 @@ function ShopPageContent() {
           </div>
           <div
             style={{
-              fontSize: "22px",
+              fontSize: "28px",
               fontWeight: 600,
               letterSpacing: "-0.015em",
               lineHeight: 1,
@@ -1724,7 +1703,7 @@ function ShopPageContent() {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: "6px", justifySelf: "end" }}>
+        <div style={{ display: "flex", gap: "8px", justifySelf: "end" }}>
           {stats.map((stat) => (
             <div
               key={stat.label}
@@ -1732,8 +1711,8 @@ function ShopPageContent() {
                 display: "grid",
                 gap: "3px",
                 justifyItems: "center",
-                minWidth: "88px",
-                padding: "6px 16px",
+                minWidth: "100px",
+                padding: "8px 18px",
                 borderRadius: "8px",
                 backgroundColor: HEADER_TILE_BG,
                 border: `1px solid ${HEADER_TILE_BORDER}`,
@@ -1741,7 +1720,7 @@ function ShopPageContent() {
             >
               <div
                 style={{
-                  fontSize: "11px",
+                  fontSize: "12px",
                   fontWeight: 500,
                   letterSpacing: "0.16em",
                   color: HEADER_MUTED,
@@ -1752,7 +1731,7 @@ function ShopPageContent() {
               </div>
               <div
                 style={{
-                  fontSize: "24px",
+                  fontSize: "30px",
                   fontWeight: 600,
                   color: stat.tone,
                   lineHeight: 1,
@@ -1772,7 +1751,7 @@ function ShopPageContent() {
         style={{
           flex: "1 1 auto",
           overflowY: "hidden",
-          padding: "18px 22px",
+          padding: "20px 24px",
           minHeight: 0,
         }}
       >
@@ -1785,7 +1764,7 @@ function ShopPageContent() {
             ref={contentRef}
             style={{
               display: "grid",
-              gap: "18px",
+              gap: "16px",
               willChange: "transform",
             }}
           >

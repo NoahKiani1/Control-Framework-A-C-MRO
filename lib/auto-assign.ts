@@ -1,5 +1,5 @@
 import { DEFAULT_ASSIGNED_PERSON_TEAM, normalizeAssignedPersonTeam } from "@/lib/work-order-rules";
-import { canPerformStep, getRestrictionForStep } from "@/lib/restrictions";
+import { canPerformStep, getRestrictionForStep, hasRestriction } from "@/lib/restrictions";
 
 export type AssignableEngineer = {
   name: string;
@@ -60,6 +60,21 @@ function resolveAssignedEngineer(
   );
 }
 
+export function hasActiveRestrictionForStep(
+  currentProcessStep: string | null | undefined,
+  engineers: AssignableEngineer[],
+): boolean {
+  const step = currentProcessStep?.trim();
+  if (!step) return false;
+
+  const restriction = getRestrictionForStep(step);
+  if (!restriction) return false;
+
+  return engineers.some((engineer) =>
+    hasRestriction(engineer.restrictions, restriction),
+  );
+}
+
 function resolveAutoAssignedName(
   currentAssignedPersonTeam: string | null | undefined,
   currentProcessStep: string | null | undefined,
@@ -72,6 +87,16 @@ function resolveAutoAssignedName(
 
   if (!step) return normalizedAssigned;
   if (!getRestrictionForStep(step)) return normalizedAssigned;
+
+  const assignedEngineer = resolveAssignedEngineer(normalizedAssigned, engineers);
+  const assignedEngineerUnavailable =
+    assignedEngineer !== null &&
+    unavailableEngineerNames.has(assignedEngineer.name);
+  const stepHasActiveRestriction = hasActiveRestrictionForStep(step, engineers);
+
+  if (!stepHasActiveRestriction && !assignedEngineerUnavailable) {
+    return normalizedAssigned;
+  }
 
   const eligibleEngineers = getEligibleEngineersForStep(
     step,
@@ -86,11 +111,6 @@ function resolveAutoAssignedName(
   if (normalizedAssigned === DEFAULT_ASSIGNED_PERSON_TEAM) {
     return picker(eligibleEngineers)?.name || normalizedAssigned;
   }
-
-  const assignedEngineer = resolveAssignedEngineer(normalizedAssigned, engineers);
-  const assignedEngineerUnavailable =
-    assignedEngineer !== null &&
-    unavailableEngineerNames.has(assignedEngineer.name);
 
   if (
     assignedEngineer &&

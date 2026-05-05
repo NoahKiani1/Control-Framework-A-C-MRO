@@ -110,8 +110,9 @@ export function getRestrictionLabels(
 }
 
 /**
- * Given a process step, return which restriction (if any) is required to be
- * absent for an engineer to perform it. Returns null if no restriction applies.
+ * Given a process step, return its restriction key if the step is known. This
+ * says the step can be restricted; it does not mean any engineer currently has
+ * that restriction.
  */
 export function getRestrictionForStep(step: string): string | null {
   const restriction = RESTRICTION_DEFINITION_MAP.get(getRestrictionKeyForStep(step));

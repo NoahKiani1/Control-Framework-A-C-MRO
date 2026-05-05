@@ -19,13 +19,15 @@ import { supabase } from "@/lib/supabase";
 
 type DropboxCandidate = {
   filename: string;
-  exportDate: string;
+  exportDate: string | null;
   exportSequence: number;
   serverModified: string | null;
   pathLower: string;
 };
 
 type DropboxImportSummary = {
+  candidatesFound?: number;
+  deletedSuperseded?: number;
   processedFiles: number;
   ignoredDuplicateFiles: number;
   failedFiles: number;
@@ -105,13 +107,18 @@ function ImportPageContent() {
         "/api/acmp/dropbox/check",
       );
       setDropboxCandidates(payload.candidates);
-      setDropboxStatus(
-        payload.candidates.length === 0
-          ? "No Dropbox AcMP exports found."
-          : `${payload.candidates.length} Dropbox AcMP export${
-              payload.candidates.length === 1 ? "" : "s"
-            } found.`,
-      );
+      const newestCandidate = payload.candidates[0];
+      if (!newestCandidate) {
+        setDropboxStatus("No Dropbox AcMP exports found.");
+      } else if (payload.candidates.length === 1) {
+        setDropboxStatus(
+          `Dropbox Excel export ready to import: ${newestCandidate.filename}.`,
+        );
+      } else {
+        setDropboxStatus(
+          `Multiple Excel exports found. The newest file will be imported: ${newestCandidate.filename}. Older Excel files will be deleted after successful import.`,
+        );
+      }
     } catch (error) {
       setDropboxStatus(
         error instanceof Error ? `Error: ${error.message}` : "Error checking Dropbox.",
@@ -123,7 +130,7 @@ function ImportPageContent() {
 
   async function importDropboxNow() {
     setDropboxBusy(true);
-    setDropboxStatus("Importing Dropbox exports...");
+      setDropboxStatus("Importing Dropbox Excel export...");
     try {
       const summary = await fetchJson<DropboxImportSummary>(
         "/api/acmp/dropbox/import",
@@ -316,14 +323,29 @@ function ImportPageContent() {
                 backgroundColor: "#eff6ff",
               }}
             >
-              <strong>Found Dropbox exports</strong>
-              <ul style={{ margin: "8px 0", paddingLeft: "18px" }}>
-                {dropboxCandidates.map((candidate) => (
-                  <li key={candidate.pathLower}>{candidate.filename}</li>
-                ))}
-              </ul>
+              <strong>
+                {dropboxCandidates.length === 1
+                  ? "Dropbox Excel export ready"
+                  : "Multiple Excel exports found"}
+              </strong>
+              {dropboxCandidates.length === 1 ? (
+                <p style={{ margin: "8px 0" }}>{dropboxCandidates[0].filename}</p>
+              ) : (
+                <>
+                  <p style={{ margin: "8px 0" }}>
+                    The newest file will be imported:{" "}
+                    <strong>{dropboxCandidates[0].filename}</strong>. Older
+                    Excel files will be deleted after successful import.
+                  </p>
+                  <ul style={{ margin: "8px 0", paddingLeft: "18px" }}>
+                    {dropboxCandidates.slice(1).map((candidate) => (
+                      <li key={candidate.pathLower}>{candidate.filename}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
               <p style={{ margin: "0 0 10px" }}>
-                Import these Dropbox exports now?
+                Import the newest Dropbox export now?
               </p>
               <button
                 type="button"
@@ -351,6 +373,14 @@ function ImportPageContent() {
                   <td style={cellStyle}>Failed files</td>
                   <td style={cellStyle}>{dropboxSummary.failedFiles}</td>
                 </tr>
+                {(dropboxSummary.deletedSuperseded ?? 0) > 0 && (
+                  <tr>
+                    <td style={cellStyle}>Superseded files deleted</td>
+                    <td style={cellStyle}>
+                      {dropboxSummary.deletedSuperseded}
+                    </td>
+                  </tr>
+                )}
                 <tr>
                   <td style={cellStyle}>New work orders added to AcMP Review</td>
                   <td style={cellStyle}>

@@ -10,6 +10,7 @@ import {
 import {
   applySuggestedAssignmentsForCurrentStep,
   autoAssignForStep,
+  hasActiveRestrictionForStep,
 } from "@/lib/auto-assign";
 import {
   getAbsentEngineerIdSetForDateKey,
@@ -28,7 +29,6 @@ import {
   sortOrders,
   applyTodayQualificationBlocks,
 } from "@/lib/work-order-rules";
-import { getRestrictionForStep } from "@/lib/restrictions";
 import { getWorkOrders, updateWorkOrder, updateWorkOrderAndFetch } from "@/lib/work-orders";
 import {
   ExtraAction,
@@ -457,8 +457,14 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const normalizedRequiredNextAction = requiredNextAction.trim();
     const normalizedActionOwner = actionOwner.trim();
     const nowIso = new Date().toISOString();
-    const completedStepWasRestricted = !!getRestrictionForStep(completedStep);
-    const nextStepIsRestricted = !!getRestrictionForStep(nextProcessStep);
+    const completedStepWasRestricted = hasActiveRestrictionForStep(
+      completedStep,
+      shopStaff,
+    );
+    const nextStepIsRestricted = hasActiveRestrictionForStep(
+      nextProcessStep,
+      shopStaff,
+    );
     const assignedPersonTeam =
       completedStepWasRestricted && !nextStepIsRestricted
         ? DEFAULT_ASSIGNED_PERSON_TEAM
