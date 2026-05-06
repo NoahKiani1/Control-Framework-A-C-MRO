@@ -64,6 +64,9 @@ const shopFont = Public_Sans({
   display: "swap",
 });
 const FONT_STACK = `${shopFont.style.fontFamily}, "Gotham", var(--font-geist-sans), "Geist", var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`;
+const DESIGN_WIDTH = 1536;
+const DESIGN_HEIGHT = 864;
+const TV_SCALE = 0.625;
 const AUTO_SCROLL_SPEED_PX_PER_SECOND = 20;
 const AUTO_SCROLL_TOP_PAUSE_MS = 7000;
 const AUTO_SCROLL_SECTION_PAUSE_MS = 5000;
@@ -492,39 +495,12 @@ function ShopPageContent() {
   const [extraActions, setExtraActions] = useState<ExtraAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState<Date>(() => new Date());
-  const [viewportDebug, setViewportDebug] = useState({
-    innerWidth: 0,
-    innerHeight: 0,
-    devicePixelRatio: 0,
-    screenWidth: 0,
-    screenHeight: 0,
-    prefersDark: false,
-  });
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const openSectionRef = useRef<HTMLElement | null>(null);
   const blockedSectionRef = useRef<HTMLElement | null>(null);
   const actionsSectionRef = useRef<HTMLElement | null>(null);
   const bottomSpacerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    function updateViewportDebug() {
-      setViewportDebug({
-        innerWidth: window.innerWidth,
-        innerHeight: window.innerHeight,
-        devicePixelRatio: window.devicePixelRatio,
-        screenWidth: window.screen.width,
-        screenHeight: window.screen.height,
-        prefersDark:
-          typeof window.matchMedia === "function" &&
-          window.matchMedia("(prefers-color-scheme: dark)").matches,
-      });
-    }
-
-    updateViewportDebug();
-    window.addEventListener("resize", updateViewportDebug);
-    return () => window.removeEventListener("resize", updateViewportDebug);
-  }, []);
 
   useEffect(() => {
     async function load() {
@@ -624,7 +600,7 @@ function ShopPageContent() {
     }
 
     function getMaxScroll() {
-      const contentHeight = scrollContent.getBoundingClientRect().height;
+      const contentHeight = scrollContent.scrollHeight;
       const viewportHeight = getViewportInnerHeight();
       return Math.max(0, contentHeight - viewportHeight);
     }
@@ -1637,17 +1613,28 @@ function ShopPageContent() {
   ];
 
   return (
-    <main
+    <div
       style={{
+        width: "100vw",
         height: "100vh",
-        display: "flex",
-        flexDirection: "column",
         overflow: "hidden",
         backgroundColor: COLORS.pageBg,
-        color: COLORS.ink,
-        fontFamily: FONT_STACK,
       }}
     >
+      <main
+        style={{
+          width: `${DESIGN_WIDTH}px`,
+          height: `${DESIGN_HEIGHT}px`,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          backgroundColor: COLORS.pageBg,
+          color: COLORS.ink,
+          fontFamily: FONT_STACK,
+          transform: `scale(${TV_SCALE})`,
+          transformOrigin: "top left",
+        }}
+      >
       <header
         style={{
           flex: "0 0 auto",
@@ -1827,29 +1814,8 @@ function ShopPageContent() {
           </div>
         </div>
       </div>
-      <div
-        style={{
-          position: "fixed",
-          right: "16px",
-          bottom: "16px",
-          zIndex: 2147483647,
-          padding: "14px 16px",
-          backgroundColor: "#000",
-          color: "#fff",
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-          fontSize: "22px",
-          fontWeight: 700,
-          lineHeight: 1.35,
-          whiteSpace: "nowrap",
-        }}
-      >
-        <div>{`inner: ${viewportDebug.innerWidth} × ${viewportDebug.innerHeight}`}</div>
-        <div>{`dpr: ${viewportDebug.devicePixelRatio}`}</div>
-        <div>{`screen: ${viewportDebug.screenWidth} × ${viewportDebug.screenHeight}`}</div>
-        <div>{`dark: ${viewportDebug.prefersDark}`}</div>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }
 
