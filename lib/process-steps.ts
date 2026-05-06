@@ -13,7 +13,8 @@
  * is the authoritative, ordered list of steps the shop has to run through for
  * that order. Office sets it during import / activation (Standard uses the
  * default active steps for the type; Custom lets them add/drop tasks such as
- * Magnetic Test).
+ * Magnetic Test. Shop-added steps such as Repair are only inserted while an
+ * active order is moving through the shop flow.
  *
  * Template-level helpers (those that only take `workOrderType`) remain for
  * places where no order is in scope — for example restriction lookups and the
@@ -22,7 +23,16 @@
  */
 
 /** Steps that are skipped unless explicitly included per work order. */
-export const OPTIONAL_PROCESS_STEPS = ["Magnetic Test"];
+export const OPTIONAL_PROCESS_STEPS = ["Magnetic Test", "Repair"];
+
+/** Optional steps that Office should not offer during intake / activation. */
+export const SHOP_ADDED_PROCESS_STEPS = ["Repair"];
+
+/** The inspection gate where a shop engineer can add the dynamic repair step. */
+export const INSPECTION_PROCESS_STEP = "Inspection";
+
+/** Dynamic step inserted after inspection when repair is required. */
+export const REPAIR_PROCESS_STEP = "Repair";
 
 /** The last tracked step in every flow. */
 export const FINAL_PROCESS_STEP = "EASA-Form 1";
@@ -42,6 +52,7 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Magnetic Test",
     "Eddy Current",
     "Inspection",
+    "Repair",
     "Assembly",
     "EASA-Form 1",
   ],
@@ -53,6 +64,7 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Penetrant Testing",
     "Eddy Current",
     "Inspection",
+    "Repair",
     "Painting",
     "Assembly",
     "EASA-Form 1",
@@ -64,6 +76,7 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Magnetic Test",
     "Eddy Current",
     "Inspection",
+    "Repair",
     "Assembly",
     "EASA-Form 1",
   ],
@@ -75,6 +88,7 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Penetrant Testing",
     "Eddy Current",
     "Inspection",
+    "Repair",
     "Painting",
     "Assembly",
     "EASA-Form 1",
@@ -83,6 +97,7 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Disassembly",
     "Cleaning",
     "Inspection",
+    "Repair",
     "Assembly",
     "EASA-Form 1",
   ],
@@ -96,6 +111,16 @@ export const PROCESS_STEPS: Record<string, string[]> = {
 export function getProcessStepsForType(workOrderType: string | null): string[] {
   if (!workOrderType) return [];
   return PROCESS_STEPS[workOrderType] || [];
+}
+
+/** Steps Office may configure when activating / importing a work order. */
+export function getOfficeConfigurableProcessStepsForType(
+  workOrderType: string | null,
+): string[] {
+  const shopAdded = new Set(SHOP_ADDED_PROCESS_STEPS);
+  return getProcessStepsForType(workOrderType).filter(
+    (step) => !shopAdded.has(step),
+  );
 }
 
 /** Whether a step is optional (skipped unless included per order). */
@@ -206,6 +231,41 @@ export function getNextProcessStepAfterCompletedForOrder(
   return steps[completedIndex + 1];
 }
 
+/** Whether the shop form may ask to insert Repair after completing Inspection. */
+export function canAddRepairAfterInspectionForOrder(
+  workOrderType: string | null,
+  completedStep: string | null,
+  includedSteps: string[] | null | undefined,
+): boolean {
+  if (completedStep !== INSPECTION_PROCESS_STEP) {
+    return false;
+  }
+
+  const template = getProcessStepsForType(workOrderType);
+  if (!template.includes(REPAIR_PROCESS_STEP)) return false;
+
+  return !resolveStepsForOrder(workOrderType, includedSteps).includes(
+    REPAIR_PROCESS_STEP,
+  );
+}
+
+/** Return the effective included steps with Repair inserted in template order. */
+export function addRepairAfterInspectionForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+): string[] {
+  const template = getProcessStepsForType(workOrderType);
+  if (!template.includes(REPAIR_PROCESS_STEP)) {
+    return resolveStepsForOrder(workOrderType, includedSteps);
+  }
+
+  const resolvedSteps = resolveStepsForOrder(workOrderType, includedSteps);
+  if (resolvedSteps.includes(REPAIR_PROCESS_STEP)) return resolvedSteps;
+
+  const nextSet = new Set([...resolvedSteps, REPAIR_PROCESS_STEP]);
+  return template.filter((step) => nextSet.has(step));
+}
+
 /**
  * Given `current_process_step`, return the most recently completed step
  * (i.e. the active step directly before the current one) for the
@@ -270,6 +330,7 @@ export const PROCESS_STEP_SHORT_LABELS: Record<string, string> = {
   "Magnetic Test": "MT",
   "Eddy Current": "ET",
   Inspection: "INSP",
+  Repair: "REP",
   Painting: "PNT",
   Assembly: "ASS",
   "EASA-Form 1": "EASA Form 1",

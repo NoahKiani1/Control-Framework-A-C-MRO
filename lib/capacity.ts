@@ -1,4 +1,9 @@
-import { PROCESS_STEPS, READY_TO_CLOSE_STEP, resolveStepsForOrder } from "@/lib/process-steps";
+import {
+  PROCESS_STEPS,
+  READY_TO_CLOSE_STEP,
+  REPAIR_PROCESS_STEP,
+  resolveStepsForOrder,
+} from "@/lib/process-steps";
 import { filterEngineersStartedOnDateKey } from "@/lib/engineers";
 import { isBlocked } from "@/lib/work-order-rules";
 import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
@@ -13,7 +18,11 @@ import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
 //                           Magnetic Test 45 + Penetrant 120 + Eddy Current 60 +
 //                           Inspection 20 + Painting 60 + Assembly 60 + EASA 30)
 // Magnetic Test is optioneel en telt alleen mee als het in `included_process_steps` staat.
-// "Repair" stap is vervallen: valt samen met Assembly
+// Repair wordt door shop na Inspection toegevoegd wanneer nodig en telt vast 1.5 uur.
+
+export const ABSOLUTE_STEP_HOURS: Record<string, number> = {
+  [REPAIR_PROCESS_STEP]: 1.5,
+};
 
 export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
   "Wheel Repair": {
@@ -73,6 +82,20 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
 
 export const STEP_ORDER: Record<string, string[]> = PROCESS_STEPS;
 
+export function getExpectedHoursForStep(
+  workOrderType: string | null,
+  step: string,
+  partNumber?: string | null,
+): number {
+  const absoluteHours = ABSOLUTE_STEP_HOURS[step];
+  if (typeof absoluteHours === "number") return absoluteHours;
+
+  if (!workOrderType || !FALLBACK_HOURS[workOrderType]) return 0;
+
+  const weight = STEP_WEIGHTS[workOrderType]?.[step] || 0;
+  return getTotalHoursForPart(workOrderType, partNumber) * weight;
+}
+
 // === BEREKENINGEN ===
 
 function normalizeCurrentStepForCapacity(
@@ -102,24 +125,34 @@ export function getRemainingHours(
     currentStep,
   );
   const activeTotalWeight = steps.reduce(
-    (sum: number, step: string) => sum + (weights[step] || 0),
+    (sum: number, step: string) =>
+      sum + (ABSOLUTE_STEP_HOURS[step] ? 0 : weights[step] || 0),
+    0,
+  );
+  const activeAbsoluteHours = steps.reduce(
+    (sum: number, step: string) => sum + (ABSOLUTE_STEP_HOURS[step] || 0),
     0,
   );
 
-  if (activeTotalWeight <= 0) return 0;
+  if (activeTotalWeight <= 0 && activeAbsoluteHours <= 0) return 0;
 
   if (!normalizedCurrentStep || !steps.includes(normalizedCurrentStep)) {
-    return Math.round(total * activeTotalWeight * 10) / 10;
+    return Math.round((total * activeTotalWeight + activeAbsoluteHours) * 10) / 10;
   }
 
   const currentIndex = steps.indexOf(normalizedCurrentStep);
   let completedWeight = 0;
+  let remainingAbsoluteHours = 0;
   for (let i = 0; i < currentIndex; i++) {
+    if (ABSOLUTE_STEP_HOURS[steps[i]]) continue;
     completedWeight += weights[steps[i]] || 0;
+  }
+  for (let i = currentIndex; i < steps.length; i++) {
+    remainingAbsoluteHours += ABSOLUTE_STEP_HOURS[steps[i]] || 0;
   }
 
   const remainingWeight = Math.max(0, activeTotalWeight - completedWeight);
-  return Math.round(total * remainingWeight * 10) / 10;
+  return Math.round((total * remainingWeight + remainingAbsoluteHours) * 10) / 10;
 }
 
 export function isWeekend(date: Date): boolean {

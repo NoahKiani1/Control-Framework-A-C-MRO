@@ -261,6 +261,7 @@ function ImportPageContent() {
     analysis?.rfqActivationCandidates ?? [];
   const tooOld = analysis?.tooOld ?? 0;
   const closedSkipped = analysis?.closedSkipped ?? 0;
+  const missingClosed = analysis?.missingClosed ?? 0;
   const skipped = analysis?.skipped ?? 0;
 
   return (
@@ -395,6 +396,20 @@ function ImportPageContent() {
                     {dropboxSummary.totals.pendingRfqApprovedInactive}
                   </td>
                 </tr>
+                <tr>
+                  <td style={cellStyle}>
+                    Closed because absent from open export
+                  </td>
+                  <td style={cellStyle}>
+                    {dropboxSummary.totals.missingClosed}
+                  </td>
+                </tr>
+                <tr>
+                  <td style={cellStyle}>Closed orders removed from database</td>
+                  <td style={cellStyle}>
+                    {dropboxSummary.totals.closedRemoved}
+                  </td>
+                </tr>
               </tbody>
             </table>
           )}
@@ -483,8 +498,16 @@ function ImportPageContent() {
                 )}
                 {closedSkipped > 0 && (
                   <>
-                    {closedSkipped} closed orders (will be skipped and removed
-                    from database)
+                    {closedSkipped} rows with Close Date (will be finalized and
+                    removed from database)
+                    <br />
+                  </>
+                )}
+                {missingClosed > 0 && (
+                  <>
+                    {missingClosed} existing work order
+                    {missingClosed === 1 ? "" : "s"} not in this open export
+                    (will be finalized as closed and removed)
                     <br />
                   </>
                 )}
@@ -601,8 +624,12 @@ function ImportPageContent() {
                     <td style={cellStyle}>{results.updated}</td>
                   </tr>
                   <tr>
-                    <td style={cellStyle}>Closed orders skipped</td>
+                    <td style={cellStyle}>Rows with Close Date</td>
                     <td style={cellStyle}>{results.closedSkipped}</td>
+                  </tr>
+                  <tr>
+                    <td style={cellStyle}>Closed because absent from open export</td>
+                    <td style={cellStyle}>{results.missingClosed}</td>
                   </tr>
                   <tr>
                     <td style={cellStyle}>Closed orders removed from database</td>

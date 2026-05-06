@@ -2,7 +2,7 @@ import {
   INTAKE_STEP,
   getActiveStepsForType,
   getInitialProcessStepForOrder,
-  getProcessStepsForType,
+  getOfficeConfigurableProcessStepsForType,
 } from "@/lib/process-steps";
 import {
   normalizeAssignedPersonTeam,
@@ -42,7 +42,7 @@ export function normalizeIncludedSteps(
   workOrderType: string | null,
   selected: string[],
 ): string[] {
-  const template = getProcessStepsForType(workOrderType);
+  const template = getOfficeConfigurableProcessStepsForType(workOrderType);
   if (template.length === 0) return [];
 
   const selectedSet = new Set(selected);

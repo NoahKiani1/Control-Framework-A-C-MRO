@@ -6,8 +6,10 @@ type BlockableOrder = {
 };
 
 type SortableOrder = BlockableOrder & {
+  work_order_id?: string | null;
   priority?: string | null;
   due_date?: string | null;
+  shared_planning_rank?: number | string | null;
 };
 
 type CorrectiveActionOrder = {
@@ -97,6 +99,43 @@ function dueDateTime(dateStr: string | null | undefined): number {
 
 export function sortOrders<T extends SortableOrder>(orders: T[]): T[] {
   return [...orders].sort((a, b) => dueDateTime(a.due_date) - dueDateTime(b.due_date));
+}
+
+function autoPlanningBucket(order: SortableOrder): number {
+  const tag = priorityTag(order.priority);
+  if (tag === "AOG") return 0;
+  if (tag === "PRIO") return 1;
+  if (order.due_date) return 2;
+  return 3;
+}
+
+function sharedPlanningRank(order: SortableOrder): number {
+  if (order.shared_planning_rank === null || order.shared_planning_rank === undefined) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const rank = Number(order.shared_planning_rank);
+  return Number.isFinite(rank) ? rank : Number.POSITIVE_INFINITY;
+}
+
+function compareAutoPlanningOrder(a: SortableOrder, b: SortableOrder): number {
+  const bucketCompare = autoPlanningBucket(a) - autoPlanningBucket(b);
+  if (bucketCompare !== 0) return bucketCompare;
+
+  const dueCompare = dueDateTime(a.due_date) - dueDateTime(b.due_date);
+  if (dueCompare !== 0) return dueCompare;
+
+  return (a.work_order_id || "").localeCompare(b.work_order_id || "");
+}
+
+export function sortSharedPlanningOrders<T extends SortableOrder>(orders: T[]): T[] {
+  return [...orders].sort((a, b) => {
+    const aRank = sharedPlanningRank(a);
+    const bRank = sharedPlanningRank(b);
+    if (aRank !== bRank) return aRank - bRank;
+
+    return compareAutoPlanningOrder(a, b);
+  });
 }
 
 export function latestUpdate(system: string | null, manual: string | null): string | null {

@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
+  addRepairAfterInspectionForOrder,
+  canAddRepairAfterInspectionForOrder,
   getCompletableStepsForOrder,
   getLastCompletedStepForOrder,
   getNextProcessStepAfterCompletedForOrder,
@@ -130,6 +132,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const [selectedId, setSelectedId] = useState("");
   const [completedStep, setCompletedStep] = useState("");
   const [stepTouched, setStepTouched] = useState(false);
+  const [repairNecessary, setRepairNecessary] = useState<boolean | null>(null);
+  const [repairDecisionError, setRepairDecisionError] = useState(false);
   const [holdReason, setHoldReason] = useState("");
   const [requiredNextAction, setRequiredNextAction] = useState("");
   const [actionOwner, setActionOwner] = useState("");
@@ -278,12 +282,29 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     return [...additionalTasks, ...correctiveActions];
   }, [engineerNames, extraActions, orders]);
 
+  const canAddRepairStep = Boolean(
+    selectedOrder &&
+      canAddRepairAfterInspectionForOrder(
+        selectedOrder.work_order_type,
+        completedStep,
+        selectedOrder.included_process_steps,
+      ),
+  );
+
+  const previewIncludedSteps =
+    selectedOrder && canAddRepairStep && repairNecessary === true
+      ? addRepairAfterInspectionForOrder(
+          selectedOrder.work_order_type,
+          selectedOrder.included_process_steps,
+        )
+      : selectedOrder?.included_process_steps;
+
   const previewNextStep =
     selectedOrder && completedStep
       ? getNextProcessStepAfterCompletedForOrder(
           selectedOrder.work_order_type,
           completedStep,
-          selectedOrder.included_process_steps,
+          previewIncludedSteps,
         )
       : null;
 
@@ -306,6 +327,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       ),
     );
     setStepTouched(false);
+    setRepairNecessary(null);
+    setRepairDecisionError(false);
     setHoldReason(order.hold_reason || "");
     setRequiredNextAction(order.required_next_action || "");
     setActionOwner(order.hold_reason?.trim() ? order.action_owner || "" : "");
@@ -316,6 +339,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   function handleCompletedStepChange(value: string) {
     setCompletedStep(value);
     setStepTouched(true);
+    setRepairNecessary(null);
+    setRepairDecisionError(false);
   }
 
   function setBlockedChoice(blocked: boolean) {
@@ -436,6 +461,18 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
+    const repairDecisionRequired = canAddRepairAfterInspectionForOrder(
+      selectedOrder.work_order_type,
+      completedStep,
+      selectedOrder.included_process_steps,
+    );
+
+    if (repairDecisionRequired && repairNecessary === null) {
+      setRepairDecisionError(true);
+      setSaveStatus("");
+      return;
+    }
+
     if (isBlockedUpdate && !holdReason.trim()) {
       setSaveStatus("Please enter a hold reason.");
       return;
@@ -446,11 +483,22 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
+    const shouldAddRepairStep = canAddRepairAfterInspectionForOrder(
+      selectedOrder.work_order_type,
+      completedStep,
+      selectedOrder.included_process_steps,
+    ) && repairNecessary === true;
+    const includedProcessStepsForSave = shouldAddRepairStep
+      ? addRepairAfterInspectionForOrder(
+          selectedOrder.work_order_type,
+          selectedOrder.included_process_steps,
+        )
+      : selectedOrder.included_process_steps;
     const nextProcessStep =
       getNextProcessStepAfterCompletedForOrder(
         selectedOrder.work_order_type,
         completedStep,
-        selectedOrder.included_process_steps,
+        includedProcessStepsForSave,
       ) ?? completedStep;
 
     const normalizedHoldReason = holdReason.trim();
@@ -491,6 +539,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       action_created_at: isBlockedUpdate && normalizedRequiredNextAction ? nowIso : null,
       action_closed_at: null,
       last_manual_update: nowIso,
+      ...(shouldAddRepairStep
+        ? { included_process_steps: includedProcessStepsForSave }
+        : {}),
     };
 
     const { error } = await updateWorkOrder(selectedId, payload);
@@ -502,7 +553,10 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
     if (selectedOrder.data_tracking_enabled) {
       const trackingResult = await recordTrackedShopStepCompletion({
-        selectedOrder,
+        selectedOrder: {
+          ...selectedOrder,
+          included_process_steps: includedProcessStepsForSave,
+        },
         completedStep,
         nextProcessStep,
       });
@@ -517,6 +571,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       ...selectedOrder,
       ...payload,
       current_process_step: nextProcessStep,
+      included_process_steps: includedProcessStepsForSave,
     };
     const blockResult = await syncWorkOrderDataBlockState(nextOrder);
     if (blockResult.error) {
@@ -541,6 +596,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setSelectedId("");
     setCompletedStep("");
     setStepTouched(false);
+    setRepairNecessary(null);
+    setRepairDecisionError(false);
     setHoldReason("");
     setRequiredNextAction("");
     setActionOwner("");
@@ -792,6 +849,65 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                           </option>
                         ))}
                       </select>
+
+                      {canAddRepairStep && (
+                        <div
+                          style={{
+                            display: "grid",
+                            gap: isTablet ? "12px" : "8px",
+                            marginTop: isTablet ? "18px" : "12px",
+                            padding: isTablet ? "18px" : "12px",
+                            backgroundColor: "#fffdfa",
+                            border: `1px solid ${
+                              repairDecisionError ? COLORS.red : COLORS.border
+                            }`,
+                            borderRadius: isTablet ? "18px" : "10px",
+                            boxShadow: repairDecisionError
+                              ? `0 0 0 3px ${COLORS.redSoft}`
+                              : undefined,
+                          }}
+                        >
+                          <div>
+                            <div style={eyebrowStyle}>Inspection result</div>
+                            <h3
+                              style={{
+                                ...fieldTitleStyle,
+                                fontSize: isTablet ? "22px" : "var(--fs-md)",
+                                marginBottom: "0",
+                              }}
+                            >
+                              Repair necessary?
+                            </h3>
+                          </div>
+                          <div style={{ display: "flex", gap: isTablet ? "14px" : "8px" }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRepairNecessary(false);
+                                setRepairDecisionError(false);
+                              }}
+                              style={choiceBtn(repairNecessary === false)}
+                            >
+                              No
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRepairNecessary(true);
+                                setRepairDecisionError(false);
+                              }}
+                              style={choiceBtn(repairNecessary === true)}
+                            >
+                              Yes
+                            </button>
+                          </div>
+                          {repairDecisionError && (
+                            <StatusNote color="red" large={isTablet}>
+                              Please fill this in.
+                            </StatusNote>
+                          )}
+                        </div>
+                      )}
 
                       {stepTouched &&
                         completedStep &&

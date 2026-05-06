@@ -51,7 +51,9 @@ Manual uploads are read in the browser, converted to parsed rows, and then impor
 
 If multiple Excel exports are present in the import folder, only the newest by Dropbox modified time is imported. If two files have the same modified time, the deterministic fallback is the descending lowercase Dropbox path.
 
-The newest AcMP export represents the latest system state. Older Excel exports are not imported one by one.
+The newest AcMP export represents the latest open-work-order system state. Older Excel exports are not imported one by one.
+
+Work orders already present in the app but absent from the newest open AcMP export are treated as closed: Work Order Data is finalized when tracking is enabled, using the import timestamp as the detected close date, then the work order is removed from `work_orders`.
 
 After the newest export imports successfully, all `.xlsx` exports in the import folder are deleted, including older exports. Non-`.xlsx` files and folders are not deleted.
 
@@ -69,7 +71,7 @@ Processed and ignored import metadata older than 30 days can be cleaned up by `p
 
 ## Duplicate Detection
 
-Duplicate exports are detected by `rows_signature`, a SHA-256 hash of the parsed AcMP rows with deterministic JSON serialization. Binary Excel metadata and filenames do not determine duplicates.
+Duplicate exports are detected by `rows_signature`, a versioned SHA-256 hash of the parsed AcMP rows with deterministic JSON serialization. Binary Excel metadata and filenames do not determine duplicates.
 
 If an export was manually imported first, the later Dropbox worker ignores the duplicate rows and deletes the Dropbox file. If Dropbox imported it first, a later manual upload with the same parsed rows is ignored with no work-order changes.
 

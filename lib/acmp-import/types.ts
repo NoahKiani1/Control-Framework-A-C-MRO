@@ -48,6 +48,8 @@ export type ImportAnalysis = {
   closedWorkOrders: { work_order_id: string; close_date: string | null }[];
   tooOld: number;
   closedSkipped: number;
+  missingClosed: number;
+  missingClosedIds: string[];
   skipped: number;
   existingSnapshots: ExistingOrderSnapshot[];
   rawByWorkOrderId: Record<string, Record<string, unknown>>;

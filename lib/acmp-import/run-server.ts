@@ -95,6 +95,19 @@ function rowsProcessed(result: {
   );
 }
 
+function withDetectedCloseDates(
+  closedWorkOrders: { work_order_id: string; close_date: string | null }[],
+  missingClosedIds: string[],
+  importTimestamp: string,
+): { work_order_id: string; close_date: string | null }[] {
+  const missingClosedIdSet = new Set(missingClosedIds);
+  return closedWorkOrders.map((closed) =>
+    missingClosedIdSet.has(closed.work_order_id)
+      ? { ...closed, close_date: importTimestamp }
+      : closed,
+  );
+}
+
 export async function runAcmpImportFromRowsOnServer({
   rows,
   filename,
@@ -196,7 +209,11 @@ export async function runAcmpImportFromRowsOnServer({
       }
 
       await finalizeClosedWorkOrderReports({
-        closedWorkOrders: analysis.closedWorkOrders,
+        closedWorkOrders: withDetectedCloseDates(
+          analysis.closedWorkOrders,
+          analysis.missingClosedIds,
+          importTimestamp,
+        ),
         client,
       });
 
@@ -210,6 +227,7 @@ export async function runAcmpImportFromRowsOnServer({
       const pendingNewWorkOrders = analysis.newOrders.length;
       const pendingRfqApprovedInactive =
         analysis.rfqActivationCandidates.length;
+      const missingClosed = analysis.missingClosed;
 
       await recordImportRun({
         filename,
@@ -225,6 +243,7 @@ export async function runAcmpImportFromRowsOnServer({
         deleted,
         closedRemoved,
         closedSkipped: analysis.closedSkipped,
+        missingClosed,
         tooOld: analysis.tooOld,
         skipped: analysis.skipped,
         pendingNewWorkOrders,

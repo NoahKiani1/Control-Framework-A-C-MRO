@@ -18,7 +18,7 @@ import {
   getActiveStepsForType,
   getCompletableStepsForOrder,
   getInitialProcessStepForOrder,
-  getProcessStepsForType,
+  getOfficeConfigurableProcessStepsForType,
 } from "@/lib/process-steps";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
@@ -106,7 +106,7 @@ function normalizeIncludedSteps(
   workOrderType: string | null,
   selected: string[],
 ): string[] {
-  const template = getProcessStepsForType(workOrderType);
+  const template = getOfficeConfigurableProcessStepsForType(workOrderType);
   if (template.length === 0) return [];
   const selectedSet = new Set(selected);
   return template.filter(
@@ -1462,7 +1462,7 @@ function OfficeUpdatePageContent() {
                                 marginBottom: "10px",
                               }}
                             >
-                              {getProcessStepsForType(
+                              {getOfficeConfigurableProcessStepsForType(
                                 selectedOrder.work_order_type,
                               )
                                 .filter((step) => step !== INTAKE_STEP)

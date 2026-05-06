@@ -133,6 +133,7 @@ function emptyTotals(): AcmpImportResult {
     deleted: 0,
     closedRemoved: 0,
     closedSkipped: 0,
+    missingClosed: 0,
     tooOld: 0,
     skipped: 0,
     pendingNewWorkOrders: 0,
@@ -151,6 +152,7 @@ function addTotals(
     deleted: totals.deleted + result.deleted,
     closedRemoved: totals.closedRemoved + result.closedRemoved,
     closedSkipped: totals.closedSkipped + result.closedSkipped,
+    missingClosed: totals.missingClosed + result.missingClosed,
     tooOld: totals.tooOld + result.tooOld,
     skipped: totals.skipped + result.skipped,
     pendingNewWorkOrders:

@@ -6,7 +6,7 @@ import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import {
   INTAKE_STEP,
-  getProcessStepsForType,
+  getOfficeConfigurableProcessStepsForType,
 } from "@/lib/process-steps";
 import {
   getAbsentEngineerIdSetForDateKey,
@@ -528,7 +528,7 @@ function AcmpReviewContent() {
                     const dueRequired =
                       setup.is_active &&
                       (setup.priority === "Yes" || setup.priority === "AOG");
-                    const templateSteps = getProcessStepsForType(
+                    const templateSteps = getOfficeConfigurableProcessStepsForType(
                       order.work_order_type,
                     );
                     const customStepOptions = templateSteps.filter(

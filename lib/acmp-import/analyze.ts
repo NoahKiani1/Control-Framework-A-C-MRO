@@ -4,7 +4,11 @@ import {
   normalizeImportedRfqState,
   parseExcelDate,
 } from "@/lib/import-normalize";
-import { getExistingWorkOrderIds, getWorkOrders } from "@/lib/work-orders";
+import {
+  getCurrentWorkOrderIds,
+  getExistingWorkOrderIds,
+  getWorkOrders,
+} from "@/lib/work-orders";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ExistingOrderSnapshot,
@@ -26,6 +30,14 @@ export function isRfqApprovedState(state: string | null | undefined): boolean {
   );
 }
 
+export function findMissingClosedWorkOrderIds(
+  currentWorkOrderIds: string[],
+  exportWorkOrderIds: Set<string>,
+): string[] {
+  if (exportWorkOrderIds.size === 0) return [];
+  return currentWorkOrderIds.filter((id) => !exportWorkOrderIds.has(id));
+}
+
 const EXISTING_ORDER_SELECT =
   "work_order_id, customer, rfq_state, last_system_update, is_open, work_order_type, part_number, is_active, current_process_step, assigned_person_team, included_process_steps, hold_reason, required_next_action, action_owner, action_status, action_closed, data_tracking_enabled";
 
@@ -41,6 +53,7 @@ export async function analyzeImportRows(
   const closedWorkOrders: { work_order_id: string; close_date: string | null }[] = [];
   const parsed: ParsedRow[] = [];
   const rawByWorkOrderId: Record<string, Record<string, unknown>> = {};
+  const exportWorkOrderIds = new Set<string>();
 
   for (const row of rows) {
     const workOrderId = String(row["Work Order"] || "").trim();
@@ -48,6 +61,8 @@ export async function analyzeImportRows(
       skipCount++;
       continue;
     }
+
+    exportWorkOrderIds.add(workOrderId);
 
     if (isOlderThanOneYear(row["CreatedOn"])) {
       oldIds.push(workOrderId);
@@ -116,6 +131,18 @@ export async function analyzeImportRows(
     })
     .filter(Boolean) as RfqActivationCandidate[];
 
+  const currentWorkOrderIds =
+    exportWorkOrderIds.size > 0 ? await getCurrentWorkOrderIds(client) : [];
+  const missingClosedIds = findMissingClosedWorkOrderIds(
+    currentWorkOrderIds,
+    exportWorkOrderIds,
+  );
+
+  for (const workOrderId of missingClosedIds) {
+    closedIds.push(workOrderId);
+    closedWorkOrders.push({ work_order_id: workOrderId, close_date: null });
+  }
+
   return {
     parsed,
     newOrders,
@@ -126,6 +153,8 @@ export async function analyzeImportRows(
     closedWorkOrders,
     tooOld: oldCount,
     closedSkipped: closedCount,
+    missingClosed: missingClosedIds.length,
+    missingClosedIds,
     skipped: skipCount,
     existingSnapshots,
     rawByWorkOrderId,

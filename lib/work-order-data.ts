@@ -135,12 +135,13 @@ function isMissingOptionalEventColumnError(error: {
 function withoutOptionalEventColumns(
   payload: WorkOrderEventInsert,
 ): Omit<WorkOrderEventInsert, "included_process_steps" | "block_reason"> {
-  const {
-    included_process_steps: _includedProcessSteps,
-    block_reason: _blockReason,
-    ...fallbackPayload
-  } = payload;
-  return fallbackPayload;
+  const fallbackPayload: Partial<WorkOrderEventInsert> = { ...payload };
+  delete fallbackPayload.included_process_steps;
+  delete fallbackPayload.block_reason;
+  return fallbackPayload as Omit<
+    WorkOrderEventInsert,
+    "included_process_steps" | "block_reason"
+  >;
 }
 
 function yearRange(year: number): { start: string; end: string } {
@@ -179,12 +180,6 @@ function secondsBetween(start: string | null, end: string | null): number | null
   const endMs = new Date(end).getTime();
   if (Number.isNaN(startMs) || Number.isNaN(endMs)) return null;
   return Math.max(0, Math.round((endMs - startMs) / 1000));
-}
-
-function daysBetween(start: string | null, end: string | null): number | null {
-  const seconds = secondsBetween(start, end);
-  if (seconds === null) return null;
-  return roundDays(seconds / DAY_SECONDS);
 }
 
 type PauseInterval = {

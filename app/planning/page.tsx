@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { Pencil } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { GripVertical, Pencil } from "lucide-react";
 import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import {
@@ -11,7 +11,7 @@ import {
   getShortProcessStepLabel,
   resolveStepsForOrder,
 } from "@/lib/process-steps";
-import { STEP_WEIGHTS } from "@/lib/capacity";
+import { getExpectedHoursForStep } from "@/lib/capacity";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
   applyTodayQualificationBlocks,
@@ -26,6 +26,7 @@ import {
   localDateKey,
   normalizeAssignedPersonTeam,
   priorityTag,
+  sortSharedPlanningOrders,
   sortOrders,
 } from "@/lib/work-order-rules";
 import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
@@ -46,6 +47,7 @@ import {
   completeExtraAction,
 } from "@/lib/completed-tasks";
 import { syncWorkOrderDataBlockState } from "@/lib/work-order-data";
+import { supabase } from "@/lib/supabase";
 
 type WorkOrder = {
   work_order_id: string;
@@ -68,6 +70,7 @@ type WorkOrder = {
   last_system_update: string | null;
   included_process_steps: string[] | null;
   data_tracking_enabled: boolean | null;
+  shared_planning_rank: number | null;
 };
 
 type StaffMember = {
@@ -94,7 +97,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, last_manual_update, last_system_update, included_process_steps, data_tracking_enabled";
+  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, last_manual_update, last_system_update, included_process_steps, data_tracking_enabled, shared_planning_rank";
 
 const ui = {
   pageBg: "#f2efe9",
@@ -121,14 +124,14 @@ const ui = {
 
 function toneStyles(tone: "green" | "red" | "slate") {
   if (tone === "green") {
-    return { color: "#166534", backgroundColor: "#eef9f1", borderColor: "#cfe5d6" };
+    return { color: "#166534", backgroundColor: "#eef9f1", border: "1px solid #cfe5d6" };
   }
 
   if (tone === "red") {
-    return { color: ui.red, backgroundColor: ui.redSoft, borderColor: ui.redBorder };
+    return { color: ui.red, backgroundColor: ui.redSoft, border: `1px solid ${ui.redBorder}` };
   }
 
-  return { color: ui.text, backgroundColor: ui.surfaceSoft, borderColor: ui.border };
+  return { color: ui.text, backgroundColor: ui.surfaceSoft, border: `1px solid ${ui.border}` };
 }
 
 const surfaceCardStyle: React.CSSProperties = {
@@ -191,14 +194,14 @@ const countBadgeMutedStyle: React.CSSProperties = {
   ...badgeStyle,
   color: ui.muted,
   backgroundColor: ui.surfaceSoft,
-  borderColor: ui.border,
+  border: `1px solid ${ui.border}`,
 };
 
 const countBadgeRedStyle: React.CSSProperties = {
   ...badgeStyle,
   color: ui.red,
   backgroundColor: ui.redSoft,
-  borderColor: ui.redBorder,
+  border: `1px solid ${ui.redBorder}`,
 };
 
 const countBadgeOpenStyle: React.CSSProperties = {
@@ -222,21 +225,21 @@ const aogBadgeStyle: React.CSSProperties = {
   ...woBadgeBase,
   color: ui.red,
   backgroundColor: ui.redSoft,
-  borderColor: ui.redBorder,
+  border: `1px solid ${ui.redBorder}`,
 };
 
 const prioBadgeStyle: React.CSSProperties = {
   ...woBadgeBase,
   color: ui.orange,
   backgroundColor: ui.orangeSoft,
-  borderColor: ui.orangeBorder,
+  border: `1px solid ${ui.orangeBorder}`,
 };
 
 const typeBadgeStyle: React.CSSProperties = {
   ...woBadgeBase,
   color: ui.muted,
   backgroundColor: ui.surfaceSoft,
-  borderColor: ui.border,
+  border: `1px solid ${ui.border}`,
   textTransform: "uppercase",
 };
 
@@ -289,7 +292,7 @@ const mutedCellStyle: React.CSSProperties = {
 
 const blockedTableWrapStyle: React.CSSProperties = {
   ...tableWrapStyle,
-  borderColor: ui.redBorder,
+  border: `1px solid ${ui.redBorder}`,
   backgroundColor: "#fff9f7",
 };
 
@@ -322,6 +325,73 @@ const inlineActionButtonStyle: React.CSSProperties = {
   fontWeight: 700,
   whiteSpace: "nowrap",
   cursor: "pointer",
+};
+
+const planningCardStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "32px repeat(auto-fit, minmax(130px, 1fr))",
+  gap: "12px",
+  alignItems: "center",
+  padding: "10px 12px",
+  borderRadius: "10px",
+  border: `1px solid ${ui.border}`,
+  backgroundColor: ui.surface,
+  boxShadow: ui.shadow,
+  cursor: "grab",
+};
+
+const planningCardDraggingStyle: React.CSSProperties = {
+  opacity: 0.62,
+  border: `1px solid ${ui.blue}`,
+  boxShadow: "0 0 0 2px rgba(37, 85, 199, 0.12)",
+};
+
+const planningCardDropTargetStyle: React.CSSProperties = {
+  border: `1px solid ${ui.blue}`,
+  backgroundColor: "#f8fbff",
+  boxShadow: "0 0 0 2px rgba(37, 85, 199, 0.10)",
+};
+
+const planningDropIndicatorStyle: React.CSSProperties = {
+  position: "absolute",
+  left: "12px",
+  right: "12px",
+  height: "4px",
+  borderRadius: "999px",
+  backgroundColor: ui.blue,
+  boxShadow: "0 0 0 4px rgba(37, 85, 199, 0.12)",
+  pointerEvents: "none",
+  zIndex: 2,
+};
+
+const planningCardHandleStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: "28px",
+  height: "36px",
+  borderRadius: "8px",
+  color: ui.mutedSoft,
+  backgroundColor: ui.surfaceSoft,
+  border: `1px solid ${ui.border}`,
+  cursor: "grab",
+};
+
+const planningCardLabelStyle: React.CSSProperties = {
+  marginBottom: "3px",
+  fontSize: "var(--fs-xs)",
+  fontWeight: 700,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  color: ui.mutedSoft,
+};
+
+const planningCardValueStyle: React.CSSProperties = {
+  minWidth: 0,
+  color: ui.text,
+  fontSize: "var(--fs-body)",
+  lineHeight: 1.4,
+  overflowWrap: "anywhere",
 };
 
 const extraActionsDescriptionColumnStyle: React.CSSProperties = {
@@ -418,7 +488,7 @@ const modalActionButtonStyle: React.CSSProperties = {
 
 const modalPrimaryButtonStyle: React.CSSProperties = {
   ...modalActionButtonStyle,
-  borderColor: ui.blue,
+  border: `1px solid ${ui.blue}`,
   backgroundColor: ui.blue,
   color: "#ffffff",
   boxShadow: "0 8px 20px rgba(37, 85, 199, 0.18)",
@@ -496,14 +566,17 @@ function buildTimelineSegments(order: WorkOrder): TimelineSegment[] {
   );
   if (includedSteps.length === 0) return [];
 
-  const weights = STEP_WEIGHTS[order.work_order_type] || {};
   const currentIdx = order.current_process_step
     ? includedSteps.indexOf(order.current_process_step)
     : -1;
 
   const resolved = includedSteps.map((step: string) => {
-    const rawWeight = weights[step];
-    const weight = rawWeight && rawWeight > 0 ? rawWeight : 0.03;
+    const expectedHours = getExpectedHoursForStep(
+      order.work_order_type,
+      step,
+      order.part_number,
+    );
+    const weight = expectedHours > 0 ? expectedHours : 0.03;
     return { step, weight };
   });
   const totalWeight = resolved.reduce(
@@ -543,6 +616,7 @@ const timelineLegendEntries = [
   "Magnetic Test",
   "Eddy Current",
   "Inspection",
+  "Repair",
   "Painting",
   "Assembly",
 ].map((step) => ({
@@ -564,7 +638,7 @@ const timelineRowBaseStyle: React.CSSProperties = {
 
 const timelineRowBlockedStyle: React.CSSProperties = {
   ...timelineRowBaseStyle,
-  borderColor: ui.redBorder,
+  border: `1px solid ${ui.redBorder}`,
   backgroundColor: "#fff9f7",
 };
 
@@ -965,6 +1039,14 @@ function TimelineLegend() {
 }
 
 type PlanningTab = "list" | "timeline";
+type DropPlacement = "before" | "after";
+type PlanningDropTarget = {
+  workOrderId: string;
+  placement: DropPlacement;
+};
+
+const DRAG_AUTO_SCROLL_EDGE_PX = 96;
+const DRAG_AUTO_SCROLL_MAX_SPEED_PX = 20;
 
 function PlanningPageContent() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
@@ -996,6 +1078,12 @@ function PlanningPageContent() {
   }>({ responsible_person_team: "", due_date: "" });
   const [extraActionEditStatus, setExtraActionEditStatus] = useState("");
   const [isSavingExtraActionEdit, setIsSavingExtraActionEdit] = useState(false);
+  const [draggingWorkOrderId, setDraggingWorkOrderId] = useState<string | null>(null);
+  const [planningDropTarget, setPlanningDropTarget] =
+    useState<PlanningDropTarget | null>(null);
+  const [reorderStatus, setReorderStatus] = useState("");
+  const dragAutoScrollFrameRef = useRef<number | null>(null);
+  const dragAutoScrollSpeedRef = useRef(0);
   const today = localDateKey();
 
   const todayAbsentEngineerIdSet = useMemo(
@@ -1014,20 +1102,18 @@ function PlanningPageContent() {
   );
 
   function applySharedPlanningBlocks(nextOrders: WorkOrder[]) {
-    return sortOrders(
-      applySuggestedAssignmentsForCurrentStep(
-        applyTodayQualificationBlocks(
-          nextOrders,
-          shopStaff,
-          todayAbsentEngineerIds.map((engineerId) => ({
-            engineer_id: engineerId,
-            absence_date: today,
-          })),
-          today,
-        ),
+    return applySuggestedAssignmentsForCurrentStep(
+      applyTodayQualificationBlocks(
+        nextOrders,
         shopStaff,
-        todayAbsentShopEngineerNames,
+        todayAbsentEngineerIds.map((engineerId) => ({
+          engineer_id: engineerId,
+          absence_date: today,
+        })),
+        today,
       ),
+      shopStaff,
+      todayAbsentShopEngineerNames,
     );
   }
 
@@ -1081,21 +1167,19 @@ function PlanningPageContent() {
         Array.from(getAbsentEngineerIdSetForDateKey(absences, today)),
       );
       setOrders(
-        sortOrders(
-          applySuggestedAssignmentsForCurrentStep(
-            withQualificationBlocks,
-            engineers,
-            new Set(
-              engineers
-                .filter((engineer) =>
-                  absences.some(
-                    (absence) =>
-                      absence.absence_date === today &&
-                      absence.engineer_id === engineer.id,
-                  ),
-                )
-                .map((engineer) => engineer.name),
-            ),
+        applySuggestedAssignmentsForCurrentStep(
+          withQualificationBlocks,
+          engineers,
+          new Set(
+            engineers
+              .filter((engineer) =>
+                absences.some(
+                  (absence) =>
+                    absence.absence_date === today &&
+                    absence.engineer_id === engineer.id,
+                ),
+              )
+              .map((engineer) => engineer.name),
           ),
         ),
       );
@@ -1104,6 +1188,14 @@ function PlanningPageContent() {
 
     void load();
   }, [today]);
+
+  useEffect(() => {
+    return () => {
+      if (dragAutoScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragAutoScrollFrameRef.current);
+      }
+    };
+  }, []);
 
   if (loading) {
     return <p style={{ padding: "2rem" }}>Loading...</p>;
@@ -1120,8 +1212,8 @@ function PlanningPageContent() {
     quickEdit?.field === "due_date" &&
     (quickEditOrder?.priority === "Yes" || quickEditOrder?.priority === "AOG");
 
-  const openOrders = orders.filter((o) => !isBlocked(o));
-  const blockedOrders = orders.filter((o) => isBlocked(o));
+  const openOrders = sortSharedPlanningOrders(orders.filter((o) => !isBlocked(o)));
+  const blockedOrders = sortOrders(orders.filter((o) => isBlocked(o)));
 
   function openQuickEdit(
     order: WorkOrder,
@@ -1162,6 +1254,329 @@ function PlanningPageContent() {
   function closeCompleteActionConfirmation() {
     if (isCompletingAction) return;
     setActionConfirmationWorkOrderId(null);
+  }
+
+  function applyOpenOrderSequence(
+    sourceOrders: WorkOrder[],
+    orderedWorkOrderIds: string[],
+  ): WorkOrder[] {
+    const rankById = new Map(
+      orderedWorkOrderIds.map((workOrderId, index) => [
+        workOrderId,
+        (index + 1) * 1000,
+      ]),
+    );
+
+    return sourceOrders.map((order) => {
+      const rank = rankById.get(order.work_order_id);
+      return rank === undefined
+        ? order
+        : { ...order, shared_planning_rank: rank };
+    });
+  }
+
+  function getDropPlacement(event: React.DragEvent<HTMLElement>): DropPlacement {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  }
+
+  function runDragAutoScroll() {
+    const speed = dragAutoScrollSpeedRef.current;
+
+    if (speed === 0) {
+      dragAutoScrollFrameRef.current = null;
+      return;
+    }
+
+    window.scrollBy({ top: speed, behavior: "auto" });
+    dragAutoScrollFrameRef.current = window.requestAnimationFrame(runDragAutoScroll);
+  }
+
+  function stopDragAutoScroll() {
+    dragAutoScrollSpeedRef.current = 0;
+
+    if (dragAutoScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragAutoScrollFrameRef.current);
+      dragAutoScrollFrameRef.current = null;
+    }
+  }
+
+  function updateDragAutoScroll(clientY: number) {
+    const viewportHeight = window.innerHeight;
+    let nextSpeed = 0;
+
+    if (clientY < DRAG_AUTO_SCROLL_EDGE_PX) {
+      const intensity = Math.min(
+        1,
+        (DRAG_AUTO_SCROLL_EDGE_PX - clientY) / DRAG_AUTO_SCROLL_EDGE_PX,
+      );
+      nextSpeed = -Math.max(
+        4,
+        Math.round(DRAG_AUTO_SCROLL_MAX_SPEED_PX * intensity),
+      );
+    } else if (clientY > viewportHeight - DRAG_AUTO_SCROLL_EDGE_PX) {
+      const intensity = Math.min(
+        1,
+        (clientY - (viewportHeight - DRAG_AUTO_SCROLL_EDGE_PX)) /
+          DRAG_AUTO_SCROLL_EDGE_PX,
+      );
+      nextSpeed = Math.max(
+        4,
+        Math.round(DRAG_AUTO_SCROLL_MAX_SPEED_PX * intensity),
+      );
+    }
+
+    dragAutoScrollSpeedRef.current = nextSpeed;
+
+    if (nextSpeed === 0) {
+      stopDragAutoScroll();
+      return;
+    }
+
+    if (dragAutoScrollFrameRef.current === null) {
+      dragAutoScrollFrameRef.current =
+        window.requestAnimationFrame(runDragAutoScroll);
+    }
+  }
+
+  function reorderOpenOrders(
+    sourceOrders: WorkOrder[],
+    draggedWorkOrderId: string,
+    targetWorkOrderId: string,
+    placement: DropPlacement,
+  ): { nextOrders: WorkOrder[]; orderedWorkOrderIds: string[] } | null {
+    if (draggedWorkOrderId === targetWorkOrderId) return null;
+
+    const orderedWorkOrderIds = sortSharedPlanningOrders(
+      sourceOrders.filter((order) => !isBlocked(order)),
+    ).map((order) => order.work_order_id);
+    const fromIndex = orderedWorkOrderIds.indexOf(draggedWorkOrderId);
+    const toIndex = orderedWorkOrderIds.indexOf(targetWorkOrderId);
+
+    if (fromIndex === -1 || toIndex === -1) return null;
+
+    const nextOrderedWorkOrderIds = [...orderedWorkOrderIds];
+    const [movedWorkOrderId] = nextOrderedWorkOrderIds.splice(fromIndex, 1);
+    const targetIndexAfterRemoval =
+      nextOrderedWorkOrderIds.indexOf(targetWorkOrderId);
+
+    if (targetIndexAfterRemoval === -1) return null;
+
+    nextOrderedWorkOrderIds.splice(
+      placement === "before"
+        ? targetIndexAfterRemoval
+        : targetIndexAfterRemoval + 1,
+      0,
+      movedWorkOrderId,
+    );
+
+    const orderChanged = nextOrderedWorkOrderIds.some(
+      (workOrderId, index) => workOrderId !== orderedWorkOrderIds[index],
+    );
+
+    if (!orderChanged) return null;
+
+    return {
+      nextOrders: applyOpenOrderSequence(
+        sourceOrders,
+        nextOrderedWorkOrderIds,
+      ),
+      orderedWorkOrderIds: nextOrderedWorkOrderIds,
+    };
+  }
+
+  async function persistSharedPlanningOrder(
+    workOrderIds: string[],
+    rollbackOrders?: WorkOrder[],
+  ) {
+    if (workOrderIds.length === 0) return;
+
+    setReorderStatus("");
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        throw new Error(sessionError.message);
+      }
+
+      if (!session?.access_token) {
+        throw new Error("No active session for shared planning reorder.");
+      }
+
+      const response = await fetch("/api/shared-planning/reorder", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ workOrderIds }),
+      });
+
+      const payload = (await response.json()) as
+        | { ok: true }
+        | { error?: { message?: string } };
+
+      if (!response.ok) {
+        throw new Error(
+          "error" in payload && payload.error?.message
+            ? payload.error.message
+            : "Unable to save shared planning order.",
+        );
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to save shared planning order.";
+      if (rollbackOrders) {
+        setOrders(rollbackOrders);
+      }
+      setReorderStatus(`Error: ${message}`);
+    }
+  }
+
+  function handleOrderDragStart(
+    event: React.DragEvent<HTMLElement>,
+    workOrderId: string,
+  ) {
+    setDraggingWorkOrderId(workOrderId);
+    setPlanningDropTarget(null);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", workOrderId);
+  }
+
+  function handlePlanningDragOver(event: React.DragEvent<HTMLElement>) {
+    if (!draggingWorkOrderId) return;
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    updateDragAutoScroll(event.clientY);
+  }
+
+  function handlePlanningListDragLeave(event: React.DragEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointerStillInside =
+      event.clientX >= rect.left &&
+      event.clientX <= rect.right &&
+      event.clientY >= rect.top &&
+      event.clientY <= rect.bottom;
+
+    if (!pointerStillInside) {
+      setPlanningDropTarget(null);
+      stopDragAutoScroll();
+    }
+  }
+
+  function handleOrderDragOver(
+    event: React.DragEvent<HTMLElement>,
+    targetWorkOrderId: string,
+  ) {
+    if (!draggingWorkOrderId) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    updateDragAutoScroll(event.clientY);
+
+    if (targetWorkOrderId === draggingWorkOrderId) {
+      setPlanningDropTarget(null);
+      return;
+    }
+
+    const placement = getDropPlacement(event);
+    setPlanningDropTarget((current) =>
+      current?.workOrderId === targetWorkOrderId &&
+      current.placement === placement
+        ? current
+        : { workOrderId: targetWorkOrderId, placement },
+    );
+  }
+
+  function completePlanningDrop(
+    draggedWorkOrderId: string,
+    targetWorkOrderId: string,
+    placement: DropPlacement,
+  ) {
+    const result = reorderOpenOrders(
+      orders,
+      draggedWorkOrderId,
+      targetWorkOrderId,
+      placement,
+    );
+
+    setDraggingWorkOrderId(null);
+    setPlanningDropTarget(null);
+
+    if (!result) {
+      return;
+    }
+
+    setOrders(result.nextOrders);
+    void persistSharedPlanningOrder(result.orderedWorkOrderIds, orders);
+  }
+
+  function handleOrderDrop(
+    event: React.DragEvent<HTMLElement>,
+    targetWorkOrderId: string,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    stopDragAutoScroll();
+
+    const draggedWorkOrderId =
+      draggingWorkOrderId || event.dataTransfer.getData("text/plain");
+
+    if (!draggedWorkOrderId) {
+      setDraggingWorkOrderId(null);
+      setPlanningDropTarget(null);
+      return;
+    }
+
+    completePlanningDrop(
+      draggedWorkOrderId,
+      targetWorkOrderId,
+      getDropPlacement(event),
+    );
+  }
+
+  function handlePlanningListDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    stopDragAutoScroll();
+
+    const draggedWorkOrderId =
+      draggingWorkOrderId || event.dataTransfer.getData("text/plain");
+
+    if (draggedWorkOrderId && planningDropTarget) {
+      completePlanningDrop(
+        draggedWorkOrderId,
+        planningDropTarget.workOrderId,
+        planningDropTarget.placement,
+      );
+      return;
+    }
+
+    setDraggingWorkOrderId(null);
+    setPlanningDropTarget(null);
+  }
+
+  function handlePlanningPageDrop(event: React.DragEvent<HTMLElement>) {
+    if (!draggingWorkOrderId) return;
+
+    event.preventDefault();
+    setDraggingWorkOrderId(null);
+    setPlanningDropTarget(null);
+    stopDragAutoScroll();
+  }
+
+  function handleOrderDragEnd() {
+    setDraggingWorkOrderId(null);
+    setPlanningDropTarget(null);
+    stopDragAutoScroll();
   }
 
   async function saveQuickEdit() {
@@ -1378,6 +1793,8 @@ function PlanningPageContent() {
 
   return (
     <main
+      onDragOver={handlePlanningDragOver}
+      onDrop={handlePlanningPageDrop}
       style={{
         minHeight: "100vh",
         backgroundColor: ui.pageBg,
@@ -1421,9 +1838,10 @@ function PlanningPageContent() {
                       style={{
                         padding: "6px 14px",
                         borderRadius: "8px",
-                        border: "1px solid transparent",
+                        border: isActive
+                          ? `1px solid ${ui.border}`
+                          : "1px solid transparent",
                         backgroundColor: isActive ? ui.surface : "transparent",
-                        borderColor: isActive ? ui.border : "transparent",
                         color: isActive ? ui.text : ui.muted,
                         fontSize: "var(--fs-sm)",
                         fontWeight: 650,
@@ -1466,76 +1884,141 @@ function PlanningPageContent() {
             </span>
           </div>
 
-          {openOrders.length > 0 ? (
-            <div style={tableWrapStyle}>
-              <table style={{ ...tableBaseStyle, minWidth: "980px" }}>
-                <thead>
-                  <tr>
-                    <th style={{ ...tableHeaderCellStyle, ...roundedTableHeaderStyle("left") }}>WO</th>
-                    <th style={tableHeaderCellStyle}>Customer</th>
-                    <th style={tableHeaderCellStyle}>Part number</th>
-                    <th style={tableHeaderCellStyle}>Due date</th>
-                    <th style={tableHeaderCellStyle}>Assigned</th>
-                    <th style={tableHeaderCellStyle}>Next process step</th>
-                    <th style={{ ...tableHeaderCellStyle, ...roundedTableHeaderStyle("right") }}>Last update</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {openOrders.map((o, idx) => {
-                    const lastUpdate = latestUpdate(
-                      o.last_system_update,
-                      o.last_manual_update,
-                    );
-                    const isLast = idx === openOrders.length - 1;
-                    const cell = isLast
-                      ? { ...tableCellStyle, borderBottom: 0 }
-                      : tableCellStyle;
-                    const mCell = isLast
-                      ? { ...mutedCellStyle, borderBottom: 0 }
-                      : mutedCellStyle;
+          {reorderStatus && (
+            <div
+              role="status"
+              style={{
+                marginBottom: "12px",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                border: `1px solid ${ui.redBorder}`,
+                backgroundColor: ui.redSoft,
+                color: ui.red,
+                fontSize: "13px",
+                lineHeight: 1.5,
+                fontWeight: 650,
+              }}
+            >
+              {reorderStatus}
+            </div>
+          )}
 
-                    return (
-                      <tr key={o.work_order_id}>
-                        <td style={cell}>
-                          <WorkOrderCell order={o} />
-                        </td>
-                        <td style={cell}>{o.customer || "–"}</td>
-                        <td style={cell}>{o.part_number || "–"}</td>
-                        <td style={cell}>
-                          <span style={{ display: "inline-flex", alignItems: "center" }}>
-                            <DueDateCell value={o.due_date} />
-                            <button
-                              type="button"
-                              onClick={() => openQuickEdit(o, false, "due_date")}
-                              style={inlineEditButtonStyle}
-                              aria-label={`Edit due date for ${o.work_order_id}`}
-                            >
-                              <Pencil size={12} strokeWidth={2} />
-                            </button>
-                          </span>
-                        </td>
-                        <td style={cell}>
-                          <span style={{ display: "inline-flex", alignItems: "center" }}>
-                            {normalizeAssignedPersonTeam(o.assigned_person_team)}
-                            <button
-                              type="button"
-                              onClick={() => openQuickEdit(o, false, "assigned_person_team")}
-                              style={inlineEditButtonStyle}
-                              aria-label={`Edit assignment for ${o.work_order_id}`}
-                            >
-                              <Pencil size={12} strokeWidth={2} />
-                            </button>
-                          </span>
-                        </td>
-                        <td style={cell}>{o.current_process_step || "–"}</td>
-                        <td style={mCell}>
-                          <LastUpdateCell value={lastUpdate} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {openOrders.length > 0 ? (
+            <div
+              onDragOver={handlePlanningDragOver}
+              onDragLeave={handlePlanningListDragLeave}
+              onDrop={handlePlanningListDrop}
+              style={{ display: "grid", gap: "10px" }}
+            >
+              {openOrders.map((o) => {
+                const lastUpdate = latestUpdate(
+                  o.last_system_update,
+                  o.last_manual_update,
+                );
+                const dragging = draggingWorkOrderId === o.work_order_id;
+                const dropTarget =
+                  planningDropTarget?.workOrderId === o.work_order_id
+                    ? planningDropTarget
+                    : null;
+
+                return (
+                  <div key={o.work_order_id} style={{ position: "relative" }}>
+                    {dropTarget?.placement === "before" && (
+                      <div
+                        aria-hidden="true"
+                        style={{ ...planningDropIndicatorStyle, top: "-7px" }}
+                      />
+                    )}
+                    <article
+                      draggable
+                      onDragStart={(event) =>
+                        handleOrderDragStart(event, o.work_order_id)
+                      }
+                      onDragOver={(event) =>
+                        handleOrderDragOver(event, o.work_order_id)
+                      }
+                      onDrop={(event) => handleOrderDrop(event, o.work_order_id)}
+                      onDragEnd={handleOrderDragEnd}
+                      style={{
+                        ...planningCardStyle,
+                        ...(dropTarget ? planningCardDropTargetStyle : {}),
+                        ...(dragging ? planningCardDraggingStyle : {}),
+                      }}
+                    >
+                      <span
+                        aria-label={`Move ${o.work_order_id}`}
+                        title="Drag to reorder"
+                        style={planningCardHandleStyle}
+                      >
+                        <GripVertical size={16} strokeWidth={2} />
+                      </span>
+
+                      <div style={planningCardValueStyle}>
+                        <div style={planningCardLabelStyle}>WO</div>
+                        <WorkOrderCell order={o} />
+                      </div>
+
+                      <div style={planningCardValueStyle}>
+                        <div style={planningCardLabelStyle}>Customer</div>
+                        {o.customer || "–"}
+                      </div>
+
+                      <div style={planningCardValueStyle}>
+                        <div style={planningCardLabelStyle}>Part number</div>
+                        {o.part_number || "–"}
+                      </div>
+
+                      <div style={planningCardValueStyle}>
+                        <div style={planningCardLabelStyle}>Due date</div>
+                        <span style={{ display: "inline-flex", alignItems: "center" }}>
+                          <DueDateCell value={o.due_date} />
+                          <button
+                            type="button"
+                            onClick={() => openQuickEdit(o, false, "due_date")}
+                            style={inlineEditButtonStyle}
+                            aria-label={`Edit due date for ${o.work_order_id}`}
+                          >
+                            <Pencil size={12} strokeWidth={2} />
+                          </button>
+                        </span>
+                      </div>
+
+                      <div style={planningCardValueStyle}>
+                        <div style={planningCardLabelStyle}>Assigned</div>
+                        <span style={{ display: "inline-flex", alignItems: "center" }}>
+                          {normalizeAssignedPersonTeam(o.assigned_person_team)}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openQuickEdit(o, false, "assigned_person_team")
+                            }
+                            style={inlineEditButtonStyle}
+                            aria-label={`Edit assignment for ${o.work_order_id}`}
+                          >
+                            <Pencil size={12} strokeWidth={2} />
+                          </button>
+                        </span>
+                      </div>
+
+                      <div style={planningCardValueStyle}>
+                        <div style={planningCardLabelStyle}>Next step</div>
+                        {o.current_process_step || "–"}
+                      </div>
+
+                      <div style={{ ...planningCardValueStyle, color: ui.muted }}>
+                        <div style={planningCardLabelStyle}>Last update</div>
+                        <LastUpdateCell value={lastUpdate} />
+                      </div>
+                    </article>
+                    {dropTarget?.placement === "after" && (
+                      <div
+                        aria-hidden="true"
+                        style={{ ...planningDropIndicatorStyle, bottom: "-7px" }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div
@@ -1556,7 +2039,7 @@ function PlanningPageContent() {
         <section
           style={{
             ...secondarySectionStyle,
-            borderColor: ui.redBorder,
+            border: `1px solid ${ui.redBorder}`,
             backgroundColor: "#fff7f4",
             boxShadow: "0 1px 2px rgba(180, 35, 24, 0.04), 0 6px 18px rgba(180, 35, 24, 0.06)",
           }}
@@ -1649,7 +2132,7 @@ function PlanningPageContent() {
                               onClick={() => openQuickEdit(o, true, "due_date")}
                               style={{
                                 ...inlineEditButtonStyle,
-                                borderColor: ui.redBorder,
+                                border: `1px solid ${ui.redBorder}`,
                                 backgroundColor: ui.redSoft,
                                 color: ui.red,
                               }}
@@ -1906,7 +2389,7 @@ function PlanningPageContent() {
         <section
           style={{
             ...secondarySectionStyle,
-            borderColor: ui.redBorder,
+            border: `1px solid ${ui.redBorder}`,
             backgroundColor: "#fff7f4",
             boxShadow:
               "0 1px 2px rgba(180, 35, 24, 0.04), 0 6px 18px rgba(180, 35, 24, 0.06)",
@@ -2045,10 +2528,10 @@ function PlanningPageContent() {
                     }
                     style={{
                       ...modalInputStyle,
-                      borderColor:
+                      border:
                         dueDateRequired && !quickEditForm.due_date
-                          ? ui.red
-                          : ui.borderStrong,
+                          ? `1px solid ${ui.red}`
+                          : `1px solid ${ui.borderStrong}`,
                     }}
                     disabled={isSavingQuickEdit}
                   />

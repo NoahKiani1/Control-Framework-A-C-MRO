@@ -12,6 +12,10 @@ import {
   type DropboxImportRuntime,
   type DropboxListFolderEntry,
 } from "../lib/acmp-import/dropbox";
+import {
+  analyzeImportRows,
+  findMissingClosedWorkOrderIds,
+} from "../lib/acmp-import/analyze";
 import type { AcmpImportResult } from "../lib/acmp-import/run";
 import { createRowsSignature } from "../lib/acmp-import/signature";
 import { isProcessedRowsSignatureDuplicate } from "../lib/acmp-import/import-files";
@@ -23,6 +27,7 @@ const SUCCESS_RESULT: AcmpImportResult = {
   deleted: 0,
   closedRemoved: 0,
   closedSkipped: 0,
+  missingClosed: 0,
   tooOld: 0,
   skipped: 0,
   pendingNewWorkOrders: 0,
@@ -141,6 +146,45 @@ function createMockDropboxRuntime({
   };
 }
 
+function createWorkOrderIdClient(workOrderIds: string[]) {
+  return {
+    from(table: string) {
+      assert.equal(table, "work_orders");
+      let idsFilter: string[] | null = null;
+      const query = {
+        select() {
+          return query;
+        },
+        in(column: string, values: string[]) {
+          assert.equal(column, "work_order_id");
+          idsFilter = values;
+          return query;
+        },
+        then<TResult1 = unknown, TResult2 = never>(
+          onfulfilled?:
+            | ((
+                value: {
+                  data: { work_order_id: string }[];
+                  error: null;
+                },
+              ) => TResult1 | PromiseLike<TResult1>)
+            | null,
+          onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+        ) {
+          const ids = idsFilter
+            ? workOrderIds.filter((id) => idsFilter?.includes(id))
+            : workOrderIds;
+          return Promise.resolve({
+            data: ids.map((work_order_id) => ({ work_order_id })),
+            error: null,
+          }).then(onfulfilled, onrejected);
+        },
+      };
+      return query;
+    },
+  } as never;
+}
+
 async function main() {
   assert.deepEqual(parseAcmpExportFilename("werkorders_130326.xlsx"), {
     filename: "werkorders_130326.xlsx",
@@ -203,6 +247,36 @@ async function main() {
   const missingWorkOrder = validateAcmpExportRows([{ Customer: "ACMP" }]);
   assert.equal(missingWorkOrder.ok, false);
   assert.deepEqual(missingWorkOrder.missingRequired, ["Work Order"]);
+
+  assert.deepEqual(
+    findMissingClosedWorkOrderIds(
+      ["100", "101", "102"],
+      new Set(["101", "102"]),
+    ),
+    ["100"],
+  );
+  assert.deepEqual(findMissingClosedWorkOrderIds(["100"], new Set()), []);
+
+  const openExportAnalysis = await analyzeImportRows(
+    [
+      {
+        "Work Order": "102",
+        Customer: "ACMP",
+        "RFQ State": "RFQ Send",
+        CreatedOn: "2026-05-01",
+      },
+    ],
+    createWorkOrderIdClient(["100", "101"]),
+  );
+  assert.deepEqual(openExportAnalysis.missingClosedIds, ["100", "101"]);
+  assert.deepEqual(openExportAnalysis.closedIds, ["100", "101"]);
+  assert.equal(openExportAnalysis.missingClosed, 2);
+
+  const invalidExportAnalysis = await analyzeImportRows(
+    [{ Customer: "ACMP" }],
+    createWorkOrderIdClient(["100"]),
+  );
+  assert.equal(invalidExportAnalysis.missingClosed, 0);
 
   {
     const pdfPath = "/work order planning app/import/notes.pdf";

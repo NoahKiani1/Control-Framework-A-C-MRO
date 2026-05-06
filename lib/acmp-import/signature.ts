@@ -6,6 +6,8 @@ type JsonLike =
   | JsonLike[]
   | { [key: string]: JsonLike | undefined };
 
+const ROWS_SIGNATURE_VERSION = "open-export-closes-missing-v1";
+
 function normalizeValue(value: unknown): JsonLike {
   if (value === undefined) return null;
   if (value === null) return null;
@@ -59,7 +61,12 @@ async function sha256(value: string | ArrayBuffer | Uint8Array): Promise<string>
 export async function createRowsSignature(
   rows: Record<string, unknown>[],
 ): Promise<string> {
-  return sha256(stableStringify(rows));
+  return sha256(
+    stableStringify({
+      version: ROWS_SIGNATURE_VERSION,
+      rows,
+    }),
+  );
 }
 
 export async function createBufferSha256(

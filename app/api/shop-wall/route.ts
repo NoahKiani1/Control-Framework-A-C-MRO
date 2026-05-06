@@ -1,5 +1,6 @@
 import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import { requireAppRole } from "@/lib/server-auth";
+import { sortSharedPlanningOrders } from "@/lib/work-order-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ type ShopWallWorkOrder = {
   last_manual_update: string | null;
   last_system_update: string | null;
   included_process_steps: string[] | null;
+  shared_planning_rank: number | null;
 };
 
 type ShopWallEngineer = {
@@ -80,7 +82,7 @@ export async function GET(request: Request) {
       supabase
         .from("work_orders")
         .select(
-          "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps",
+          "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps, shared_planning_rank",
         )
         .eq("is_open", true)
         .eq("is_active", true),
@@ -120,7 +122,9 @@ export async function GET(request: Request) {
 
   return noStoreJson({
     today,
-    orders: (ordersResult.data || []) as ShopWallWorkOrder[],
+    orders: sortSharedPlanningOrders(
+      (ordersResult.data || []) as ShopWallWorkOrder[],
+    ),
     engineers,
     absences: (absencesResult.data || []) as ShopWallAbsence[],
     extraActions: (extrasResult.data || []) as ShopWallExtraAction[],

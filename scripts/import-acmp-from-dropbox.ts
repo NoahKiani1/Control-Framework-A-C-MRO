@@ -17,6 +17,8 @@ async function main() {
       `deleted_superseded=${summary.deletedSuperseded}`,
       `pending_new=${summary.totals.pendingNewWorkOrders}`,
       `pending_rfq=${summary.totals.pendingRfqApprovedInactive}`,
+      `missing_closed=${summary.totals.missingClosed}`,
+      `closed_removed=${summary.totals.closedRemoved}`,
     ].join(" "),
   );
 

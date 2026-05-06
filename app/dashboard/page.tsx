@@ -141,6 +141,8 @@ type DropboxImportSummary = {
   totals: {
     pendingNewWorkOrders: number;
     pendingRfqApprovedInactive: number;
+    closedRemoved: number;
+    missingClosed: number;
   };
 };
 
@@ -189,7 +191,19 @@ function formatDropboxImportStatus(summary: DropboxImportSummary): string {
     return "AcMP import finished with errors.";
   }
   if (summary.processedFiles > 0 || summary.ignoredDuplicateFiles > 0) {
-    return "AcMP import successful.";
+    const parts: string[] = [];
+    if (summary.totals.pendingNewWorkOrders > 0) {
+      parts.push(`${summary.totals.pendingNewWorkOrders} new to review`);
+    }
+    if (summary.totals.pendingRfqApprovedInactive > 0) {
+      parts.push(`${summary.totals.pendingRfqApprovedInactive} RFQ review`);
+    }
+    if (summary.totals.closedRemoved > 0) {
+      parts.push(`${summary.totals.closedRemoved} closed removed`);
+    }
+    return parts.length > 0
+      ? `AcMP import successful: ${parts.join(", ")}.`
+      : "AcMP import successful.";
   }
   return "No new AcMP export found.";
 }

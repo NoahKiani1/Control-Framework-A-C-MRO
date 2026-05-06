@@ -4,6 +4,7 @@ export type AcmpImportResult = {
   deleted: number;
   closedRemoved: number;
   closedSkipped: number;
+  missingClosed: number;
   tooOld: number;
   skipped: number;
   pendingNewWorkOrders: number;

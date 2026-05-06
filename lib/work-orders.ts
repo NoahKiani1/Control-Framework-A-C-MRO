@@ -134,6 +134,21 @@ export async function getExistingWorkOrderIds(
   return (data || []).map((row: { work_order_id: string }) => row.work_order_id);
 }
 
+export async function getCurrentWorkOrderIds(
+  client: SupabaseClient = supabase,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from("work_orders")
+    .select("work_order_id");
+
+  if (error) {
+    console.error("Failed to load current work order ids", error);
+    return [];
+  }
+
+  return (data || []).map((row: { work_order_id: string }) => row.work_order_id);
+}
+
 export async function upsertWorkOrders(
   rows: Record<string, unknown>[],
   client: SupabaseClient = supabase,

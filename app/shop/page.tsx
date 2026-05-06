@@ -1,7 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { Public_Sans } from "next/font/google";
+import { Home } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { RequireRole } from "@/app/components/require-role";
 import { READY_TO_CLOSE_STEP, resolveStepsForOrder } from "@/lib/process-steps";
@@ -17,8 +19,10 @@ import {
   normalizeAssignedPersonTeam,
   normalizeRfqState,
   priorityTag,
+  sortSharedPlanningOrders,
 } from "@/lib/work-order-rules";
 import { getEngineerPhotoUrl } from "@/lib/engineers";
+import { getCurrentProfile, type AppRole } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import type { ExtraAction } from "@/lib/extra-actions";
 
@@ -40,6 +44,7 @@ type WorkOrder = {
   last_manual_update: string | null;
   last_system_update: string | null;
   included_process_steps: string[] | null;
+  shared_planning_rank: number | null;
 };
 
 type Engineer = {
@@ -71,6 +76,7 @@ const DESIGN_WIDTH = 1536;
 const DESIGN_HEIGHT = 864;
 const TV_SCALE = 0.625;
 const AUTO_SCROLL_SPEED_PX_PER_SECOND = 20;
+const AUTO_SCROLL_BLOCKED_SPEED_PX_PER_SECOND = 70;
 const AUTO_SCROLL_TOP_PAUSE_MS = 7000;
 const AUTO_SCROLL_SECTION_PAUSE_MS = 5000;
 const AUTO_SCROLL_BOTTOM_PAUSE_MS = 9000;
@@ -145,12 +151,10 @@ const TIMELINE_COMPLETED_BORDER = "#b1d2bb";
 const TIMELINE_COMPLETED_INK = "#166534";
 const TIMELINE_UPCOMING_INK = "#7d8696";
 /**
- * 12px is the largest font size at which the longest step name
- * ("Penetrant Testing", 17 chars) still fits in a 10-segment timeline at the
- * shop wall's typical viewport width. Used uniformly so every label reads at
- * the same scale, regardless of state.
+ * Uniform label size keeps the shop-wall timeline readable when Repair adds an
+ * extra segment. Labels may wrap, while segment boxes stay equal width.
  */
-const TIMELINE_LABEL_FONT_SIZE = "16px";
+const TIMELINE_LABEL_FONT_SIZE = "13px";
 
 function buildTimelineSegments(
   workOrderType: string | null,
@@ -176,12 +180,6 @@ function buildTimelineSegments(
   }));
 }
 
-function timelineSegmentColumn(name: string): string {
-  const minPx = Math.min(180, Math.max(76, name.length * 8 + 34));
-  const flex = Math.min(1.75, Math.max(0.85, 0.64 + name.length / 14));
-  return `minmax(${minPx}px, ${flex.toFixed(2)}fr)`;
-}
-
 function WorkOrderTimeline({
   workOrderType,
   currentStep,
@@ -195,9 +193,7 @@ function WorkOrderTimeline({
 }) {
   const segments = buildTimelineSegments(workOrderType, currentStep, includedSteps);
   if (segments.length === 0) return null;
-  const timelineColumns = segments
-    .map((segment) => timelineSegmentColumn(segment.name))
-    .join(" ");
+  const timelineColumns = `repeat(${segments.length}, minmax(0, 1fr))`;
 
   const currentInk = blocked ? COLORS.red : "#166534";
   const currentSoft = blocked ? COLORS.redSoft : "#dff1e5";
@@ -264,6 +260,7 @@ function WorkOrderTimeline({
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  flexWrap: "wrap",
                   maxWidth: "100%",
                   minWidth: 0,
                   padding: "2px 9px",
@@ -276,9 +273,11 @@ function WorkOrderTimeline({
                   fontWeight: 700,
                   lineHeight: 1.2,
                   boxSizing: "border-box",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  overflow: "visible",
+                  whiteSpace: "normal",
+                  overflowWrap: "anywhere",
+                  wordBreak: "normal",
+                  textAlign: "center",
                 }}
               >
                 {segment.name}
@@ -294,9 +293,10 @@ function WorkOrderTimeline({
                   lineHeight: 1.2,
                   color: labelColor,
                   fontWeight: 600,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
+                  whiteSpace: "normal",
+                  overflow: "visible",
+                  overflowWrap: "anywhere",
+                  wordBreak: "normal",
                   textAlign: "center",
                 }}
               >
@@ -445,20 +445,6 @@ function compareShopDueDatePriority(
   return shopPriorityRank(priorityA) - shopPriorityRank(priorityB);
 }
 
-function sortShopOrders(items: WorkOrder[]): WorkOrder[] {
-  return [...items].sort((a, b) => {
-    const compare = compareShopDueDatePriority(
-      a.due_date,
-      a.priority,
-      b.due_date,
-      b.priority,
-    );
-
-    if (compare !== 0) return compare;
-    return a.work_order_id.localeCompare(b.work_order_id);
-  });
-}
-
 function sortAdditionalTaskItems(items: AdditionalTaskItem[]): AdditionalTaskItem[] {
   return [...items].sort((a, b) => {
     const compare = compareShopDueDatePriority(
@@ -499,12 +485,30 @@ function ShopPageContent() {
   const [loading, setLoading] = useState(true);
   const [loadIssue, setLoadIssue] = useState<string | null>(null);
   const [now, setNow] = useState<Date>(() => new Date());
+  const [currentRole, setCurrentRole] = useState<AppRole | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const openSectionRef = useRef<HTMLElement | null>(null);
   const blockedSectionRef = useRef<HTMLElement | null>(null);
   const actionsSectionRef = useRef<HTMLElement | null>(null);
   const bottomSpacerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCurrentRole() {
+      const { profile } = await getCurrentProfile();
+      if (active) {
+        setCurrentRole(profile?.role ?? null);
+      }
+    }
+
+    void loadCurrentRole();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -578,7 +582,7 @@ function ShopPageContent() {
         );
 
         setOrders(
-          sortShopOrders(
+          sortSharedPlanningOrders(
             sanitizeActiveShopAssignments(suggestedOrders, engineerData),
           ),
         );
@@ -664,6 +668,15 @@ function ShopPageContent() {
       return [...new Set([0, ...sectionTargets, maxScroll])].sort((a, b) => a - b);
     }
 
+    function getBlockedScrollStart(maxScroll: number) {
+      const section = blockedSectionRef.current;
+      if (!section) return null;
+      return Math.min(
+        maxScroll,
+        Math.max(0, section.offsetTop - AUTO_SCROLL_SECTION_TOP_OFFSET_PX),
+      );
+    }
+
     function tick(timestamp: number) {
       const maxScroll = getMaxScroll();
 
@@ -695,9 +708,14 @@ function ShopPageContent() {
 
       const deltaMs = lastTimestamp === null ? 0 : timestamp - lastTimestamp;
       lastTimestamp = timestamp;
+      const blockedScrollStart = getBlockedScrollStart(maxScroll);
+      const scrollSpeed =
+        blockedScrollStart !== null && currentOffset >= blockedScrollStart - 1
+          ? AUTO_SCROLL_BLOCKED_SPEED_PX_PER_SECOND
+          : AUTO_SCROLL_SPEED_PX_PER_SECOND;
       const nextOffset = Math.min(
         maxScroll,
-        currentOffset + (AUTO_SCROLL_SPEED_PX_PER_SECOND * deltaMs) / 1000,
+        currentOffset + (scrollSpeed * deltaMs) / 1000,
       );
 
       currentOffset = nextOffset;
@@ -1647,6 +1665,7 @@ function ShopPageContent() {
     { label: "Tasks", value: additionalTasks.length, tone: "#aebfd9" },
     { label: "AOG", value: aogCount, tone: aogCount > 0 ? "#ff7a6d" : HEADER_INK },
   ];
+  const showOfficeHomeButton = currentRole === "office";
 
   return (
     <div
@@ -1657,6 +1676,37 @@ function ShopPageContent() {
         backgroundColor: COLORS.pageBg,
       }}
     >
+      {showOfficeHomeButton && (
+        <Link
+          href="/dashboard"
+          aria-label="Back to home screen"
+          style={{
+            position: "fixed",
+            top: "16px",
+            right: "16px",
+            zIndex: 50,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+            height: "40px",
+            padding: "0 14px",
+            borderRadius: "8px",
+            border: "1px solid rgba(255, 255, 255, 0.16)",
+            backgroundColor: "#201c18",
+            color: "#ffffff",
+            boxShadow: "0 8px 20px rgba(15, 20, 30, 0.18)",
+            fontFamily: FONT_STACK,
+            fontSize: "13px",
+            fontWeight: 700,
+            lineHeight: 1,
+            textDecoration: "none",
+          }}
+        >
+          <Home size={16} strokeWidth={2} />
+          Home
+        </Link>
+      )}
       <main
         style={{
           width: `${DESIGN_WIDTH}px`,
