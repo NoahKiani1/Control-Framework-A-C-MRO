@@ -492,12 +492,39 @@ function ShopPageContent() {
   const [extraActions, setExtraActions] = useState<ExtraAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState<Date>(() => new Date());
+  const [viewportDebug, setViewportDebug] = useState({
+    innerWidth: 0,
+    innerHeight: 0,
+    devicePixelRatio: 0,
+    screenWidth: 0,
+    screenHeight: 0,
+    prefersDark: false,
+  });
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const openSectionRef = useRef<HTMLElement | null>(null);
   const blockedSectionRef = useRef<HTMLElement | null>(null);
   const actionsSectionRef = useRef<HTMLElement | null>(null);
   const bottomSpacerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function updateViewportDebug() {
+      setViewportDebug({
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio,
+        screenWidth: window.screen.width,
+        screenHeight: window.screen.height,
+        prefersDark:
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches,
+      });
+    }
+
+    updateViewportDebug();
+    window.addEventListener("resize", updateViewportDebug);
+    return () => window.removeEventListener("resize", updateViewportDebug);
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -1799,6 +1826,28 @@ function ShopPageContent() {
             />
           </div>
         </div>
+      </div>
+      <div
+        style={{
+          position: "fixed",
+          right: "16px",
+          bottom: "16px",
+          zIndex: 2147483647,
+          padding: "14px 16px",
+          backgroundColor: "#000",
+          color: "#fff",
+          fontFamily:
+            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+          fontSize: "22px",
+          fontWeight: 700,
+          lineHeight: 1.35,
+          whiteSpace: "nowrap",
+        }}
+      >
+        <div>{`inner: ${viewportDebug.innerWidth} × ${viewportDebug.innerHeight}`}</div>
+        <div>{`dpr: ${viewportDebug.devicePixelRatio}`}</div>
+        <div>{`screen: ${viewportDebug.screenWidth} × ${viewportDebug.screenHeight}`}</div>
+        <div>{`dark: ${viewportDebug.prefersDark}`}</div>
       </div>
     </main>
   );

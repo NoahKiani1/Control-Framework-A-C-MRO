@@ -10,7 +10,7 @@ This is a normal shared Dropbox folder, not an App Folder path. The Dropbox app 
 
 The importer reads the upload folder from `ACMP_DROPBOX_IMPORT_PATH`, defaulting to `/Work Order Planning App/import`.
 
-Automatic import runs every 5 minutes from GitHub Actions, and Office users can also trigger the same check immediately from the Dashboard refresh icon or the `/import` page.
+Automatic import runs every 15 minutes from GitHub Actions, and Office users can also trigger the same check immediately from the Dashboard refresh icon or the `/import` page.
 
 Excel files are never saved in Supabase Storage. The importer downloads each Excel file into memory, parses the first worksheet, imports the parsed rows, and discards the file buffer.
 
@@ -77,7 +77,7 @@ Dropbox path and revision are also recorded so the same Dropbox file revision is
 
 ## GitHub Action
 
-`.github/workflows/acmp-dropbox-import.yml` runs every 5 minutes with cron `*/5 * * * *` and can also be started manually with `workflow_dispatch`.
+`.github/workflows/acmp-dropbox-import.yml` runs every 15 minutes with cron `7,22,37,52 * * * *` and can also be started manually with `workflow_dispatch`.
 
 The workflow runs:
 
