@@ -16,8 +16,9 @@ function jsonError(message: string, status: number): Response {
   return Response.json({ error: { message } }, { status });
 }
 
-export async function requireOfficeUser(
+export async function requireAppRole(
   request: Request,
+  allowedRoles: AppProfile["role"][],
 ): Promise<ServerAuthResult> {
   const authorization = request.headers.get("authorization") || "";
   const match = authorization.match(/^Bearer\s+(.+)$/i);
@@ -64,12 +65,18 @@ export async function requireOfficeUser(
   }
 
   const profile = data as AppProfile;
-  if (profile.role !== "office") {
+  if (!allowedRoles.includes(profile.role)) {
     return {
       ok: false,
-      response: jsonError("Office role required.", 403),
+      response: jsonError("Insufficient role.", 403),
     };
   }
 
   return { ok: true, userId: user.id, profile };
+}
+
+export async function requireOfficeUser(
+  request: Request,
+): Promise<ServerAuthResult> {
+  return requireAppRole(request, ["office"]);
 }

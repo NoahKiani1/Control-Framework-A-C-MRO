@@ -18,13 +18,9 @@ import {
   normalizeRfqState,
   priorityTag,
 } from "@/lib/work-order-rules";
-import {
-  getEngineerAbsences,
-  getEngineerPhotoUrl,
-  getEngineers,
-} from "@/lib/engineers";
-import { getWorkOrders } from "@/lib/work-orders";
-import { ExtraAction, getExtraActions } from "@/lib/extra-actions";
+import { getEngineerPhotoUrl } from "@/lib/engineers";
+import { supabase } from "@/lib/supabase";
+import type { ExtraAction } from "@/lib/extra-actions";
 
 type WorkOrder = {
   work_order_id: string;
@@ -57,6 +53,13 @@ type Engineer = {
 type Absence = {
   engineer_id: number;
   absence_date: string;
+};
+
+type ShopWallPayload = {
+  orders: WorkOrder[];
+  engineers: Engineer[];
+  absences: Absence[];
+  extraActions: ExtraAction[];
 };
 
 const shopFont = Public_Sans({
@@ -494,6 +497,7 @@ function ShopPageContent() {
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [extraActions, setExtraActions] = useState<ExtraAction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadIssue, setLoadIssue] = useState<string | null>(null);
   const [now, setNow] = useState<Date>(() => new Date());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -505,60 +509,92 @@ function ShopPageContent() {
   useEffect(() => {
     async function load() {
       const today = localDateKey();
-      const [data, engineerData, absenceData, extrasData] = await Promise.all([
-        getWorkOrders<WorkOrder>({
-          select:
-            "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps",
-          isOpen: true,
-          isActive: true,
-        }),
-        getEngineers<Engineer>({
-          select: "id, name, photo_path, restrictions",
-          isActive: true,
-          role: "shop",
-          startedOn: today,
-        }),
-        getEngineerAbsences<Absence>({
-          select: "engineer_id, absence_date",
-          fromDate: today,
-        }),
-        getExtraActions(),
-      ]);
-      setExtraActions(extrasData);
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-      const filtered = data.filter(
-        (o) => o.current_process_step !== READY_TO_CLOSE_STEP,
-      );
-      const qualifiedFiltered = applyTodayQualificationBlocks(
-        filtered,
-        engineerData,
-        absenceData,
-        today,
-      );
+        if (sessionError) {
+          throw new Error(sessionError.message);
+        }
 
-      const suggestedOrders = applySuggestedAssignmentsForCurrentStep(
-        qualifiedFiltered,
-        engineerData,
-        new Set(
-          engineerData
-            .filter((engineer) =>
-              absenceData.some(
-                (absence) =>
-                  absence.absence_date === today &&
-                  absence.engineer_id === engineer.id,
-              ),
-            )
-            .map((engineer) => engineer.name),
-        ),
-      );
+        if (!session?.access_token) {
+          throw new Error("No active session for shop wall data.");
+        }
 
-      setOrders(
-        sortShopOrders(
-          sanitizeActiveShopAssignments(suggestedOrders, engineerData),
-        ),
-      );
-      setEngineers(engineerData);
-      setLoading(false);
+        const response = await fetch(`/api/shop-wall?today=${today}`, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          cache: "no-store",
+        });
+
+        const payload = (await response.json()) as
+          | ShopWallPayload
+          | { error?: { message?: string } };
+
+        if (!response.ok) {
+          throw new Error(
+            "error" in payload && payload.error?.message
+              ? payload.error.message
+              : "Shop wall data request failed.",
+          );
+        }
+
+        const {
+          orders: data,
+          engineers: engineerData,
+          absences: absenceData,
+          extraActions: extrasData,
+        } = payload as ShopWallPayload;
+
+        setExtraActions(extrasData);
+
+        const filtered = data.filter(
+          (o) => o.current_process_step !== READY_TO_CLOSE_STEP,
+        );
+        const qualifiedFiltered = applyTodayQualificationBlocks(
+          filtered,
+          engineerData,
+          absenceData,
+          today,
+        );
+
+        const suggestedOrders = applySuggestedAssignmentsForCurrentStep(
+          qualifiedFiltered,
+          engineerData,
+          new Set(
+            engineerData
+              .filter((engineer) =>
+                absenceData.some(
+                  (absence) =>
+                    absence.absence_date === today &&
+                    absence.engineer_id === engineer.id,
+                ),
+              )
+              .map((engineer) => engineer.name),
+          ),
+        );
+
+        setOrders(
+          sortShopOrders(
+            sanitizeActiveShopAssignments(suggestedOrders, engineerData),
+          ),
+        );
+        setEngineers(engineerData);
+        setLoadIssue(null);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Shop wall data failed to load.";
+        console.error("Failed to load shop wall data", error);
+        setOrders([]);
+        setEngineers([]);
+        setExtraActions([]);
+        setLoadIssue(message);
+      } finally {
+        setLoading(false);
+      }
     }
 
     load();
@@ -1782,6 +1818,22 @@ function ShopPageContent() {
               willChange: "transform",
             }}
           >
+            {loadIssue && (
+              <div
+                role="status"
+                style={{
+                  padding: "14px 18px",
+                  borderRadius: "8px",
+                  border: `1px solid ${COLORS.red}`,
+                  backgroundColor: COLORS.redSoft,
+                  color: COLORS.red,
+                  fontSize: "18px",
+                  fontWeight: 650,
+                }}
+              >
+                Data load issue: {loadIssue}
+              </div>
+            )}
             {renderOrderSection(
               "Open",
               "Work orders that can be worked on",
