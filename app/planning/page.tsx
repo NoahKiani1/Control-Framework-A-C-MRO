@@ -48,6 +48,12 @@ import {
 } from "@/lib/completed-tasks";
 import { syncWorkOrderDataBlockState } from "@/lib/work-order-data";
 import { supabase } from "@/lib/supabase";
+import {
+  canAssignRensToWorkOrder,
+  getRensAssignmentUnavailableMessage,
+  getRensOfficeStaff,
+  isRensOfficeAssigneeName,
+} from "@/lib/manual-office-assignees";
 
 type WorkOrder = {
   work_order_id: string;
@@ -76,6 +82,7 @@ type WorkOrder = {
 type StaffMember = {
   id: number;
   name: string;
+  role?: string | null;
   restrictions: string[] | null;
   employment_start_date?: string | null;
 };
@@ -1051,6 +1058,7 @@ const DRAG_AUTO_SCROLL_MAX_SPEED_PX = 20;
 function PlanningPageContent() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
+  const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
   const [todayAbsentEngineerIds, setTodayAbsentEngineerIds] = useState<number[]>([]);
   const [quickEdit, setQuickEdit] = useState<QuickEditState | null>(null);
   const [actionConfirmationWorkOrderId, setActionConfirmationWorkOrderId] = useState<string | null>(null);
@@ -1119,7 +1127,7 @@ function PlanningPageContent() {
 
   useEffect(() => {
     async function load() {
-      const [data, engineers, absences, extras] = await Promise.all([
+      const [data, engineers, officeEngineers, absences, extras] = await Promise.all([
         getWorkOrders<WorkOrder>({
           select: WORK_ORDER_SELECT,
           isOpen: true,
@@ -1129,6 +1137,13 @@ function PlanningPageContent() {
           select: "id, name, restrictions",
           isActive: true,
           role: "shop",
+          startedOn: today,
+          orderBy: { column: "name" },
+        }),
+        getEngineers<StaffMember>({
+          select: "id, name, role, restrictions",
+          isActive: true,
+          role: "office",
           startedOn: today,
           orderBy: { column: "name" },
         }),
@@ -1163,6 +1178,7 @@ function PlanningPageContent() {
       );
 
       setShopStaff(engineers);
+      setOfficeStaff(officeEngineers);
       setTodayAbsentEngineerIds(
         Array.from(getAbsentEngineerIdSetForDateKey(absences, today)),
       );
@@ -1204,6 +1220,16 @@ function PlanningPageContent() {
   const quickEditOrder = quickEdit
     ? orders.find((order) => order.work_order_id === quickEdit.workOrderId) || null
     : null;
+  const quickEditRensOfficeOptions =
+    quickEditOrder &&
+    quickEdit?.field === "assigned_person_team" &&
+    !quickEdit.blocked &&
+    canAssignRensToWorkOrder({
+      work_order_type: quickEditOrder.work_order_type,
+      current_process_step: quickEditOrder.current_process_step,
+    })
+      ? getRensOfficeStaff(officeStaff)
+      : [];
   const actionConfirmationOrder = actionConfirmationWorkOrderId
     ? orders.find((order) => order.work_order_id === actionConfirmationWorkOrderId) || null
     : null;
@@ -1590,6 +1616,19 @@ function PlanningPageContent() {
     if (
       quickEdit.field === "assigned_person_team" &&
       !quickEdit.blocked &&
+      isRensOfficeAssigneeName(quickEditForm.assigned_person_team) &&
+      !canAssignRensToWorkOrder({
+        work_order_type: quickEditOrder.work_order_type,
+        current_process_step: quickEditOrder.current_process_step,
+      })
+    ) {
+      setQuickEditStatus(getRensAssignmentUnavailableMessage());
+      return;
+    }
+
+    if (
+      quickEdit.field === "assigned_person_team" &&
+      !quickEdit.blocked &&
       todayAbsentShopEngineerNames.has(quickEditForm.assigned_person_team)
     ) {
       setQuickEditStatus(
@@ -1963,9 +2002,23 @@ function PlanningPageContent() {
                         {o.customer || "–"}
                       </div>
 
-                      <div style={planningCardValueStyle}>
+                      <div
+                        style={{
+                          ...planningCardValueStyle,
+                          display: "grid",
+                          gap: "1px",
+                        }}
+                      >
                         <div style={planningCardLabelStyle}>Part number</div>
-                        {o.part_number || "–"}
+                        <div>{o.part_number || "–"}</div>
+                        <div
+                          style={{
+                            color: ui.muted,
+                            fontSize: "var(--fs-sm)",
+                          }}
+                        >
+                          {o.work_order_type || "-"}
+                        </div>
                       </div>
 
                       <div style={planningCardValueStyle}>
@@ -2123,7 +2176,14 @@ function PlanningPageContent() {
                           <WorkOrderCell order={o} />
                         </td>
                         <td style={cell}>{o.customer || "–"}</td>
-                        <td style={cell}>{o.part_number || "–"}</td>
+                        <td style={cell}>
+                          <div style={{ display: "grid", gap: "1px" }}>
+                            <div>{o.part_number || "–"}</div>
+                            <div style={{ color: ui.muted, fontSize: "var(--fs-sm)" }}>
+                              {o.work_order_type || "-"}
+                            </div>
+                          </div>
+                        </td>
                         <td style={cell}>
                           <span style={{ display: "inline-flex", alignItems: "center" }}>
                             <DueDateCell value={o.due_date} />
@@ -2510,6 +2570,18 @@ function PlanningPageContent() {
                           : ""}
                       </option>
                     ))}
+                    {quickEditRensOfficeOptions.length > 0 && (
+                      <optgroup label="Office">
+                        {quickEditRensOfficeOptions.map((staffMember) => (
+                          <option
+                            key={`office-${staffMember.id}`}
+                            value={staffMember.name}
+                          >
+                            {staffMember.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
               )}

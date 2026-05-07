@@ -31,6 +31,12 @@ import {
   stopWorkOrderDataTracking,
   syncWorkOrderDataBlockState,
 } from "@/lib/work-order-data";
+import {
+  canAssignRensToWorkOrder,
+  getRensAssignmentUnavailableMessage,
+  getRensOfficeStaff,
+  isRensOfficeAssigneeName,
+} from "@/lib/manual-office-assignees";
 
 type WorkOrder = {
   work_order_id: string;
@@ -352,6 +358,16 @@ function OfficeUpdatePageContent() {
         : [],
     [selectedOrder, form.included_steps],
   );
+  const rensAssignableStep = selectedOrder?.is_active
+    ? selectedOrder.current_process_step
+    : form.activation_process_step;
+  const rensOfficeAssignmentOptions = selectedOrder &&
+    canAssignRensToWorkOrder({
+      work_order_type: selectedOrder.work_order_type,
+      current_process_step: rensAssignableStep,
+    })
+    ? getRensOfficeStaff(officeStaff)
+    : [];
 
   function displayDate(value: string | null): string {
     if (!value) return "—";
@@ -452,30 +468,6 @@ function OfficeUpdatePageContent() {
       return;
     }
 
-    if (todayAbsentShopEngineerNames.has(form.assigned_person_team)) {
-      setSaveStatus(
-        `${form.assigned_person_team} is absent today. Choose another engineer or Shop (default).`,
-      );
-      return;
-    }
-
-    if (todayAbsentShopEngineerNames.has(form.action_owner)) {
-      setSaveStatus(
-        `${form.action_owner} is absent today. Choose another owner.`,
-      );
-      return;
-    }
-
-    const normalizedAssigned = normalizeAssignedPersonTeam(
-      form.assigned_person_team,
-    );
-    const normalizedPriority = normalizePriorityValue(form.priority);
-    const normalizedHoldReason = form.hold_reason.trim();
-    const normalizedRequiredAction = form.required_next_action.trim();
-    const normalizedActionOwner = form.action_owner.trim();
-
-    setSaveStatus("Saving...");
-
     const isActivating = !selectedOrder.is_active && form.is_active;
     const isDeactivating = selectedOrder.is_active && !form.is_active;
     const preservedStep = selectedOrder.current_process_step?.trim() || "";
@@ -493,6 +485,43 @@ function OfficeUpdatePageContent() {
         selectedOrder.work_order_type,
         includedStepsForSave,
       );
+    const normalizedAssigned = normalizeAssignedPersonTeam(
+      form.assigned_person_team,
+    );
+
+    if (
+      form.is_active &&
+      isRensOfficeAssigneeName(normalizedAssigned) &&
+      !canAssignRensToWorkOrder({
+        work_order_type: selectedOrder.work_order_type,
+        current_process_step: nextProcessStep,
+      })
+    ) {
+      setSaveStatus(getRensAssignmentUnavailableMessage());
+      return;
+    }
+
+    if (todayAbsentShopEngineerNames.has(form.assigned_person_team)) {
+      setSaveStatus(
+        `${form.assigned_person_team} is absent today. Choose another engineer or Shop (default).`,
+      );
+      return;
+    }
+
+    if (todayAbsentShopEngineerNames.has(form.action_owner)) {
+      setSaveStatus(
+        `${form.action_owner} is absent today. Choose another owner.`,
+      );
+      return;
+    }
+
+    const normalizedPriority = normalizePriorityValue(form.priority);
+    const normalizedHoldReason = form.hold_reason.trim();
+    const normalizedRequiredAction = form.required_next_action.trim();
+    const normalizedActionOwner = form.action_owner.trim();
+
+    setSaveStatus("Saving...");
+
     const sameCorrectiveAction =
       selectedOrder.required_next_action?.trim() === normalizedRequiredAction &&
       selectedOrder.action_owner?.trim() === normalizedActionOwner &&
@@ -509,12 +538,15 @@ function OfficeUpdatePageContent() {
       due_date: form.due_date || null,
       priority: normalizedPriority,
       assigned_person_team: isActivating
-        ? autoAssignForStep(
-            normalizedAssigned,
-            nextProcessStep,
-            shopStaff,
-            todayAbsentShopEngineerNames,
-          )
+        ? isRensOfficeAssigneeName(normalizedAssigned)
+          ? normalizedAssigned
+          : autoAssignForStep(
+              normalizedAssigned,
+              nextProcessStep,
+              shopStaff,
+              todayAbsentShopEngineerNames,
+              selectedOrder.work_order_type,
+            )
         : form.is_active
           ? normalizedAssigned
           : null,
@@ -1109,6 +1141,15 @@ function OfficeUpdatePageContent() {
                                   : ""}
                               </option>
                             ))}
+                            {rensOfficeAssignmentOptions.length > 0 && (
+                              <optgroup label="Office">
+                                {rensOfficeAssignmentOptions.map((s) => (
+                                  <option key={`office-${s.id}`} value={s.name}>
+                                    {s.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
                           </select>
                         </div>
                       </div>

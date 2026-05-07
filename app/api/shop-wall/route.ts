@@ -1,6 +1,10 @@
 import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import { requireAppRole } from "@/lib/server-auth";
 import { sortSharedPlanningOrders } from "@/lib/work-order-rules";
+import {
+  RENS_OFFICE_ASSIGNEE_NAME,
+  getRensOfficeStaff,
+} from "@/lib/manual-office-assignees";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +35,7 @@ type ShopWallEngineer = {
   name: string;
   photo_path: string | null;
   restrictions: string[] | null;
+  role?: string | null;
   employment_start_date?: string | null;
 };
 
@@ -77,7 +82,13 @@ export async function GET(request: Request) {
 
   const supabase = getSupabaseServiceClient();
 
-  const [ordersResult, engineersResult, absencesResult, extrasResult] =
+  const [
+    ordersResult,
+    engineersResult,
+    rensOfficeResult,
+    absencesResult,
+    extrasResult,
+  ] =
     await Promise.all([
       supabase
         .from("work_orders")
@@ -94,6 +105,14 @@ export async function GET(request: Request) {
         .eq("is_active", true)
         .eq("role", "shop"),
       supabase
+        .from("engineers")
+        .select(
+          "id, name, role, photo_path, restrictions, employment_start_date",
+        )
+        .eq("is_active", true)
+        .eq("role", "office")
+        .eq("name", RENS_OFFICE_ASSIGNEE_NAME),
+      supabase
         .from("engineer_absences")
         .select("engineer_id, absence_date")
         .gte("absence_date", today),
@@ -105,6 +124,7 @@ export async function GET(request: Request) {
   const errors = [
     ordersResult.error && `work_orders: ${ordersResult.error.message}`,
     engineersResult.error && `engineers: ${engineersResult.error.message}`,
+    rensOfficeResult.error && `rens: ${rensOfficeResult.error.message}`,
     absencesResult.error && `engineer_absences: ${absencesResult.error.message}`,
     extrasResult.error && `extra_actions: ${extrasResult.error.message}`,
   ].filter(Boolean);
@@ -119,6 +139,11 @@ export async function GET(request: Request) {
   const engineers = ((engineersResult.data || []) as ShopWallEngineer[]).filter(
     (engineer) => isEngineerStartedOnDateKey(engineer, today),
   );
+  const rensOfficeStaff = getRensOfficeStaff(
+    ((rensOfficeResult.data || []) as ShopWallEngineer[]).filter((staffMember) =>
+      isEngineerStartedOnDateKey(staffMember, today),
+    ),
+  );
 
   return noStoreJson({
     today,
@@ -126,6 +151,7 @@ export async function GET(request: Request) {
       (ordersResult.data || []) as ShopWallWorkOrder[],
     ),
     engineers,
+    assigneeStaff: [...engineers, ...rensOfficeStaff],
     absences: (absencesResult.data || []) as ShopWallAbsence[],
     extraActions: (extrasResult.data || []) as ShopWallExtraAction[],
   });

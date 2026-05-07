@@ -90,6 +90,37 @@ const [restrictedSuggestion] = applySuggestedAssignmentsForCurrentStep(
 
 assert.equal(restrictedSuggestion.assigned_person_team, "Bo");
 
+const [manualRensWheelSuggestion] = applySuggestedAssignmentsForCurrentStep(
+  [
+    {
+      work_order_id: "WO-3",
+      work_order_type: "Wheel Overhaul",
+      assigned_person_team: "Rens",
+      current_process_step: "EASA-Form 1",
+    },
+  ],
+  disassemblyRestrictedEngineers,
+);
+
+assert.equal(manualRensWheelSuggestion.assigned_person_team, "Rens");
+
+const [manualRensNdtSuggestion] = applySuggestedAssignmentsForCurrentStep(
+  [
+    {
+      work_order_id: "WO-4",
+      work_order_type: "Wheel Overhaul",
+      assigned_person_team: "Rens",
+      current_process_step: "Magnetic Test",
+    },
+  ],
+  [
+    { name: "Alex", restrictions: ["magnetic_test"] },
+    { name: "Bo", restrictions: [] },
+  ],
+);
+
+assert.equal(manualRensNdtSuggestion.assigned_person_team, "Shop");
+
 assert.equal(
   hasActiveRestrictionForStep("Magnetic Test", [
     { name: "Alex", restrictions: ["ndt"] },

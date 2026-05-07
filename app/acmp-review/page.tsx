@@ -6,6 +6,7 @@ import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import {
   INTAKE_STEP,
+  getInitialProcessStepForOrder,
   getOfficeConfigurableProcessStepsForType,
 } from "@/lib/process-steps";
 import {
@@ -31,6 +32,12 @@ import {
   PendingAcmpWorkOrder,
   StepVariant,
 } from "@/lib/acmp-import/types";
+import {
+  canAssignRensToWorkOrder,
+  getRensAssignmentUnavailableMessage,
+  getRensOfficeStaff,
+  isRensOfficeAssigneeName,
+} from "@/lib/manual-office-assignees";
 
 type StaffMember = {
   id: number;
@@ -64,6 +71,7 @@ function AcmpReviewContent() {
   const [newOrders, setNewOrders] = useState<PendingAcmpWorkOrder[]>([]);
   const [rfqOrders, setRfqOrders] = useState<PendingAcmpWorkOrder[]>([]);
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
+  const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
   const [todayAbsentEngineerIds, setTodayAbsentEngineerIds] = useState<number[]>([]);
   const [setupByOrder, setSetupByOrder] = useState<Record<string, NewOrderSetup>>({});
   const [rfqDecisionByOrder, setRfqDecisionByOrder] = useState<
@@ -134,6 +142,9 @@ function AcmpReviewContent() {
       setRfqOrders(nextRfqOrders);
       setShopStaff(
         (staffData as StaffMember[]).filter((s) => s.role === "shop"),
+      );
+      setOfficeStaff(
+        (staffData as StaffMember[]).filter((s) => s.role === "office"),
       );
       setTodayAbsentEngineerIds(
         Array.from(
@@ -279,6 +290,26 @@ function AcmpReviewContent() {
       setStatus(
         `Error: Due Date is required for priority work order ${missing.work_order_id}.`,
       );
+      return;
+    }
+
+    const invalidRensAssignment = newOrders.find((order) => {
+      const setup = setupByOrder[order.work_order_id];
+      if (!setup?.is_active || !isRensOfficeAssigneeName(setup.assigned_person_team)) {
+        return false;
+      }
+
+      return !canAssignRensToWorkOrder({
+        work_order_type: order.work_order_type,
+        current_process_step: getInitialProcessStepForOrder(
+          order.work_order_type,
+          setup.included_steps,
+        ),
+      });
+    });
+
+    if (invalidRensAssignment) {
+      setStatus(`Error: ${getRensAssignmentUnavailableMessage()}`);
       return;
     }
 
@@ -535,6 +566,15 @@ function AcmpReviewContent() {
                       (step) => step !== INTAKE_STEP,
                     );
                     const includedSet = new Set(setup.included_steps);
+                    const rensOfficeAssignmentOptions = canAssignRensToWorkOrder({
+                      work_order_type: order.work_order_type,
+                      current_process_step: getInitialProcessStepForOrder(
+                        order.work_order_type,
+                        setup.included_steps,
+                      ),
+                    })
+                      ? getRensOfficeStaff(officeStaff)
+                      : [];
 
                     return (
                       <div key={order.work_order_id} style={newOrderCardStyle}>
@@ -657,6 +697,18 @@ function AcmpReviewContent() {
                                   : ""}
                               </option>
                             ))}
+                            {rensOfficeAssignmentOptions.length > 0 && (
+                              <optgroup label="Office">
+                                {rensOfficeAssignmentOptions.map((staff) => (
+                                  <option
+                                    key={`office-${staff.id}`}
+                                    value={staff.name}
+                                  >
+                                    {staff.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
                           </select>
                         </div>
 

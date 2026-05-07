@@ -1,5 +1,9 @@
 import { DEFAULT_ASSIGNED_PERSON_TEAM, normalizeAssignedPersonTeam } from "@/lib/work-order-rules";
 import { canPerformStep, getRestrictionForStep, hasRestriction } from "@/lib/restrictions";
+import {
+  canUseRensOfficeAssignment,
+  isRensOfficeAssigneeName,
+} from "@/lib/manual-office-assignees";
 
 export type AssignableEngineer = {
   name: string;
@@ -10,6 +14,7 @@ export type CurrentStepAssignableOrder = {
   work_order_id: string;
   assigned_person_team?: string | null;
   current_process_step: string | null;
+  work_order_type?: string | null;
 };
 
 function randomItem<T>(items: T[]): T | null {
@@ -81,9 +86,19 @@ function resolveAutoAssignedName(
   engineers: AssignableEngineer[],
   unavailableEngineerNames: Set<string>,
   picker: (eligible: AssignableEngineer[]) => AssignableEngineer | null,
+  workOrderType?: string | null,
 ): string {
   const normalizedAssigned = normalizeAssignedPersonTeam(currentAssignedPersonTeam);
   const step = currentProcessStep?.trim();
+
+  if (isRensOfficeAssigneeName(normalizedAssigned)) {
+    return canUseRensOfficeAssignment(normalizedAssigned, {
+      work_order_type: workOrderType,
+      current_process_step: step,
+    })
+      ? normalizedAssigned
+      : DEFAULT_ASSIGNED_PERSON_TEAM;
+  }
 
   if (!step) return normalizedAssigned;
   if (!getRestrictionForStep(step)) return normalizedAssigned;
@@ -128,6 +143,7 @@ export function autoAssignForStep(
   currentProcessStep: string | null | undefined,
   engineers: AssignableEngineer[],
   unavailableEngineerNames: Set<string> = new Set(),
+  workOrderType?: string | null,
 ): string {
   return resolveAutoAssignedName(
     currentAssignedPersonTeam,
@@ -135,6 +151,7 @@ export function autoAssignForStep(
     engineers,
     unavailableEngineerNames,
     randomItem,
+    workOrderType,
   );
 }
 
@@ -155,6 +172,7 @@ export function applySuggestedAssignmentsForCurrentStep<
         eligible,
         `${order.work_order_id}:${order.current_process_step || ""}`,
       ),
+      order.work_order_type,
     );
 
     return suggestedAssignment === order.assigned_person_team

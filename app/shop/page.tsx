@@ -25,6 +25,7 @@ import { getEngineerPhotoUrl } from "@/lib/engineers";
 import { getCurrentProfile, type AppRole } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import type { ExtraAction } from "@/lib/extra-actions";
+import { canUseRensOfficeAssignment } from "@/lib/manual-office-assignees";
 
 type WorkOrder = {
   work_order_id: string;
@@ -63,6 +64,7 @@ type Absence = {
 type ShopWallPayload = {
   orders: WorkOrder[];
   engineers: Engineer[];
+  assigneeStaff?: Engineer[];
   absences: Absence[];
   extraActions: ExtraAction[];
 };
@@ -118,7 +120,13 @@ const HEADER_MUTED = "rgba(238, 242, 247, 0.6)";
 const HEADER_TILE_BG = "rgba(255, 255, 255, 0.06)";
 const HEADER_TILE_BORDER = "rgba(255, 255, 255, 0.12)";
 
-function sanitizeActiveShopAssignments<T extends { assigned_person_team: string | null }>(
+function sanitizeActiveShopAssignments<
+  T extends {
+    assigned_person_team: string | null;
+    work_order_type?: string | null;
+    current_process_step?: string | null;
+  },
+>(
   orders: T[],
   engineers: Engineer[],
 ): T[] {
@@ -129,7 +137,8 @@ function sanitizeActiveShopAssignments<T extends { assigned_person_team: string 
 
     if (
       assignedPersonTeam === DEFAULT_ASSIGNED_PERSON_TEAM ||
-      activeEngineerNames.has(assignedPersonTeam)
+      activeEngineerNames.has(assignedPersonTeam) ||
+      canUseRensOfficeAssignment(assignedPersonTeam, order)
     ) {
       return order;
     }
@@ -481,6 +490,7 @@ function isShopOwnedTask(owner: string | null, engineers: Engineer[]): boolean {
 function ShopPageContent() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [engineers, setEngineers] = useState<Engineer[]>([]);
+  const [assigneeStaff, setAssigneeStaff] = useState<Engineer[]>([]);
   const [extraActions, setExtraActions] = useState<ExtraAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadIssue, setLoadIssue] = useState<string | null>(null);
@@ -549,6 +559,7 @@ function ShopPageContent() {
         const {
           orders: data,
           engineers: engineerData,
+          assigneeStaff: assigneeStaffData,
           absences: absenceData,
           extraActions: extrasData,
         } = payload as ShopWallPayload;
@@ -587,6 +598,7 @@ function ShopPageContent() {
           ),
         );
         setEngineers(engineerData);
+        setAssigneeStaff(assigneeStaffData || engineerData);
         setLoadIssue(null);
       } catch (error) {
         const message =
@@ -594,6 +606,7 @@ function ShopPageContent() {
         console.error("Failed to load shop wall data", error);
         setOrders([]);
         setEngineers([]);
+        setAssigneeStaff([]);
         setExtraActions([]);
         setLoadIssue(message);
       } finally {
@@ -805,7 +818,7 @@ function ShopPageContent() {
       action,
     })),
   ]);
-  const engineerByName = new Map(engineers.map((e) => [e.name, e]));
+  const engineerByName = new Map(assigneeStaff.map((e) => [e.name, e]));
   const aogCount = orders.filter((o) => priorityTag(o.priority) === "AOG").length;
 
   const cardStyle: React.CSSProperties = {

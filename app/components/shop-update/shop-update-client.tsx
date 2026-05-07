@@ -47,6 +47,7 @@ import {
   recordTrackedShopStepCompletion,
   syncWorkOrderDataBlockState,
 } from "@/lib/work-order-data";
+import { isRensOfficeAssigneeName } from "@/lib/manual-office-assignees";
 
 type WorkOrder = {
   work_order_id: string;
@@ -173,12 +174,15 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       ]);
 
       setExtraActions(sortExtraActionsByDueDate(extras));
+      const activeShopStaff = staffData.filter(
+        (staffMember) => staffMember.role === "shop",
+      );
       const filteredOrders = data.filter(
         (order) => order.current_process_step !== READY_TO_CLOSE_STEP,
       );
       const withQualificationBlocks = applyTodayQualificationBlocks(
         filteredOrders,
-        staffData,
+        activeShopStaff,
         absenceData,
         today,
       );
@@ -197,7 +201,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
         sortOrders(
           applySuggestedAssignmentsForCurrentStep(
             withQualificationBlocks,
-            staffData.filter((staffMember) => staffMember.role === "shop"),
+            activeShopStaff,
             new Set(
               staffData
                 .filter((engineer) =>
@@ -213,7 +217,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
           ),
         ),
       );
-      setShopStaff(staffData.filter((staffMember) => staffMember.role === "shop"));
+      setShopStaff(activeShopStaff);
       setOfficeStaff(staffData.filter((staffMember) => staffMember.role === "office"));
       setTodayAbsentEngineerIds(
         Array.from(getAbsentEngineerIdSetForDateKey(absenceData, today)),
@@ -513,14 +517,20 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       nextProcessStep,
       shopStaff,
     );
+    const autoAssignBasis = isRensOfficeAssigneeName(
+      selectedOrder.assigned_person_team,
+    )
+      ? DEFAULT_ASSIGNED_PERSON_TEAM
+      : selectedOrder.assigned_person_team;
     const assignedPersonTeam =
       completedStepWasRestricted && !nextStepIsRestricted
         ? DEFAULT_ASSIGNED_PERSON_TEAM
         : autoAssignForStep(
-            selectedOrder.assigned_person_team,
+            autoAssignBasis,
             nextProcessStep,
             shopStaff,
             todayAbsentShopEngineerNames,
+            selectedOrder.work_order_type,
           );
 
     setSaveStatus("Saving...");
