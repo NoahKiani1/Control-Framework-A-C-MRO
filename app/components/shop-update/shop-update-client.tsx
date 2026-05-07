@@ -5,7 +5,7 @@ import {
   addRepairAfterInspectionForOrder,
   canAddRepairAfterInspectionForOrder,
   getCompletableStepsForOrder,
-  getLastCompletedStepForOrder,
+  getDefaultCompletedStepForOrder,
   getNextProcessStepAfterCompletedForOrder,
   READY_TO_CLOSE_STEP,
 } from "@/lib/process-steps";
@@ -324,7 +324,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
     setSelectedId(id);
     setCompletedStep(
-      getLastCompletedStepForOrder(
+      getDefaultCompletedStepForOrder(
         order.work_order_type,
         order.current_process_step,
         order.included_process_steps,
@@ -473,7 +473,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
     if (repairDecisionRequired && repairNecessary === null) {
       setRepairDecisionError(true);
-      setSaveStatus("");
+      setSaveStatus("Please choose whether repair is necessary.");
       return;
     }
 

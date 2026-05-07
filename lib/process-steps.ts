@@ -284,6 +284,33 @@ export function getLastCompletedStepForOrder(
   return completable[currentIndex - 1];
 }
 
+/**
+ * Default value for the shop-update "completed step" dropdown.
+ *
+ * The shop form is normally opened when the engineer has finished the current
+ * process step, so preselect that step when it is valid for the order. Fall
+ * back to the last completed step for legacy / inconsistent records where the
+ * current value is not a selectable shop step.
+ */
+export function getDefaultCompletedStepForOrder(
+  workOrderType: string | null,
+  currentProcessStep: string | null,
+  includedSteps: string[] | null | undefined,
+): string {
+  if (!workOrderType || !currentProcessStep) return "";
+
+  const completable = getCompletableStepsForOrder(workOrderType, includedSteps);
+  if (completable.includes(currentProcessStep)) {
+    return currentProcessStep;
+  }
+
+  return getLastCompletedStepForOrder(
+    workOrderType,
+    currentProcessStep,
+    includedSteps,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Legacy template-level progression helpers
 //

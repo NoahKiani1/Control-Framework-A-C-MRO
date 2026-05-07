@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   addRepairAfterInspectionForOrder,
   canAddRepairAfterInspectionForOrder,
+  getDefaultCompletedStepForOrder,
   getNextProcessStepAfterCompletedForOrder,
   getOfficeConfigurableProcessStepsForType,
   resolveStepsForOrder,
@@ -36,6 +37,14 @@ function main() {
       standardWheelRepair,
     ),
     true,
+  );
+  assert.equal(
+    getDefaultCompletedStepForOrder(
+      "Wheel Repair",
+      "Inspection",
+      standardWheelRepair,
+    ),
+    "Inspection",
   );
 
   const withRepair = addRepairAfterInspectionForOrder(
