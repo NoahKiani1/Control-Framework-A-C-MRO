@@ -6,12 +6,11 @@ import { GripVertical, Pencil } from "lucide-react";
 import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import {
-  PROCESS_STEP_SHORT_LABELS,
+  FINAL_PROCESS_STEP,
   READY_TO_CLOSE_STEP,
   getShortProcessStepLabel,
   resolveStepsForOrder,
 } from "@/lib/process-steps";
-import { getExpectedHoursForStep } from "@/lib/capacity";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
   applyTodayQualificationBlocks,
@@ -230,13 +229,18 @@ const countBadgeOpenStyle: React.CSSProperties = {
 const woBadgeBase: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
   padding: "1px 6px",
   borderRadius: "6px",
   fontSize: "10px",
   fontWeight: 700,
-  letterSpacing: "0.04em",
+  letterSpacing: 0,
   lineHeight: 1.4,
   border: "1px solid transparent",
+  whiteSpace: "nowrap",
+  overflowWrap: "normal",
+  wordBreak: "normal",
 };
 
 const aogBadgeStyle: React.CSSProperties = {
@@ -272,6 +276,7 @@ const tableBaseStyle: React.CSSProperties = {
   borderCollapse: "separate",
   borderSpacing: 0,
   width: "100%",
+  minWidth: "var(--planning-table-min-width)",
 };
 
 const tableCellStyle: React.CSSProperties = {
@@ -347,7 +352,7 @@ const inlineActionButtonStyle: React.CSSProperties = {
 
 const planningCardStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "32px repeat(auto-fit, minmax(130px, 1fr))",
+  gridTemplateColumns: "var(--planning-card-grid)",
   gap: "12px",
   alignItems: "center",
   padding: "10px 12px",
@@ -410,6 +415,42 @@ const planningCardValueStyle: React.CSSProperties = {
   fontSize: "var(--fs-body)",
   lineHeight: 1.4,
   overflowWrap: "anywhere",
+};
+
+const planningCardHeaderTitleStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "8px",
+  fontSize: "var(--fs-md)",
+  fontWeight: 700,
+  letterSpacing: "-0.01em",
+  color: ui.text,
+};
+
+const planningCardHeaderSubtitleStyle: React.CSSProperties = {
+  marginTop: "2px",
+  fontSize: "var(--fs-sm)",
+  color: ui.muted,
+  overflowWrap: "anywhere",
+};
+
+const planningCardNextStepChipStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "4px",
+  padding: "3px 10px",
+  borderRadius: "999px",
+  border: `1px solid ${ui.border}`,
+  backgroundColor: ui.surfaceSoft,
+  color: ui.text,
+  fontWeight: 650,
+  fontSize: "var(--fs-sm)",
+};
+
+const planningCardFooterStyle: React.CSSProperties = {
+  ...planningCardValueStyle,
+  color: ui.muted,
+  fontSize: "var(--fs-sm)",
 };
 
 const extraActionsDescriptionColumnStyle: React.CSSProperties = {
@@ -557,23 +598,21 @@ function LastUpdateCell({ value }: { value: string | null }) {
 
 type TimelineSegment = {
   name: string;
+  displayName: string;
   shortName: string;
-  weight: number;
-  share: number;
   state: "completed" | "current" | "upcoming";
 };
 
-/** Labels stay selective so the timeline reads as an operational control, not a caption list. */
-const SEGMENT_LABEL_MIN_SHARE = 0.03;
-const EDGE_SEGMENT_LABEL_MIN_SHARE = 0.025;
+function getSharedPlanningTimelineLabel(step: string): string {
+  return step === FINAL_PROCESS_STEP ? "Certification" : step;
+}
 
-function getTimelineTrackTemplate(segments: TimelineSegment[]): string {
-  return segments
-    .map((segment) => {
-      const trackShare = Math.max(segment.share, 0.001);
-      return `minmax(0, ${trackShare}fr)`;
-    })
-    .join(" ");
+function getSharedPlanningTimelineShortLabel(step: string): string {
+  return step === FINAL_PROCESS_STEP ? "CER" : getShortProcessStepLabel(step);
+}
+
+function getSharedPlanningLegendLabel(step: string): string {
+  return step === FINAL_PROCESS_STEP ? "Certification (EASA Form 1)" : step;
 }
 
 function buildTimelineSegments(order: WorkOrder): TimelineSegment[] {
@@ -588,43 +627,28 @@ function buildTimelineSegments(order: WorkOrder): TimelineSegment[] {
     ? includedSteps.indexOf(order.current_process_step)
     : -1;
 
-  const resolved = includedSteps.map((step: string) => {
-    const expectedHours = getExpectedHoursForStep(
-      order.work_order_type,
-      step,
-      order.part_number,
-    );
-    const weight = expectedHours > 0 ? expectedHours : 0.03;
-    return { step, weight };
-  });
-  const totalWeight = resolved.reduce(
-    (sum: number, s: { step: string; weight: number }) => sum + s.weight,
-    0,
-  ) || 1;
-
-  return resolved.map(({ step, weight }: { step: string; weight: number }, idx: number) => {
-    const state: TimelineSegment["state"] =
+  return includedSteps.map((step: string, idx: number) => ({
+    name: step,
+    displayName: getSharedPlanningTimelineLabel(step),
+    shortName: getSharedPlanningTimelineShortLabel(step),
+    state:
       currentIdx === -1
         ? "upcoming"
         : idx < currentIdx
           ? "completed"
           : idx === currentIdx
             ? "current"
-            : "upcoming";
-
-    return {
-      name: step,
-      shortName: getShortProcessStepLabel(step),
-      weight,
-      share: weight / totalWeight,
-      state,
-    };
-  });
+            : "upcoming",
+  }));
 }
 
 const timelineCompletedBg = "#d5e8db";
 const timelineCompletedBorder = "#b1d2bb";
 const timelineCompletedInk = "#166534";
+const timelineCurrentInk = "#166534";
+const timelineCurrentSoft = "#dff1e5";
+const timelineCurrentPillBorder = "#a8ccb4";
+const timelineUpcomingInk = "#7d8696";
 const timelineLegendEntries = [
   "Intake",
   "Disassembly",
@@ -637,14 +661,16 @@ const timelineLegendEntries = [
   "Repair",
   "Painting",
   "Assembly",
+  FINAL_PROCESS_STEP,
 ].map((step) => ({
   step,
-  shortLabel: PROCESS_STEP_SHORT_LABELS[step] || step,
+  label: getSharedPlanningLegendLabel(step),
+  shortLabel: getSharedPlanningTimelineShortLabel(step),
 }));
 
 const timelineRowBaseStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "minmax(210px, 238px) minmax(0, 1fr)",
+  gridTemplateColumns: "var(--planning-timeline-row-grid)",
   columnGap: "16px",
   rowGap: "8px",
   padding: "11px 14px",
@@ -660,51 +686,6 @@ const timelineRowBlockedStyle: React.CSSProperties = {
   backgroundColor: "#fff9f7",
 };
 
-function shouldShowTimelineLabel(
-  segment: TimelineSegment,
-  index: number,
-  total: number,
-): boolean {
-  if (segment.state === "current") {
-    return true;
-  }
-
-  if (segment.shortName.length <= 3) {
-    return segment.share >= 0.02 || total <= 12;
-  }
-
-  if (segment.share >= SEGMENT_LABEL_MIN_SHARE) {
-    return true;
-  }
-
-  return (
-    (index === 0 || index === total - 1) &&
-    segment.share >= EDGE_SEGMENT_LABEL_MIN_SHARE
-  );
-}
-
-function getTimelineLabelFontSize(segment: TimelineSegment): string {
-  const labelLength = segment.state === "current" ? segment.name.length : segment.shortName.length;
-  const estimatedCapacity =
-    segment.state === "current"
-      ? Math.max(4, Math.round(segment.share * 120))
-      : Math.max(3, Math.round(segment.share * 160));
-
-  if (labelLength <= estimatedCapacity) {
-    return "10px";
-  }
-
-  if (labelLength <= estimatedCapacity + 2) {
-    return "9px";
-  }
-
-  if (segment.share < 0.045 || labelLength >= 11) {
-    return "8px";
-  }
-
-  return "9px";
-}
-
 function WorkOrderTimelineRow({
   order,
   blocked,
@@ -713,7 +694,7 @@ function WorkOrderTimelineRow({
   blocked: boolean;
 }) {
   const segments = buildTimelineSegments(order);
-  const timelineTrackTemplate = getTimelineTrackTemplate(segments);
+  const timelineTrackTemplate = `repeat(${segments.length}, minmax(0, 1fr))`;
   const priority = priorityTag(order.priority);
   const overdue = isOverdue(order.due_date);
 
@@ -722,7 +703,9 @@ function WorkOrderTimelineRow({
     : null;
   const correctiveAction = getCorrectiveActionContext(order);
   const hasCorrective = hasActiveCorrectiveAction(order);
-  const currentInk = blocked ? ui.red : ui.blue;
+  const currentInk = blocked ? ui.red : timelineCurrentInk;
+  const currentSoft = blocked ? ui.redSoft : timelineCurrentSoft;
+  const currentPillBorder = blocked ? "#e1b3aa" : timelineCurrentPillBorder;
 
   return (
     <article
@@ -809,7 +792,7 @@ function WorkOrderTimelineRow({
                 alignItems: "start",
               }}
             >
-              {segments.map((segment, index) => {
+              {segments.map((segment) => {
                 let backgroundColor = ui.surfaceSoft;
                 let borderStyle = `1px dashed ${ui.border}`;
                 if (segment.state === "completed") {
@@ -825,14 +808,12 @@ function WorkOrderTimelineRow({
                     ? currentInk
                     : segment.state === "completed"
                       ? timelineCompletedInk
-                      : ui.mutedSoft;
-                const showLabel = shouldShowTimelineLabel(segment, index, segments.length);
-                const labelFontSize = getTimelineLabelFontSize(segment);
+                      : timelineUpcomingInk;
                 return (
                   <div
                     key={segment.name}
-                    title={segment.name}
-                    aria-label={segment.name}
+                    title={segment.displayName}
+                    aria-label={segment.displayName}
                     style={{
                       minWidth: 0,
                       display: "grid",
@@ -851,56 +832,81 @@ function WorkOrderTimelineRow({
                         border: borderStyle,
                         boxShadow:
                           segment.state === "current"
-                            ? `0 0 0 2px ${blocked ? ui.redSoft : ui.blueSoft}, 0 3px 10px ${
-                                blocked ? "rgba(180, 35, 24, 0.16)" : "rgba(37, 85, 199, 0.18)"
-                              }`
+                            ? `0 0 0 2px ${currentSoft}, 0 3px 10px rgba(15, 20, 30, 0.12)`
                             : undefined,
                         transition: "background-color 180ms ease",
                       }}
                     />
-                    {showLabel ? (
-                      segment.state === "current" ? (
+                    {segment.state === "current" ? (
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexWrap: "nowrap",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          padding: "1px 6px",
+                          borderRadius: "999px",
+                          border: `1px solid ${currentPillBorder}`,
+                          backgroundColor: currentSoft,
+                          color: currentInk,
+                          fontSize: "10px",
+                          fontWeight: 600,
+                          lineHeight: 1.2,
+                          boxSizing: "border-box",
+                          whiteSpace: "nowrap",
+                          overflowWrap: "normal",
+                          wordBreak: "normal",
+                          textAlign: "center",
+                        }}
+                      >
+                        <span className="planning-timeline-step-label-full">
+                          {segment.displayName}
+                        </span>
+                        <span className="planning-timeline-step-label-short">
+                          {segment.shortName}
+                        </span>
+                      </span>
+                    ) : (
+                      <>
                         <span
+                          className="planning-timeline-step-label-full"
                           style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            maxWidth: "100%",
                             minWidth: 0,
-                            padding: "1px 6px",
-                            borderRadius: "999px",
-                            border: `1px solid ${blocked ? ui.redBorder : ui.blueBorder}`,
-                            backgroundColor: blocked ? ui.redSoft : ui.blueSoft,
-                            fontSize: labelFontSize,
-                            lineHeight: 1.15,
-                            boxSizing: "border-box",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
+                            maxWidth: "100%",
+                            padding: "0 1px",
+                            fontSize: "10px",
+                            lineHeight: 1.2,
+                            color,
+                            fontWeight: 500,
+                            whiteSpace: "normal",
+                            overflowWrap: "break-word",
+                            wordBreak: "normal",
+                            textAlign: "center",
                           }}
                         >
-                          {segment.name}
+                          {segment.displayName}
                         </span>
-                      ) : (
                         <span
+                          className="planning-timeline-step-label-short"
                           style={{
                             minWidth: 0,
+                            maxWidth: "100%",
                             padding: "0 1px",
-                            fontSize: labelFontSize,
+                            fontSize: "10px",
                             lineHeight: 1.2,
                             color,
                             fontWeight: 500,
                             whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "clip",
+                            overflowWrap: "normal",
+                            wordBreak: "normal",
                             textAlign: "center",
                           }}
                         >
                           {segment.shortName}
                         </span>
-                      )
-                    ) : (
-                      ""
+                      </>
                     )}
                   </div>
                 );
@@ -971,6 +977,7 @@ function WorkOrderTimelineRow({
 function TimelineLegend() {
   return (
     <details
+      className="planning-timeline-legend"
       style={{
         position: "relative",
       }}
@@ -1002,7 +1009,7 @@ function TimelineLegend() {
           right: 0,
           zIndex: 5,
           display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gridTemplateColumns: "var(--planning-legend-grid)",
           gap: "8px 10px",
           width: "min(320px, 70vw)",
           padding: "12px",
@@ -1025,8 +1032,8 @@ function TimelineLegend() {
             <span
               style={{
                 flex: "0 0 auto",
-                minWidth: entry.shortLabel === "EASA Form 1" ? "78px" : "34px",
-                padding: entry.shortLabel === "EASA Form 1" ? "2px 8px" : "2px 6px",
+                minWidth: "34px",
+                padding: "2px 6px",
                 borderRadius: "999px",
                 border: `1px solid ${ui.border}`,
                 backgroundColor: ui.surfaceSoft,
@@ -1047,7 +1054,7 @@ function TimelineLegend() {
                 lineHeight: 1.35,
               }}
             >
-              {entry.step}
+              {entry.label}
             </span>
           </div>
         ))}
@@ -1996,6 +2003,7 @@ function PlanningPageContent() {
                       />
                     )}
                     <article
+                      className="planning-mobile-card"
                       draggable
                       onDragStart={(event) =>
                         handleOrderDragStart(event, o.work_order_id)
@@ -2019,75 +2027,100 @@ function PlanningPageContent() {
                         <GripVertical size={16} strokeWidth={2} />
                       </span>
 
-                      <div style={planningCardValueStyle}>
-                        <div style={planningCardLabelStyle}>WO</div>
-                        <WorkOrderCell order={o} />
-                      </div>
+                      <div className="pmc-desktop-fields">
+                        <div style={planningCardValueStyle}>
+                          <div style={planningCardHeaderTitleStyle}>
+                            <span>{o.work_order_id}</span>
+                            {priorityTag(o.priority) === "AOG" && (
+                              <span style={aogBadgeStyle}>AOG</span>
+                            )}
+                            {priorityTag(o.priority) === "PRIO" && (
+                              <span style={prioBadgeStyle}>PRIO</span>
+                            )}
+                          </div>
+                          <div style={planningCardHeaderSubtitleStyle}>
+                            {o.customer || "–"}
+                          </div>
+                        </div>
 
-                      <div style={planningCardValueStyle}>
-                        <div style={planningCardLabelStyle}>Customer</div>
-                        {o.customer || "–"}
-                      </div>
+                        <div style={planningCardValueStyle}>
+                          <div style={planningCardLabelStyle}>Part</div>
+                          {o.part_number || "–"}
+                          {o.work_order_type ? ` · ${o.work_order_type}` : ""}
+                        </div>
 
-                      <div
-                        style={{
-                          ...planningCardValueStyle,
-                          display: "grid",
-                          gap: "1px",
-                        }}
-                      >
-                        <div style={planningCardLabelStyle}>Part number</div>
-                        <div>{o.part_number || "–"}</div>
-                        <div
-                          style={{
-                            color: ui.muted,
-                            fontSize: "var(--fs-sm)",
-                          }}
-                        >
-                          {o.work_order_type || "-"}
+                        <div style={planningCardValueStyle}>
+                          <div style={planningCardLabelStyle}>Next step</div>
+                          <span style={planningCardNextStepChipStyle}>
+                            {o.current_process_step || "–"}
+                          </span>
+                        </div>
+
+                        <div style={planningCardValueStyle}>
+                          <div style={planningCardLabelStyle}>Due date</div>
+                          <span style={{ display: "inline-flex", alignItems: "center" }}>
+                            <DueDateCell value={o.due_date} />
+                            <button
+                              type="button"
+                              onClick={() => openQuickEdit(o, false, "due_date")}
+                              style={inlineEditButtonStyle}
+                              aria-label={`Edit due date for ${o.work_order_id}`}
+                            >
+                              <Pencil size={12} strokeWidth={2} />
+                            </button>
+                          </span>
+                        </div>
+
+                        <div style={planningCardValueStyle}>
+                          <div style={planningCardLabelStyle}>Assigned</div>
+                          <span style={{ display: "inline-flex", alignItems: "center" }}>
+                            {normalizeAssignedPersonTeam(o.assigned_person_team)}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openQuickEdit(o, false, "assigned_person_team")
+                              }
+                              style={inlineEditButtonStyle}
+                              aria-label={`Edit assignment for ${o.work_order_id}`}
+                            >
+                              <Pencil size={12} strokeWidth={2} />
+                            </button>
+                          </span>
+                        </div>
+
+                        <div style={planningCardFooterStyle}>
+                          Updated <LastUpdateCell value={lastUpdate} />
                         </div>
                       </div>
 
-                      <div style={planningCardValueStyle}>
-                        <div style={planningCardLabelStyle}>Due date</div>
-                        <span style={{ display: "inline-flex", alignItems: "center" }}>
-                          <DueDateCell value={o.due_date} />
-                          <button
-                            type="button"
-                            onClick={() => openQuickEdit(o, false, "due_date")}
-                            style={inlineEditButtonStyle}
-                            aria-label={`Edit due date for ${o.work_order_id}`}
-                          >
-                            <Pencil size={12} strokeWidth={2} />
-                          </button>
-                        </span>
-                      </div>
-
-                      <div style={planningCardValueStyle}>
-                        <div style={planningCardLabelStyle}>Assigned</div>
-                        <span style={{ display: "inline-flex", alignItems: "center" }}>
-                          {normalizeAssignedPersonTeam(o.assigned_person_team)}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openQuickEdit(o, false, "assigned_person_team")
-                            }
-                            style={inlineEditButtonStyle}
-                            aria-label={`Edit assignment for ${o.work_order_id}`}
-                          >
-                            <Pencil size={12} strokeWidth={2} />
-                          </button>
-                        </span>
-                      </div>
-
-                      <div style={planningCardValueStyle}>
-                        <div style={planningCardLabelStyle}>Next step</div>
-                        {o.current_process_step || "–"}
-                      </div>
-
-                      <div style={{ ...planningCardValueStyle, color: ui.muted }}>
-                        <div style={planningCardLabelStyle}>Last update</div>
-                        <LastUpdateCell value={lastUpdate} />
+                      <div className="pmc-mobile-compact">
+                        <div className="pmc-mc-row1">
+                          <span className="pmc-mc-wo">{o.work_order_id}</span>
+                          {priorityTag(o.priority) === "AOG" && (
+                            <span style={aogBadgeStyle}>AOG</span>
+                          )}
+                          {priorityTag(o.priority) === "PRIO" && (
+                            <span style={prioBadgeStyle}>PRIO</span>
+                          )}
+                          <span className="pmc-mc-due">
+                            <DueDateCell value={o.due_date} />
+                          </span>
+                        </div>
+                        <div className="pmc-mc-customer">{o.customer || "–"}</div>
+                        <div className="pmc-mc-part">
+                          {o.part_number || "–"}
+                          {o.work_order_type ? ` · ${o.work_order_type}` : ""}
+                        </div>
+                        <div className="pmc-mc-step">
+                          {o.current_process_step || "–"}
+                          <span className="pmc-mc-step-sep">·</span>
+                          <span className="pmc-mc-step-person">
+                            {normalizeAssignedPersonTeam(o.assigned_person_team)}
+                          </span>
+                        </div>
+                        <div className="pmc-mc-updated">
+                          Updated <LastUpdateCell value={lastUpdate} />
+                        </div>
                       </div>
                     </article>
                     {dropTarget?.placement === "after" && (
@@ -2435,7 +2468,7 @@ function PlanningPageContent() {
             <div>
               <h2 style={sectionTitleStyle}>Open work orders</h2>
               <p style={sectionDescriptionStyle}>
-                Process timelines for active work orders, sized by each step&apos;s relative expected duration.
+                Process timelines for active work orders.
               </p>
             </div>
             <span
@@ -2544,7 +2577,9 @@ function PlanningPageContent() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: quickEdit.blocked ? "1fr 1fr" : "repeat(3, 1fr)",
+                  gridTemplateColumns: quickEdit.blocked
+                    ? "var(--planning-quick-edit-blocked-grid)"
+                    : "var(--planning-quick-edit-grid)",
                   gap: "10px",
                 }}
               >

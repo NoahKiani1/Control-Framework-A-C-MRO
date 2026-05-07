@@ -956,7 +956,7 @@ function CapacityPageContent() {
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "64px minmax(0, 1fr) auto",
+                            gridTemplateColumns: "var(--capacity-summary-grid)",
                             columnGap: "12px",
                             alignItems: "center",
                           }}
@@ -1037,7 +1037,7 @@ function CapacityPageContent() {
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "64px minmax(0, 1fr) auto",
+                            gridTemplateColumns: "var(--capacity-summary-grid)",
                             columnGap: "12px",
                             alignItems: "center",
                           }}

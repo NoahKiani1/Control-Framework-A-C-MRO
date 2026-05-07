@@ -79,7 +79,7 @@ export function PageHeader({
           <h1
             style={{
               margin: 0,
-              fontSize: "clamp(28px, 2.4vw, 34px)",
+              fontSize: "var(--page-header-title-size)",
               lineHeight: 1.08,
               fontWeight: 700,
               color: HEADER_TOKENS.text,
@@ -110,7 +110,8 @@ export function PageHeader({
               display: "flex",
               alignItems: "center",
               gap: "var(--gap-tight)",
-              flexShrink: 0,
+              flex: "var(--page-header-actions-flex)",
+              flexWrap: "wrap",
               alignSelf: "flex-start",
               paddingTop: "2px",
             }}

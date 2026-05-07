@@ -857,7 +857,7 @@ function OfficeUpdatePageContent() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gridTemplateColumns: "var(--office-choice-grid)",
               gap: "12px",
             }}
           >
@@ -945,7 +945,7 @@ function OfficeUpdatePageContent() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "minmax(0, 1.65fr) minmax(0, 1fr)",
+                gridTemplateColumns: "var(--office-select-grid)",
                 gap: "var(--gap-default)",
               }}
             >
@@ -1085,7 +1085,7 @@ function OfficeUpdatePageContent() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr)",
+                      gridTemplateColumns: "var(--office-editor-grid)",
                       gap: "12px",
                     }}
                   >
@@ -1701,7 +1701,7 @@ function OfficeUpdatePageContent() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.8fr) auto",
+              gridTemplateColumns: "var(--office-extra-action-grid)",
               gap: "10px",
               alignItems: "end",
             }}

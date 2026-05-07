@@ -32,6 +32,36 @@
   --fs-title: 22px;
   --fs-display: 22px;
   --fs-display-lg: 24px;
+
+  --dashboard-summary-grid: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  --dashboard-kpi-grid: repeat(3, minmax(0, 1fr));
+  --dashboard-main-grid: minmax(0, 2.2fr) minmax(0, 1fr);
+  --dashboard-detail-table-min-width: 0px;
+
+  --office-choice-grid: repeat(2, minmax(0, 1fr));
+  --office-select-grid: minmax(0, 1.65fr) minmax(0, 1fr);
+  --office-editor-grid: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr);
+  --office-extra-action-grid: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.8fr) auto;
+
+  --planning-card-grid: 32px repeat(auto-fit, minmax(130px, 1fr));
+  --planning-timeline-row-grid: minmax(210px, 238px) minmax(0, 1fr);
+  --planning-quick-edit-grid: repeat(3, 1fr);
+  --planning-quick-edit-blocked-grid: 1fr 1fr;
+  --planning-table-min-width: 0px;
+
+  --capacity-summary-grid: 64px minmax(0, 1fr) auto;
+
+  --staff-inline-form-grid: minmax(180px, 1.2fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(200px, 1.5fr) auto;
+  --staff-add-member-grid-shop: minmax(220px, 1fr) minmax(180px, 220px) auto auto;
+  --staff-add-member-grid-office: minmax(220px, 1fr) auto auto;
+  --staff-table-min-width: 0px;
+
+  --acmp-new-order-grid: minmax(140px, 0.9fr) minmax(180px, 1.1fr) minmax(130px, 0.8fr) repeat(4, minmax(100px, 0.6fr));
+  --acmp-rfq-grid: minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(140px, 0.9fr) minmax(140px, 0.9fr) minmax(130px, 0.7fr);
+  --planning-legend-grid: repeat(2, minmax(0, 1fr));
+
+  --page-header-title-size: clamp(28px, 2.4vw, 34px);
+  --page-header-actions-flex: 0 0 auto;
 }
 
 @theme inline {
@@ -162,6 +192,38 @@ td {
   animation: planning-row-fade-in 280ms ease-out both;
 }
 
+.planning-timeline-step-label-short {
+  display: none;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.planning-timeline-step-label-full {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.planning-timeline-legend {
+  display: none;
+}
+
+.mobile-nowrap-token {
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.planning-mobile-card .pmc-desktop-fields {
+  display: contents;
+}
+
+.planning-mobile-card .pmc-mobile-compact {
+  display: none;
+}
+
 .dashboard-meta-label {
   font-size: var(--fs-meta);
   font-weight: 600;
@@ -216,6 +278,193 @@ td {
   .dashboard-capacity-detail {
     font-size: var(--fs-body);
     line-height: 1.35;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --layout-page-px: 14px;
+    --layout-page-py: 64px;
+    --layout-sidebar-w: min(86vw, 320px);
+    --layout-content-max-w: 100%;
+    --layout-content-max-w-narrow: 100%;
+
+    --card-px: 13px;
+    --card-py: 13px;
+    --card-radius: 12px;
+
+    --gap-tight: 8px;
+    --gap-default: 10px;
+    --gap-section: 14px;
+
+    --fs-meta: 10px;
+    --fs-xs: 11px;
+    --fs-sm: 12px;
+    --fs-body: 13px;
+    --fs-md: 14px;
+    --fs-heading: 17px;
+    --fs-title: 24px;
+    --fs-display: 24px;
+    --fs-display-lg: 28px;
+
+    --dashboard-summary-grid: 1fr;
+    --dashboard-kpi-grid: repeat(2, minmax(0, 1fr));
+    --dashboard-main-grid: 1fr;
+    --dashboard-detail-table-min-width: 720px;
+
+    --office-choice-grid: 1fr;
+    --office-select-grid: 1fr;
+    --office-editor-grid: 1fr;
+    --office-extra-action-grid: 1fr;
+
+    --planning-card-grid: 32px minmax(0, 1fr);
+    --planning-timeline-row-grid: 1fr;
+    --planning-quick-edit-grid: 1fr;
+    --planning-quick-edit-blocked-grid: 1fr;
+    --planning-table-min-width: 760px;
+
+    --capacity-summary-grid: 1fr auto;
+
+    --staff-inline-form-grid: 1fr;
+    --staff-add-member-grid-shop: 1fr;
+    --staff-add-member-grid-office: 1fr;
+    --staff-table-min-width: 760px;
+
+    --acmp-new-order-grid: 1fr;
+    --acmp-rfq-grid: 1fr;
+    --planning-legend-grid: 1fr;
+
+    --page-header-title-size: 26px;
+    --page-header-actions-flex: 1 1 100%;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font-size: max(16px, var(--fs-body));
+  }
+
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+  }
+
+  button {
+    min-height: 40px;
+  }
+
+  .dashboard-kpi-card {
+    min-height: 82px !important;
+  }
+
+  .dashboard-kpi-card > div:last-child {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+
+  .dashboard-kpi-label {
+    white-space: normal !important;
+  }
+
+  .capacity-summary > div,
+  .office-mobile-flex-wrap {
+    align-items: stretch !important;
+  }
+
+  .planning-mobile-card {
+    padding: 9px 11px !important;
+    gap: 8px !important;
+    align-items: start !important;
+  }
+
+  .planning-mobile-card .pmc-desktop-fields {
+    display: none !important;
+  }
+
+  .planning-mobile-card .pmc-mobile-compact {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
+    row-gap: 2px;
+    min-width: 0;
+    align-content: start;
+  }
+
+  .pmc-mc-row1 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .pmc-mc-wo {
+    font-size: var(--fs-md);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .pmc-mc-due {
+    margin-left: auto;
+    font-size: var(--fs-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .pmc-mc-customer {
+    grid-column: 1 / -1;
+    font-size: var(--fs-sm);
+    line-height: 1.3;
+    word-break: break-word;
+  }
+
+  .pmc-mc-part,
+  .pmc-mc-step {
+    grid-column: 1 / -1;
+    font-size: var(--fs-sm);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  .pmc-mc-step-sep {
+    color: #9aa1ad;
+    margin: 0 6px;
+  }
+
+  .pmc-mc-step-person {
+    color: #4a5260;
+    font-weight: 500;
+  }
+
+  .pmc-mc-updated {
+    grid-column: 1 / -1;
+    font-size: var(--fs-xs);
+    color: #6b7280;
+    margin-top: 3px;
+  }
+
+  .planning-timeline-step-label-full {
+    display: none !important;
+  }
+
+  .planning-timeline-step-label-short {
+    display: inline-block !important;
+  }
+
+  .planning-timeline-legend {
+    display: inline-block !important;
+  }
+}
+
+@media (max-width: 430px) {
+  :root {
+    --dashboard-kpi-grid: 1fr;
   }
 }
 

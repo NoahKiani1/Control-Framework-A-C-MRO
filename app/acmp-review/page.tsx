@@ -457,8 +457,7 @@ function AcmpReviewContent() {
 
   const newOrderCardStyle: React.CSSProperties = {
     display: "grid",
-    gridTemplateColumns:
-      "minmax(140px, 0.9fr) minmax(180px, 1.1fr) minmax(130px, 0.8fr) repeat(4, minmax(100px, 0.6fr))",
+    gridTemplateColumns: "var(--acmp-new-order-grid)",
     gap: "10px",
     alignItems: "start",
     padding: "12px 14px",
@@ -470,8 +469,7 @@ function AcmpReviewContent() {
 
   const rfqCardStyle: React.CSSProperties = {
     display: "grid",
-    gridTemplateColumns:
-      "minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(140px, 0.9fr) minmax(140px, 0.9fr) minmax(130px, 0.7fr)",
+    gridTemplateColumns: "var(--acmp-rfq-grid)",
     gap: "10px",
     alignItems: "start",
     padding: "12px 14px",

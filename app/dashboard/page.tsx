@@ -1046,9 +1046,35 @@ function DashboardPageContent() {
     lineHeight: 1.45,
   };
 
+  const compactCellStyle: React.CSSProperties = {
+    ...cellStyle,
+    whiteSpace: "nowrap",
+    overflowWrap: "normal",
+    wordBreak: "normal",
+  };
+
+  const priorityBadgeStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: "38px",
+    padding: "3px 8px",
+    fontSize: "11px",
+    fontWeight: 700,
+    borderRadius: "999px",
+    color: "white",
+    lineHeight: 1.1,
+    letterSpacing: 0,
+    whiteSpace: "nowrap",
+    overflowWrap: "normal",
+    wordBreak: "normal",
+    flexShrink: 0,
+  };
+
   const detailTableStyle: React.CSSProperties = {
     borderCollapse: "collapse",
     width: "100%",
+    minWidth: "var(--dashboard-detail-table-min-width)",
     tableLayout: "fixed",
   };
 
@@ -1152,19 +1178,15 @@ function DashboardPageContent() {
               </td>
               <td style={cellStyle}>{o.customer || "–"}</td>
               <td style={cellStyle}>{o.work_order_type || "–"}</td>
-              <td style={cellStyle}>{formatDate(o.due_date)}</td>
-              <td style={cellStyle}>
+              <td style={compactCellStyle}>{formatDate(o.due_date)}</td>
+              <td style={compactCellStyle}>
                 {tag ? (
                   <span
+                    className="mobile-nowrap-token"
                     style={{
-                      padding: "3px 8px",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      borderRadius: "999px",
+                      ...priorityBadgeStyle,
                       backgroundColor:
                         tag === "AOG" ? COLORS.red : COLORS.amber,
-                      color: "white",
-                      letterSpacing: "0.03em",
                     }}
                   >
                     {tag}
@@ -1239,15 +1261,21 @@ function DashboardPageContent() {
                 <td style={cellStyle}>{o.action_owner || "–"}</td>
                 <td style={cellStyle}>
                   <span
+                    className="mobile-nowrap-token"
                     style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
                       padding: "3px 10px",
                       fontSize: "11px",
                       fontWeight: 700,
                       borderRadius: "999px",
                       backgroundColor: isDone ? COLORS.greenSoft : COLORS.amberSoft,
                       color: isDone ? COLORS.green : COLORS.amber,
-                      display: "inline-block",
                       border: `1px solid ${isDone ? COLORS.green : COLORS.amber}22`,
+                      whiteSpace: "nowrap",
+                      overflowWrap: "normal",
+                      wordBreak: "normal",
                     }}
                   >
                     {isDone ? "Closed" : "Open"}
@@ -1374,7 +1402,7 @@ function DashboardPageContent() {
                   {normalizeAssignedPersonTeam(o.assigned_person_team)}
                 </td>
                 <td style={cellStyle}>{o.current_process_step || "–"}</td>
-                <td style={cellStyle}>{formatDate(last)}</td>
+                <td style={compactCellStyle}>{formatDate(last)}</td>
               </tr>
             );
           })}
@@ -1606,7 +1634,7 @@ function DashboardPageContent() {
         <section
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr)",
+            gridTemplateColumns: "var(--dashboard-summary-grid)",
             gap: "var(--gap-default)",
             marginBottom: "var(--gap-section)",
           }}
@@ -1759,7 +1787,7 @@ function DashboardPageContent() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gridTemplateColumns: "var(--dashboard-kpi-grid)",
               gap: "var(--gap-default)",
             }}
           >
@@ -1812,7 +1840,7 @@ function DashboardPageContent() {
         <section
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 2.2fr) minmax(0, 1fr)",
+            gridTemplateColumns: "var(--dashboard-main-grid)",
             gap: "var(--gap-default)",
             alignItems: "start",
           }}

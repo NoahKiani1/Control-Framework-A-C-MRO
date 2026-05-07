@@ -104,7 +104,7 @@ export function Navigation() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Open navigation"
-        className="fixed left-3 top-3 z-40 inline-flex h-10 w-10 items-center justify-center rounded-md bg-[#201c18] text-[#c9bfae] shadow-sm md:hidden"
+        className="fixed left-3 top-3 z-40 inline-flex h-11 w-11 items-center justify-center rounded-md bg-[#201c18] text-[#c9bfae] shadow-sm md:hidden"
       >
         <Menu size={20} />
       </button>

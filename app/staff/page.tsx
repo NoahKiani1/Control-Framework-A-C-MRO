@@ -635,13 +635,14 @@ function StaffPageContent() {
     borderRadius: "10px",
     border: `1px solid ${ui.border}`,
     backgroundColor: ui.surface,
-    overflow: "visible",
+    overflowX: "auto",
   };
 
   const tableBaseStyle: React.CSSProperties = {
     borderCollapse: "separate",
     borderSpacing: 0,
     width: "100%",
+    minWidth: "var(--staff-table-min-width)",
     tableLayout: "fixed",
   };
 
@@ -1033,8 +1034,8 @@ function StaffPageContent() {
             display: "grid",
             gridTemplateColumns:
               role === "shop"
-                ? "minmax(220px, 1fr) minmax(180px, 220px) auto auto"
-                : "minmax(220px, 1fr) auto auto",
+                ? "var(--staff-add-member-grid-shop)"
+                : "var(--staff-add-member-grid-office)",
             gap: "10px",
             alignItems: "end",
           }}
@@ -1452,7 +1453,7 @@ function StaffPageContent() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "minmax(180px, 1.2fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(200px, 1.5fr) auto",
+                    gridTemplateColumns: "var(--staff-inline-form-grid)",
                     gap: "12px",
                     alignItems: "end",
                   }}
