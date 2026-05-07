@@ -51,6 +51,7 @@ type WorkOrder = {
 type Engineer = {
   id: number;
   name: string;
+  role?: string | null;
   photo_path: string | null;
   restrictions: string[] | null;
   employment_start_date?: string | null;
@@ -401,26 +402,25 @@ function AssignedPerson({
         display: "grid",
         alignItems: "end",
         justifyItems: "center",
+        position: "relative",
         width: "92px",
         height: "92px",
+        overflow: "visible",
+        backgroundColor: "transparent",
       }}
     >
       <Image
         src={resolvedPhotoUrl}
         alt={displayName}
-        width={92}
-        height={92}
+        fill
+        sizes="92px"
         unoptimized
         onError={() => setImageFailed(true)}
         style={{
-          width: "92px",
-          height: "92px",
-          maxWidth: "92px",
-          maxHeight: "92px",
           borderRadius: "0",
           objectFit: "contain",
           objectPosition: "center bottom",
-          flexShrink: 0,
+          backgroundColor: "transparent",
         }}
       />
     </span>
@@ -818,7 +818,12 @@ function ShopPageContent() {
       action,
     })),
   ]);
-  const engineerByName = new Map(assigneeStaff.map((e) => [e.name, e]));
+  const engineerByName = new Map(engineers.map((e) => [e.name, e]));
+  for (const staffMember of assigneeStaff) {
+    if (!engineerByName.has(staffMember.name)) {
+      engineerByName.set(staffMember.name, staffMember);
+    }
+  }
   const aogCount = orders.filter((o) => priorityTag(o.priority) === "AOG").length;
 
   const cardStyle: React.CSSProperties = {
