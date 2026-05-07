@@ -34,6 +34,7 @@ import {
 } from "@/lib/process-steps";
 import { syncWorkOrderDataBlockState } from "@/lib/work-order-data";
 import { supabase } from "@/lib/supabase";
+import { reactivateReturnedAbsentAssigneeWorkOrders } from "@/lib/absent-assignment";
 
 type WorkOrder = {
   work_order_id: string;
@@ -566,12 +567,7 @@ function DashboardPageContent() {
     const today = toLocalDateKey(new Date());
     await deletePastEngineerAbsences(today);
 
-    const [wo, eng, abs] = await Promise.all([
-      getWorkOrders<WorkOrder>({
-        select: "*",
-        isOpen: true,
-        isActive: true,
-      }),
+    const [eng, abs] = await Promise.all([
       getEngineers<Engineer>({
         select: "*",
         isActive: true,
@@ -583,6 +579,23 @@ function DashboardPageContent() {
         fromDate: today,
       }),
     ]);
+
+    const reactivationResult =
+      await reactivateReturnedAbsentAssigneeWorkOrders({
+        today,
+        absences: abs,
+      });
+    if (reactivationResult.error) {
+      console.error(
+        `Failed to reactivate returned absent-assignee work orders: ${reactivationResult.error.message}`,
+      );
+    }
+
+    const wo = await getWorkOrders<WorkOrder>({
+      select: "*",
+      isOpen: true,
+      isActive: true,
+    });
 
     const startedTodayEngineers = filterEngineersStartedOnDateKey(eng, today);
 

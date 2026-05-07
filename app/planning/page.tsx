@@ -49,6 +49,12 @@ import {
 import { syncWorkOrderDataBlockState } from "@/lib/work-order-data";
 import { supabase } from "@/lib/supabase";
 import {
+  buildAbsentAssigneeInactivePayload,
+  formatStaffOptionLabel,
+  getAbsentStaffMemberByName,
+  reactivateReturnedAbsentAssigneeWorkOrders,
+} from "@/lib/absent-assignment";
+import {
   canAssignRensToWorkOrder,
   getRensAssignmentUnavailableMessage,
   getRensOfficeStaff,
@@ -77,6 +83,11 @@ type WorkOrder = {
   included_process_steps: string[] | null;
   data_tracking_enabled: boolean | null;
   shared_planning_rank: number | null;
+  is_active: boolean;
+  inactive_note: string | null;
+  inactive_absent_engineer_id: number | null;
+  inactive_absent_engineer_name: string | null;
+  inactive_absence_date: string | null;
 };
 
 type StaffMember = {
@@ -104,7 +115,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, last_manual_update, last_system_update, included_process_steps, data_tracking_enabled, shared_planning_rank";
+  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, last_manual_update, last_system_update, included_process_steps, data_tracking_enabled, shared_planning_rank, is_active, inactive_note, inactive_absent_engineer_id, inactive_absent_engineer_name, inactive_absence_date";
 
 const ui = {
   pageBg: "#f2efe9",
@@ -1127,12 +1138,7 @@ function PlanningPageContent() {
 
   useEffect(() => {
     async function load() {
-      const [data, engineers, officeEngineers, absences, extras] = await Promise.all([
-        getWorkOrders<WorkOrder>({
-          select: WORK_ORDER_SELECT,
-          isOpen: true,
-          isActive: true,
-        }),
+      const [engineers, officeEngineers, absences, extras] = await Promise.all([
         getEngineers<StaffMember>({
           select: "id, name, restrictions",
           isActive: true,
@@ -1153,6 +1159,23 @@ function PlanningPageContent() {
         }),
         getExtraActions(),
       ]);
+
+      const reactivationResult =
+        await reactivateReturnedAbsentAssigneeWorkOrders({
+          today,
+          absences,
+        });
+      if (reactivationResult.error) {
+        console.error(
+          `Failed to reactivate returned absent-assignee work orders: ${reactivationResult.error.message}`,
+        );
+      }
+
+      const data = await getWorkOrders<WorkOrder>({
+        select: WORK_ORDER_SELECT,
+        isOpen: true,
+        isActive: true,
+      });
       setExtraActions(sortExtraActionsByDueDate(extras));
 
       const filtered = data.filter(
@@ -1626,22 +1649,20 @@ function PlanningPageContent() {
       return;
     }
 
-    if (
-      quickEdit.field === "assigned_person_team" &&
-      !quickEdit.blocked &&
-      todayAbsentShopEngineerNames.has(quickEditForm.assigned_person_team)
-    ) {
-      setQuickEditStatus(
-        `${quickEditForm.assigned_person_team} is absent today. Choose another engineer or Shop (default).`,
-      );
-      return;
-    }
-
     setIsSavingQuickEdit(true);
     setQuickEditStatus("Saving...");
 
+    const nowIso = new Date().toISOString();
+    const absentAssignedStaff =
+      quickEdit.field === "assigned_person_team" && !quickEdit.blocked
+        ? getAbsentStaffMemberByName(
+            shopStaff,
+            todayAbsentEngineerIdSet,
+            quickEditForm.assigned_person_team,
+          )
+        : null;
     const payload: Record<string, unknown> = {
-      last_manual_update: new Date().toISOString(),
+      last_manual_update: nowIso,
     };
 
     if (quickEdit.field === "due_date") {
@@ -1652,6 +1673,20 @@ function PlanningPageContent() {
       payload.assigned_person_team = normalizeAssignedPersonTeam(
         quickEditForm.assigned_person_team,
       );
+
+      if (absentAssignedStaff) {
+        Object.assign(
+          payload,
+          buildAbsentAssigneeInactivePayload(absentAssignedStaff, today, nowIso),
+        );
+      } else {
+        Object.assign(payload, {
+          inactive_note: null,
+          inactive_absent_engineer_id: null,
+          inactive_absent_engineer_name: null,
+          inactive_absence_date: null,
+        });
+      }
     }
 
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
@@ -1668,9 +1703,11 @@ function PlanningPageContent() {
 
     setOrders((prev) =>
       applySharedPlanningBlocks(
-        prev.map((order) =>
-          order.work_order_id === quickEdit.workOrderId ? savedOrder : order,
-        ),
+        prev
+          .map((order) =>
+            order.work_order_id === quickEdit.workOrderId ? savedOrder : order,
+          )
+          .filter((order) => order.is_active),
       ),
     );
 
@@ -1735,16 +1772,6 @@ function PlanningPageContent() {
 
   async function saveExtraActionEdit() {
     if (!extraActionEdit) return;
-
-    if (
-      extraActionEdit.field === "responsible_person_team" &&
-      todayAbsentShopEngineerNames.has(extraActionEditForm.responsible_person_team)
-    ) {
-      setExtraActionEditStatus(
-        `${extraActionEditForm.responsible_person_team} is absent today. Choose another engineer or Shop (default).`,
-      );
-      return;
-    }
 
     setIsSavingExtraActionEdit(true);
     setExtraActionEditStatus("Saving...");
@@ -2559,15 +2586,11 @@ function PlanningPageContent() {
                   >
                     <option value="">Shop (default)</option>
                     {shopStaff.map((staffMember) => (
-                      <option
-                        key={staffMember.id}
-                        value={staffMember.name}
-                        disabled={todayAbsentEngineerIdSet.has(staffMember.id)}
-                      >
-                        {staffMember.name}
-                        {todayAbsentEngineerIdSet.has(staffMember.id)
-                          ? " (absent today)"
-                          : ""}
+                      <option key={staffMember.id} value={staffMember.name}>
+                        {formatStaffOptionLabel(
+                          staffMember,
+                          todayAbsentEngineerIdSet,
+                        )}
                       </option>
                     ))}
                     {quickEditRensOfficeOptions.length > 0 && (
@@ -2789,15 +2812,11 @@ function PlanningPageContent() {
                   >
                     <option value="">Shop (default)</option>
                     {shopStaff.map((staffMember) => (
-                      <option
-                        key={staffMember.id}
-                        value={staffMember.name}
-                        disabled={todayAbsentEngineerIdSet.has(staffMember.id)}
-                      >
-                        {staffMember.name}
-                        {todayAbsentEngineerIdSet.has(staffMember.id)
-                          ? " (absent today)"
-                          : ""}
+                      <option key={staffMember.id} value={staffMember.name}>
+                        {formatStaffOptionLabel(
+                          staffMember,
+                          todayAbsentEngineerIdSet,
+                        )}
                       </option>
                     ))}
                   </select>

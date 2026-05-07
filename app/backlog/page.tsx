@@ -4,8 +4,15 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
-import { formatDate, latestUpdate, rfqDisplay } from "@/lib/work-order-rules";
+import {
+  formatDate,
+  latestUpdate,
+  localDateKey,
+  rfqDisplay,
+} from "@/lib/work-order-rules";
 import { getWorkOrders } from "@/lib/work-orders";
+import { getEngineerAbsences } from "@/lib/engineers";
+import { reactivateReturnedAbsentAssigneeWorkOrders } from "@/lib/absent-assignment";
 
 type WorkOrder = {
   work_order_id: string;
@@ -15,6 +22,12 @@ type WorkOrder = {
   work_order_type: string | null;
   last_system_update: string | null;
   last_manual_update: string | null;
+  inactive_note: string | null;
+};
+
+type Absence = {
+  engineer_id: number;
+  absence_date: string;
 };
 
 const ui = {
@@ -39,9 +52,25 @@ function BacklogPageContent() {
 
   useEffect(() => {
     async function load() {
+      const today = localDateKey();
+      const absenceData = await getEngineerAbsences<Absence>({
+        select: "engineer_id, absence_date",
+        fromDate: today,
+      });
+      const reactivationResult =
+        await reactivateReturnedAbsentAssigneeWorkOrders({
+          today,
+          absences: absenceData,
+        });
+      if (reactivationResult.error) {
+        console.error(
+          `Failed to reactivate returned absent-assignee work orders: ${reactivationResult.error.message}`,
+        );
+      }
+
       const data = await getWorkOrders<WorkOrder>({
         select:
-          "work_order_id, customer, part_number, rfq_state, work_order_type, last_system_update, last_manual_update",
+          "work_order_id, customer, part_number, rfq_state, work_order_type, last_system_update, last_manual_update, inactive_note",
         isOpen: true,
         isActive: false,
         orderBy: [
@@ -137,7 +166,7 @@ function BacklogPageContent() {
     borderCollapse: "separate",
     borderSpacing: 0,
     width: "100%",
-    minWidth: "960px",
+    minWidth: "1120px",
   };
 
   const cellStyle: React.CSSProperties = {
@@ -212,6 +241,7 @@ function BacklogPageContent() {
                     <th style={headerStyle}>PN</th>
                     <th style={headerStyle}>Type</th>
                     <th style={headerStyle}>RFQ</th>
+                    <th style={headerStyle}>Note</th>
                     <th style={headerStyle}>Last Update</th>
                     <th style={{ ...headerStyle, borderTopRightRadius: "10px" }}>Action</th>
                   </tr>
@@ -237,6 +267,7 @@ function BacklogPageContent() {
                         <td style={rowCellStyle}>{order.part_number || "-"}</td>
                         <td style={rowCellStyle}>{order.work_order_type || "-"}</td>
                         <td style={{ ...rowCellStyle, color: rfq.color }}>{rfq.label}</td>
+                        <td style={rowCellStyle}>{order.inactive_note || "-"}</td>
                         <td style={rowCellStyle}>{formatDate(lastUpdate)}</td>
                         <td style={rowCellStyle}>
                           <Link

@@ -181,10 +181,22 @@ export async function applyNewOrderInserts({
   for (let i = 0; i < newOrders.length; i += BATCH_SIZE) {
     const batch = newOrders.slice(i, i + BATCH_SIZE).map((r) => {
       const setup = newOrderSetup[r.work_order_id];
-      const isActive = setup?.is_active || false;
+      const requestedActive = setup?.is_active || false;
+      const isTemporarilyInactiveForAbsentAssignee = Boolean(
+        setup?.inactive_absent_engineer_id,
+      );
+      const isActive =
+        requestedActive && !isTemporarilyInactiveForAbsentAssignee;
       const includedSteps =
         setup?.included_steps &&
         normalizeIncludedSteps(r.work_order_type, setup.included_steps);
+      const initialProcessStep =
+        requestedActive
+          ? getInitialProcessStepForOrder(
+              r.work_order_type,
+              includedSteps ?? null,
+            )
+          : null;
       return {
         ...r,
         is_active: isActive,
@@ -192,15 +204,15 @@ export async function applyNewOrderInserts({
         due_date: setup?.due_date || null,
         assigned_person_team:
           (setup?.assigned_person_team || "").trim() ||
-          (isActive ? normalizeAssignedPersonTeam(null) : null),
+          (requestedActive ? normalizeAssignedPersonTeam(null) : null),
         included_process_steps:
           includedSteps && includedSteps.length > 0 ? includedSteps : null,
-        current_process_step: isActive
-          ? getInitialProcessStepForOrder(
-              r.work_order_type,
-              includedSteps ?? null,
-            )
-          : null,
+        current_process_step: initialProcessStep,
+        inactive_note: setup?.inactive_note ?? null,
+        inactive_absent_engineer_id: setup?.inactive_absent_engineer_id ?? null,
+        inactive_absent_engineer_name:
+          setup?.inactive_absent_engineer_name ?? null,
+        inactive_absence_date: setup?.inactive_absence_date ?? null,
         last_system_update: importTimestamp,
       };
     });
@@ -296,6 +308,10 @@ export async function activateRfqApprovedWorkOrder({
       is_active: true,
       current_process_step: nextStep,
       assigned_person_team: nextAssigned,
+      inactive_note: null,
+      inactive_absent_engineer_id: null,
+      inactive_absent_engineer_name: null,
+      inactive_absence_date: null,
       last_system_update: activationTimestamp,
     },
     client,

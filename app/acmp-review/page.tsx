@@ -38,6 +38,12 @@ import {
   getRensOfficeStaff,
   isRensOfficeAssigneeName,
 } from "@/lib/manual-office-assignees";
+import {
+  buildAbsentAssigneeInactiveFields,
+  formatStaffOptionLabel,
+  getAbsentStaffMemberByName,
+} from "@/lib/absent-assignment";
+import { localDateKey } from "@/lib/work-order-rules";
 
 type StaffMember = {
   id: number;
@@ -84,7 +90,7 @@ function AcmpReviewContent() {
     let active = true;
 
     async function load() {
-      const today = new Date().toISOString().split("T")[0];
+      const today = localDateKey();
       const pending = await getPendingAcmpWorkOrders();
 
       if (pending.length === 0) {
@@ -317,11 +323,46 @@ function AcmpReviewContent() {
     setStatus("Saving...");
 
     const nowTimestamp = new Date().toISOString();
+    const today = localDateKey();
+    const todayAbsentEngineerIdSet = new Set(todayAbsentEngineerIds);
+    const setupForSave: Record<string, NewOrderSetup> = Object.fromEntries(
+      parsedNewOrders.map((order) => {
+        const setup =
+          setupByOrder[order.work_order_id] || {
+            is_active: false,
+            priority: "No",
+            due_date: "",
+            assigned_person_team: "",
+            step_variant: "standard" as StepVariant,
+            included_steps: defaultIncludedStepsForType(order.work_order_type),
+          };
+        const absentAssignedStaff = setup?.is_active
+          ? getAbsentStaffMemberByName(
+              shopStaff,
+              todayAbsentEngineerIdSet,
+              setup.assigned_person_team,
+            )
+          : null;
+
+        return [
+          order.work_order_id,
+          absentAssignedStaff
+            ? {
+                ...setup,
+                ...buildAbsentAssigneeInactiveFields(
+                  absentAssignedStaff,
+                  today,
+                ),
+              }
+            : setup,
+        ];
+      }),
+    );
 
     if (parsedNewOrders.length > 0) {
       const { error: insertError } = await applyNewOrderInserts({
         newOrders: parsedNewOrders,
-        newOrderSetup: setupByOrder,
+        newOrderSetup: setupForSave,
         importTimestamp: nowTimestamp,
       });
 
@@ -450,6 +491,7 @@ function AcmpReviewContent() {
   };
 
   const totalPending = newOrders.length + rfqOrders.length;
+  const todayAbsentEngineerIdSet = new Set(todayAbsentEngineerIds);
 
   return (
     <main
@@ -686,15 +728,11 @@ function AcmpReviewContent() {
                           >
                             <option value="">Shop</option>
                             {shopStaff.map((staff) => (
-                              <option
-                                key={staff.id}
-                                value={staff.name}
-                                disabled={todayAbsentEngineerIds.includes(staff.id)}
-                              >
-                                {staff.name}
-                                {todayAbsentEngineerIds.includes(staff.id)
-                                  ? " (absent today)"
-                                  : ""}
+                              <option key={staff.id} value={staff.name}>
+                                {formatStaffOptionLabel(
+                                  staff,
+                                  todayAbsentEngineerIdSet,
+                                )}
                               </option>
                             ))}
                             {rensOfficeAssignmentOptions.length > 0 && (

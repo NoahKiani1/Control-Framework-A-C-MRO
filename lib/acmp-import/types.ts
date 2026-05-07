@@ -17,6 +17,10 @@ export type NewOrderSetup = {
   assigned_person_team: string;
   step_variant: StepVariant;
   included_steps: string[];
+  inactive_note?: string | null;
+  inactive_absent_engineer_id?: number | null;
+  inactive_absent_engineer_name?: string | null;
+  inactive_absence_date?: string | null;
 };
 
 export type ExistingOrderSnapshot = ParsedRow & {
@@ -24,6 +28,10 @@ export type ExistingOrderSnapshot = ParsedRow & {
   current_process_step: string | null;
   assigned_person_team: string | null;
   included_process_steps: string[] | null;
+  inactive_note?: string | null;
+  inactive_absent_engineer_id?: number | null;
+  inactive_absent_engineer_name?: string | null;
+  inactive_absence_date?: string | null;
   hold_reason: string | null;
   required_next_action: string | null;
   action_owner: string | null;

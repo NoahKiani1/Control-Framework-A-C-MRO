@@ -48,6 +48,7 @@ import {
   syncWorkOrderDataBlockState,
 } from "@/lib/work-order-data";
 import { isRensOfficeAssigneeName } from "@/lib/manual-office-assignees";
+import { formatStaffOptionLabel } from "@/lib/absent-assignment";
 
 type WorkOrder = {
   work_order_id: string;
@@ -479,11 +480,6 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
     if (isBlockedUpdate && !holdReason.trim()) {
       setSaveStatus("Please enter a hold reason.");
-      return;
-    }
-
-    if (todayAbsentShopEngineerNames.has(actionOwner)) {
-      setSaveStatus(`${actionOwner} is absent today. Choose another owner.`);
       return;
     }
 
@@ -1004,15 +1000,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                           {shopStaff.length > 0 && (
                             <optgroup label="Shop">
                               {shopStaff.map((staffMember) => (
-                                <option
-                                  key={staffMember.id}
-                                  value={staffMember.name}
-                                  disabled={todayAbsentEngineerIdSet.has(staffMember.id)}
-                                >
-                                  {staffMember.name}
-                                  {todayAbsentEngineerIdSet.has(staffMember.id)
-                                    ? " (absent today)"
-                                    : ""}
+                                <option key={staffMember.id} value={staffMember.name}>
+                                  {formatStaffOptionLabel(
+                                    staffMember,
+                                    todayAbsentEngineerIdSet,
+                                  )}
                                 </option>
                               ))}
                             </optgroup>

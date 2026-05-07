@@ -32,6 +32,12 @@ import {
   syncWorkOrderDataBlockState,
 } from "@/lib/work-order-data";
 import {
+  buildAbsentAssigneeInactiveFields,
+  formatStaffOptionLabel,
+  getAbsentStaffMemberByName,
+  reactivateReturnedAbsentAssigneeWorkOrders,
+} from "@/lib/absent-assignment";
+import {
   canAssignRensToWorkOrder,
   getRensAssignmentUnavailableMessage,
   getRensOfficeStaff,
@@ -58,6 +64,10 @@ type WorkOrder = {
   part_number: string | null;
   included_process_steps: string[] | null;
   data_tracking_enabled: boolean | null;
+  inactive_note: string | null;
+  inactive_absent_engineer_id: number | null;
+  inactive_absent_engineer_name: string | null;
+  inactive_absence_date: string | null;
 };
 
 type StepVariant = "standard" | "custom";
@@ -152,7 +162,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, is_active, work_order_type, current_process_step, part_number, included_process_steps, data_tracking_enabled";
+  "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, is_active, work_order_type, current_process_step, part_number, included_process_steps, data_tracking_enabled, inactive_note, inactive_absent_engineer_id, inactive_absent_engineer_name, inactive_absence_date";
 
 function localDateKey(date = new Date()): string {
   const year = date.getFullYear();
@@ -254,12 +264,7 @@ function OfficeUpdatePageContent() {
   useEffect(() => {
     async function load() {
       const today = localDateKey();
-      const [wo, staffData, absenceData] = await Promise.all([
-        getWorkOrders<WorkOrder>({
-          select: WORK_ORDER_SELECT,
-          isOpen: true,
-          orderBy: { column: "work_order_id", ascending: false },
-        }),
+      const [staffData, absenceData] = await Promise.all([
         getEngineers<StaffMember>({
           select: "id, name, role, restrictions",
           isActive: true,
@@ -271,6 +276,23 @@ function OfficeUpdatePageContent() {
           fromDate: today,
         }),
       ]);
+
+      const reactivationResult =
+        await reactivateReturnedAbsentAssigneeWorkOrders({
+          today,
+          absences: absenceData,
+        });
+      if (reactivationResult.error) {
+        console.error(
+          `Failed to reactivate returned absent-assignee work orders: ${reactivationResult.error.message}`,
+        );
+      }
+
+      const wo = await getWorkOrders<WorkOrder>({
+        select: WORK_ORDER_SELECT,
+        isOpen: true,
+        orderBy: { column: "work_order_id", ascending: false },
+      });
 
       setShopStaff(staffData.filter((s) => s.role === "shop"));
       setOfficeStaff(staffData.filter((s) => s.role === "office"));
@@ -468,8 +490,6 @@ function OfficeUpdatePageContent() {
       return;
     }
 
-    const isActivating = !selectedOrder.is_active && form.is_active;
-    const isDeactivating = selectedOrder.is_active && !form.is_active;
     const preservedStep = selectedOrder.current_process_step?.trim() || "";
     const normalizedIncludedSteps = normalizeIncludedSteps(
       selectedOrder.work_order_type,
@@ -478,8 +498,10 @@ function OfficeUpdatePageContent() {
     const includedStepsForSave =
       normalizedIncludedSteps.length > 0 ? normalizedIncludedSteps : null;
     const nowIso = new Date().toISOString();
+    const today = localDateKey();
+    const shouldApplyActivationSetup = !selectedOrder.is_active && form.is_active;
     const nextProcessStep =
-      (isActivating ? form.activation_process_step.trim() : "") ||
+      (shouldApplyActivationSetup ? form.activation_process_step.trim() : "") ||
       preservedStep ||
       getInitialProcessStepForOrder(
         selectedOrder.work_order_type,
@@ -488,9 +510,20 @@ function OfficeUpdatePageContent() {
     const normalizedAssigned = normalizeAssignedPersonTeam(
       form.assigned_person_team,
     );
+    const absentAssignedStaff = getAbsentStaffMemberByName(
+      shopStaff,
+      todayAbsentEngineerIdSet,
+      form.assigned_person_team,
+    );
+    const effectiveIsActive = form.is_active && !absentAssignedStaff;
+    const isActivating = !selectedOrder.is_active && effectiveIsActive;
+    const isDeactivating = selectedOrder.is_active && !effectiveIsActive;
+    const isTemporarilyInactiveForAbsentAssignee = Boolean(
+      form.is_active && absentAssignedStaff,
+    );
 
     if (
-      form.is_active &&
+      effectiveIsActive &&
       isRensOfficeAssigneeName(normalizedAssigned) &&
       !canAssignRensToWorkOrder({
         work_order_type: selectedOrder.work_order_type,
@@ -498,20 +531,6 @@ function OfficeUpdatePageContent() {
       })
     ) {
       setSaveStatus(getRensAssignmentUnavailableMessage());
-      return;
-    }
-
-    if (todayAbsentShopEngineerNames.has(form.assigned_person_team)) {
-      setSaveStatus(
-        `${form.assigned_person_team} is absent today. Choose another engineer or Shop (default).`,
-      );
-      return;
-    }
-
-    if (todayAbsentShopEngineerNames.has(form.action_owner)) {
-      setSaveStatus(
-        `${form.action_owner} is absent today. Choose another owner.`,
-      );
       return;
     }
 
@@ -534,10 +553,9 @@ function OfficeUpdatePageContent() {
           : nowIso
         : null;
 
-    const payload = {
-      due_date: form.due_date || null,
-      priority: normalizedPriority,
-      assigned_person_team: isActivating
+    const assignedPersonTeamForSave = isTemporarilyInactiveForAbsentAssignee
+      ? normalizedAssigned
+      : isActivating
         ? isRensOfficeAssigneeName(normalizedAssigned)
           ? normalizedAssigned
           : autoAssignForStep(
@@ -547,9 +565,14 @@ function OfficeUpdatePageContent() {
               todayAbsentShopEngineerNames,
               selectedOrder.work_order_type,
             )
-        : form.is_active
+        : effectiveIsActive
           ? normalizedAssigned
-          : null,
+          : null;
+
+    const payload = {
+      due_date: form.due_date || null,
+      priority: normalizedPriority,
+      assigned_person_team: assignedPersonTeamForSave,
       hold_reason: isBlockedUpdate ? normalizedHoldReason : null,
       required_next_action:
         isBlockedUpdate && normalizedRequiredAction
@@ -561,12 +584,29 @@ function OfficeUpdatePageContent() {
       action_closed: false,
       action_created_at: actionCreatedAt,
       action_closed_at: null,
-      is_active: form.is_active,
-      current_process_step: isActivating ? nextProcessStep : selectedOrder.current_process_step,
-      included_process_steps: isActivating
+      is_active: effectiveIsActive,
+      current_process_step: shouldApplyActivationSetup
+        ? nextProcessStep
+        : selectedOrder.current_process_step,
+      included_process_steps: shouldApplyActivationSetup
         ? includedStepsForSave
         : selectedOrder.included_process_steps,
       last_manual_update: nowIso,
+      ...(isTemporarilyInactiveForAbsentAssignee && absentAssignedStaff
+        ? buildAbsentAssigneeInactiveFields(absentAssignedStaff, today)
+        : effectiveIsActive
+          ? {
+              inactive_note: null,
+              inactive_absent_engineer_id: null,
+              inactive_absent_engineer_name: null,
+              inactive_absence_date: null,
+            }
+          : {
+              inactive_note: null,
+              inactive_absent_engineer_id: null,
+              inactive_absent_engineer_name: null,
+              inactive_absence_date: null,
+            }),
     };
 
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
@@ -580,7 +620,7 @@ function OfficeUpdatePageContent() {
       return;
     }
 
-    if (isDeactivating) {
+    if (isDeactivating && !isTemporarilyInactiveForAbsentAssignee) {
       const trackingResult = await stopWorkOrderDataTracking(selectedId);
       if (trackingResult.error) {
         console.error(
@@ -603,7 +643,11 @@ function OfficeUpdatePageContent() {
     );
 
     clearPageAfterSave();
-    setSaveStatus("Saved.");
+    setSaveStatus(
+      isTemporarilyInactiveForAbsentAssignee && absentAssignedStaff
+        ? `Saved. ${selectedId} is inactive until ${absentAssignedStaff.name} is present again.`
+        : "Saved.",
+    );
   }
 
   async function saveExtraAction() {
@@ -611,13 +655,6 @@ function OfficeUpdatePageContent() {
 
     if (!normalizedDescription) {
       setExtraActionStatus("Please enter a description.");
-      return;
-    }
-
-    if (todayAbsentShopEngineerNames.has(extraActionForm.responsible_person_team)) {
-      setExtraActionStatus(
-        `${extraActionForm.responsible_person_team} is absent today. Choose another engineer or Shop (default).`,
-      );
       return;
     }
 
@@ -1130,15 +1167,11 @@ function OfficeUpdatePageContent() {
                           >
                             <option value="">Shop (default)</option>
                             {shopStaff.map((s) => (
-                              <option
-                                key={s.id}
-                                value={s.name}
-                                disabled={todayAbsentEngineerIdSet.has(s.id)}
-                              >
-                                {s.name}
-                                {todayAbsentEngineerIdSet.has(s.id)
-                                  ? " (absent today)"
-                                  : ""}
+                              <option key={s.id} value={s.name}>
+                                {formatStaffOptionLabel(
+                                  s,
+                                  todayAbsentEngineerIdSet,
+                                )}
                               </option>
                             ))}
                             {rensOfficeAssignmentOptions.length > 0 && (
@@ -1248,15 +1281,11 @@ function OfficeUpdatePageContent() {
                                 {shopStaff.length > 0 && (
                                     <optgroup label="Shop">
                                       {shopStaff.map((s) => (
-                                      <option
-                                        key={s.id}
-                                        value={s.name}
-                                        disabled={todayAbsentEngineerIdSet.has(s.id)}
-                                      >
-                                        {s.name}
-                                        {todayAbsentEngineerIdSet.has(s.id)
-                                          ? " (absent today)"
-                                          : ""}
+                                      <option key={s.id} value={s.name}>
+                                        {formatStaffOptionLabel(
+                                          s,
+                                          todayAbsentEngineerIdSet,
+                                        )}
                                       </option>
                                     ))}
                                   </optgroup>
@@ -1706,13 +1735,8 @@ function OfficeUpdatePageContent() {
               >
                 <option value="">Shop (default)</option>
                 {shopStaff.map((s) => (
-                  <option
-                    key={s.id}
-                    value={s.name}
-                    disabled={todayAbsentEngineerIdSet.has(s.id)}
-                  >
-                    {s.name}
-                    {todayAbsentEngineerIdSet.has(s.id) ? " (absent today)" : ""}
+                  <option key={s.id} value={s.name}>
+                    {formatStaffOptionLabel(s, todayAbsentEngineerIdSet)}
                   </option>
                 ))}
               </select>

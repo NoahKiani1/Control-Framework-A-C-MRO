@@ -5,6 +5,7 @@ import {
   RENS_OFFICE_ASSIGNEE_NAME,
   getRensOfficeStaff,
 } from "@/lib/manual-office-assignees";
+import { reactivateReturnedAbsentAssigneeWorkOrders } from "@/lib/absent-assignment";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -82,21 +83,8 @@ export async function GET(request: Request) {
 
   const supabase = getSupabaseServiceClient();
 
-  const [
-    ordersResult,
-    engineersResult,
-    rensOfficeResult,
-    absencesResult,
-    extrasResult,
-  ] =
+  const [engineersResult, rensOfficeResult, absencesResult, extrasResult] =
     await Promise.all([
-      supabase
-        .from("work_orders")
-        .select(
-          "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps, shared_planning_rank",
-        )
-        .eq("is_open", true)
-        .eq("is_active", true),
       supabase
         .from("engineers")
         .select(
@@ -122,7 +110,6 @@ export async function GET(request: Request) {
     ]);
 
   const errors = [
-    ordersResult.error && `work_orders: ${ordersResult.error.message}`,
     engineersResult.error && `engineers: ${engineersResult.error.message}`,
     rensOfficeResult.error && `rens: ${rensOfficeResult.error.message}`,
     absencesResult.error && `engineer_absences: ${absencesResult.error.message}`,
@@ -132,6 +119,33 @@ export async function GET(request: Request) {
   if (errors.length > 0) {
     return noStoreJson(
       { error: { message: errors.join("; ") } },
+      { status: 500 },
+    );
+  }
+
+  const reactivationResult =
+    await reactivateReturnedAbsentAssigneeWorkOrders({
+      today,
+      absences: (absencesResult.data || []) as ShopWallAbsence[],
+      client: supabase,
+    });
+  if (reactivationResult.error) {
+    console.error(
+      `Failed to reactivate returned absent-assignee work orders: ${reactivationResult.error.message}`,
+    );
+  }
+
+  const ordersResult = await supabase
+    .from("work_orders")
+    .select(
+      "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps, shared_planning_rank",
+    )
+    .eq("is_open", true)
+    .eq("is_active", true);
+
+  if (ordersResult.error) {
+    return noStoreJson(
+      { error: { message: `work_orders: ${ordersResult.error.message}` } },
       { status: 500 },
     );
   }
