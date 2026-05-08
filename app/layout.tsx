@@ -21,8 +21,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "AcMP Control Board",
-  description: "Aircraft and Component MRO Control Board",
+  title: "A&C Planning Tool",
+  description: "Aircraft & Component MRO Planning Tool",
 };
 
 export default function RootLayout({

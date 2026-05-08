@@ -25,6 +25,7 @@ const localNetworkDevOrigins = [
 const nextConfig: NextConfig = {
   // Allow Next dev HMR when opening the app from another device on the local network.
   allowedDevOrigins: localNetworkDevOrigins,
+  devIndicators: false,
   images: {
     remotePatterns: [
       {
