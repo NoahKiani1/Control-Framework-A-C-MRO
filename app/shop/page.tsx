@@ -85,6 +85,13 @@ const AUTO_SCROLL_SECTION_PAUSE_MS = 5000;
 const AUTO_SCROLL_BOTTOM_PAUSE_MS = 9000;
 const AUTO_SCROLL_SECTION_TOP_OFFSET_PX = 18;
 const AUTO_SCROLL_BOTTOM_SPACER_PX = 12;
+const AMSTERDAM_TIME_ZONE = "Europe/Amsterdam";
+const AMSTERDAM_CLOCK_FORMATTER = new Intl.DateTimeFormat("nl-NL", {
+  timeZone: AMSTERDAM_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
 const COLORS = {
   pageBg: "#e3e7ee",
@@ -354,6 +361,24 @@ function getDaysRemainingLabel(
   return { text: `${Math.abs(diffDays)} days overdue`, overdue: true };
 }
 
+function getDueDateCallout(dateStr: string | null): string | null {
+  if (!dateStr) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const due = new Date(dateStr);
+  due.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.round(
+    (due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  if (diffDays === 0) return "TODAY";
+  if (diffDays === 1) return "TOMORROW";
+  return null;
+}
+
 function AssignedPerson({
   name,
   photoUrl,
@@ -621,8 +646,21 @@ function ShopPageContent() {
   }, []);
 
   useEffect(() => {
-    const tick = setInterval(() => setNow(new Date()), 60000);
-    return () => clearInterval(tick);
+    let timeout: ReturnType<typeof setTimeout>;
+
+    function scheduleNextMinuteTick() {
+      const currentTime = new Date();
+      const msUntilNextMinute =
+        (60 - currentTime.getSeconds()) * 1000 - currentTime.getMilliseconds() + 50;
+
+      timeout = setTimeout(() => {
+        setNow(new Date());
+        scheduleNextMinuteTick();
+      }, msUntilNextMinute);
+    }
+
+    scheduleNextMinuteTick();
+    return () => clearTimeout(timeout);
   }, []);
 
   useEffect(() => {
@@ -934,6 +972,8 @@ function ShopPageContent() {
     dueLabel?: string;
     hideAssigned?: boolean;
   }) {
+    const dueDateCallout = getDueDateCallout(dueDate);
+
     return (
       <div
         style={{
@@ -978,7 +1018,7 @@ function ShopPageContent() {
           </div>
           <div
             style={{
-              color: overdue ? COLORS.red : COLORS.ink,
+              color: overdue || dueDateCallout ? COLORS.red : COLORS.ink,
               fontSize: hideAssigned ? "38px" : "34px",
               fontWeight: 700,
               whiteSpace: "nowrap",
@@ -987,9 +1027,9 @@ function ShopPageContent() {
               letterSpacing: "-0.015em",
             }}
           >
-            {formatDate(dueDate)}
+            {dueDateCallout ?? formatDate(dueDate)}
           </div>
-          {(() => {
+          {!dueDateCallout && (() => {
             const remaining = getDaysRemainingLabel(dueDate);
             if (!remaining) return null;
             return (
@@ -1684,6 +1724,7 @@ function ShopPageContent() {
     { label: "AOG", value: aogCount, tone: aogCount > 0 ? "#ff7a6d" : HEADER_INK },
   ];
   const showOfficeHomeButton = currentRole === "office";
+  const amsterdamTime = AMSTERDAM_CLOCK_FORMATTER.format(now);
 
   return (
     <div
@@ -1800,11 +1841,14 @@ function ShopPageContent() {
               textTransform: "uppercase",
             }}
           >
-            {now.toLocaleDateString("en-GB", { weekday: "long" })}
+            {now.toLocaleDateString("en-GB", {
+              timeZone: AMSTERDAM_TIME_ZONE,
+              weekday: "long",
+            })}
           </div>
           <div
             style={{
-              fontSize: "28px",
+              fontSize: "26px",
               fontWeight: 600,
               letterSpacing: "-0.015em",
               lineHeight: 1,
@@ -1814,10 +1858,27 @@ function ShopPageContent() {
             }}
           >
             {now.toLocaleDateString("en-GB", {
+              timeZone: AMSTERDAM_TIME_ZONE,
               day: "2-digit",
               month: "long",
               year: "numeric",
             })}
+          </div>
+          <div
+            suppressHydrationWarning
+            aria-label={`Amsterdam time ${amsterdamTime}`}
+            style={{
+              marginTop: "3px",
+              color: HEADER_INK,
+              fontSize: "26px",
+              fontWeight: 600,
+              lineHeight: 1,
+              letterSpacing: "0",
+              fontVariantNumeric: "tabular-nums",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {amsterdamTime}
           </div>
         </div>
 
