@@ -54,19 +54,22 @@ async function archiveCompletedTask(payload: CompletedTaskArchivePayload) {
     console.error("Failed to clean completed task retention", cleanupResult.error);
   }
 
-  return supabase.from("completed_tasks").upsert(
-    {
-      source_key: payload.source_key,
-      task_type: payload.task_type,
-      source_work_order_id: payload.source_work_order_id ?? null,
-      source_extra_action_id: payload.source_extra_action_id ?? null,
-      required_next_action: payload.required_next_action,
-      assigned_person_team: payload.assigned_person_team ?? null,
-      created_at: payload.created_at,
-      closed_at: payload.closed_at,
-    },
-    { onConflict: "source_key" },
-  );
+  const result = await supabase.from("completed_tasks").insert({
+    source_key: payload.source_key,
+    task_type: payload.task_type,
+    source_work_order_id: payload.source_work_order_id ?? null,
+    source_extra_action_id: payload.source_extra_action_id ?? null,
+    required_next_action: payload.required_next_action,
+    assigned_person_team: payload.assigned_person_team ?? null,
+    created_at: payload.created_at,
+    closed_at: payload.closed_at,
+  });
+
+  if (result.error?.code === "23505") {
+    return { ...result, error: null };
+  }
+
+  return result;
 }
 
 export async function cleanupCompletedTasks() {
