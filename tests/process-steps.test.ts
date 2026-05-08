@@ -19,8 +19,8 @@ function main() {
     "Intake",
     "Disassembly",
     "Cleaning",
-    "Eddy Current",
     "Inspection",
+    "Eddy Current",
     "Assembly",
     "EASA-Form 1",
   ]);
@@ -55,9 +55,9 @@ function main() {
     "Intake",
     "Disassembly",
     "Cleaning",
-    "Eddy Current",
     "Inspection",
     "Repair",
+    "Eddy Current",
     "Assembly",
     "EASA-Form 1",
   ]);
@@ -70,11 +70,37 @@ function main() {
     ),
     "Repair",
   );
+  assert.deepEqual(
+    resolveStepsForOrder("Wheel Overhaul", [
+      "Intake",
+      "Disassembly",
+      "Paint Stripping",
+      "Magnetic Test",
+      "Penetrant Testing",
+      "Eddy Current",
+      "Inspection",
+      "Painting",
+      "Assembly",
+      "EASA-Form 1",
+    ]),
+    [
+      "Intake",
+      "Disassembly",
+      "Paint Stripping",
+      "Inspection",
+      "Eddy Current",
+      "Penetrant Testing",
+      "Magnetic Test",
+      "Painting",
+      "Assembly",
+      "EASA-Form 1",
+    ],
+  );
   assert.equal(ABSOLUTE_STEP_HOURS.Repair, 1.5);
   assert.equal(getExpectedHoursForStep("Wheel Repair", "Repair", "PN-1"), 1.5);
   assert.equal(
     getRemainingHours("Wheel Repair", "Repair", "PN-1", withRepair),
-    3.3,
+    4.5,
   );
 }
 

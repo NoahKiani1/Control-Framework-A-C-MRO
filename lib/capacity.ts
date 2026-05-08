@@ -12,11 +12,11 @@ import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
 // Weight = percentage of total hours this step takes
 
 // === STEP WEIGHTS - gebaseerd op representatieve tijden per stap ===
-// Repair  totaal: 255 min  (Intake 10 + Disassembly 10 + Cleaning 20 + Magnetic Test 45 +
-//                           Eddy Current 60 + Inspection 20 + Assembly 60 + EASA 30)
+// Repair  totaal: 255 min  (Intake 10 + Disassembly 10 + Cleaning 20 + Inspection 20 +
+//                           Eddy Current 60 + Magnetic Test 45 + Assembly 60 + EASA 30)
 // Overhaul totaal: 535 min (Intake 10 + Disassembly 10 + Paint Stripping 120 +
-//                           Magnetic Test 45 + Penetrant 120 + Eddy Current 60 +
-//                           Inspection 20 + Painting 60 + Assembly 60 + EASA 30)
+//                           Inspection 20 + Eddy Current 60 + Penetrant 120 +
+//                           Magnetic Test 45 + Painting 60 + Assembly 60 + EASA 30)
 // Magnetic Test is optioneel en telt alleen mee als het in `included_process_steps` staat.
 // Repair wordt door shop na Inspection toegevoegd wanneer nodig en telt vast 1.5 uur.
 
@@ -29,9 +29,9 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
     "Intake":          0.04, // 10/255
     "Disassembly":     0.04, // 10/255
     "Cleaning":        0.08, // 20/255
-    "Magnetic Test":   0.18, // 45/255
-    "Eddy Current":    0.24, // 60/255
     "Inspection":      0.08, // 20/255
+    "Eddy Current":    0.24, // 60/255
+    "Magnetic Test":   0.18, // 45/255
     "Assembly":        0.24, // 60/255 (inclusief repair)
     "EASA-Form 1":     0.12, // 30/255
   },
@@ -39,10 +39,10 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
     "Intake":                  0.019, // 10/535
     "Disassembly":             0.019, // 10/535
     "Paint Stripping":         0.224, // 120/535
-    "Magnetic Test":           0.084, // 45/535
-    "Penetrant Testing":       0.224, // 120/535
-    "Eddy Current":            0.112, // 60/535
     "Inspection":              0.037, // 20/535
+    "Eddy Current":            0.112, // 60/535
+    "Penetrant Testing":       0.224, // 120/535
+    "Magnetic Test":           0.084, // 45/535
     "Painting":                0.112, // 60/535
     "Assembly":                0.112, // 60/535 (inclusief repair)
     "EASA-Form 1":             0.056, // 30/535
@@ -51,9 +51,9 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
     "Intake":          0.04,
     "Disassembly":     0.04,
     "Cleaning":        0.08,
-    "Magnetic Test":   0.18,
-    "Eddy Current":    0.24,
     "Inspection":      0.08,
+    "Eddy Current":    0.24,
+    "Magnetic Test":   0.18,
     "Assembly":        0.24,
     "EASA-Form 1":     0.12,
   },
@@ -61,10 +61,10 @@ export const STEP_WEIGHTS: Record<string, Record<string, number>> = {
     "Intake":                  0.019, // 10/535
     "Disassembly":             0.019, // 10/535
     "Paint Stripping":         0.224, // 120/535
-    "Magnetic Test":           0.084, // 45/535
-    "Penetrant Testing":       0.224, // 120/535
-    "Eddy Current":            0.112, // 60/535
     "Inspection":              0.037, // 20/535
+    "Eddy Current":            0.112, // 60/535
+    "Penetrant Testing":       0.224, // 120/535
+    "Magnetic Test":           0.084, // 45/535
     "Painting":                0.112, // 60/535
     "Assembly":                0.112, // 60/535 (inclusief repair)
     "EASA-Form 1":             0.056, // 30/535

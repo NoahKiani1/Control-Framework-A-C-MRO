@@ -37,9 +37,9 @@ const STEP_BASED_RESTRICTIONS: RestrictionDefinition[] = uniqueProcessSteps().ma
 
 const LEGACY_RESTRICTION_EXPANSIONS: Record<string, string[]> = {
   ndt: [
-    getRestrictionKeyForStep("Magnetic Test"),
-    getRestrictionKeyForStep("Penetrant Testing"),
     getRestrictionKeyForStep("Eddy Current"),
+    getRestrictionKeyForStep("Penetrant Testing"),
+    getRestrictionKeyForStep("Magnetic Test"),
   ],
   certification: [getRestrictionKeyForStep("EASA-Form 1")],
 };
