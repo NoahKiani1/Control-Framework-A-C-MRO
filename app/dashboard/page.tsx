@@ -19,6 +19,13 @@ import {
 import { getWorkOrders, updateWorkOrder } from "@/lib/work-orders";
 import { archiveCompletedCorrectiveAction } from "@/lib/completed-tasks";
 import {
+  RFQ_AWAITING_APPROVAL_REASON,
+  buildCloseRfqActionPayload,
+  hasActiveRfqSendAction,
+  isRfqSendAction,
+  type RfqCloseMode,
+} from "@/lib/rfq-workflow";
+import {
   filterEngineersStartedOnDateKey,
   getEngineers,
   getEngineerAbsences,
@@ -244,7 +251,7 @@ function engineerCanDoRestriction(eng: Engineer, restriction: string): boolean {
 function blockedReason(order: WorkOrder): string {
   if (order.hold_reason) return order.hold_reason;
   if (order.rfq_state === "RFQ Rejected") return "RFQ Rejected";
-  if (order.rfq_state === "RFQ Send") return "Waiting for RFQ Approval";
+  if (order.rfq_state === "RFQ Send") return RFQ_AWAITING_APPROVAL_REASON;
   return "Blocked";
 }
 
@@ -493,9 +500,9 @@ function KpiCard({ label, value, color, active, onClick }: CardProps) {
             color: active ? "rgba(255,255,255,0.95)" : COLORS.textSoft,
             fontWeight: 550,
             lineHeight: 1.35,
-            whiteSpace: "nowrap",
+            whiteSpace: "normal",
             overflow: "hidden",
-            textOverflow: "ellipsis",
+            overflowWrap: "anywhere",
             minWidth: 0,
           }}
         >
@@ -729,10 +736,14 @@ function DashboardPageContent() {
   const readyToClose = orders.filter(
     (o) => o.current_process_step === READY_TO_CLOSE_STEP,
   );
+  const readyToSendRfq = activeOrders.filter(hasActiveRfqSendAction);
+  const readyPanelOrders = [...readyToClose, ...readyToSendRfq];
 
   const dueThisWeek = activeOrders.filter((o) => isDueThisWeek(o.due_date));
   const overdueOrders = activeOrders.filter((o) => isOverdue(o.due_date));
-  const openActions = activeOrders.filter(hasOpenAction);
+  const openActions = activeOrders.filter(
+    (o) => hasOpenAction(o) && !hasActiveRfqSendAction(o),
+  );
   const aogOrders = activeOrders.filter((o) => priorityTag(o.priority) !== null);
   const staleOrders = activeOrders.filter((o) => {
     const last = latestUpdate(o.last_system_update, o.last_manual_update);
@@ -965,12 +976,42 @@ function DashboardPageContent() {
 
   const health = getHealthStatus();
 
-  async function closeAction(order: WorkOrder) {
-    const confirmed = window.confirm(
-      `Close action for ${order.work_order_id}?\n\n` +
-        `This will clear the hold reason and unblock the work order.\n` +
-        `This action cannot be undone.`,
+  function chooseRfqCloseMode(workOrderId: string): RfqCloseMode | null {
+    const choice = window.prompt(
+      `Close RFQ action for ${workOrderId}?\n\n` +
+        `Type B to keep it blocked as "${RFQ_AWAITING_APPROVAL_REASON}".\n` +
+        "Type O to put it back on open.",
+      "B",
     );
+
+    if (choice === null) return null;
+    const normalized = choice.trim().toLowerCase();
+    if (normalized === "b" || normalized.startsWith("block")) {
+      return "awaiting_approval";
+    }
+    if (normalized === "o" || normalized.startsWith("open")) {
+      return "continue";
+    }
+
+    window.alert("Action was not closed. Please type B or O.");
+    return null;
+  }
+
+  async function closeAction(order: WorkOrder) {
+    const isRfqAction = isRfqSendAction(order);
+    const rfqCloseMode = isRfqAction
+      ? chooseRfqCloseMode(order.work_order_id)
+      : null;
+
+    if (isRfqAction && !rfqCloseMode) return;
+
+    const confirmed =
+      isRfqAction ||
+      window.confirm(
+        `Close action for ${order.work_order_id}?\n\n` +
+          `This will clear the hold reason and unblock the work order.\n` +
+          `This action cannot be undone.`,
+      );
 
     if (!confirmed) return;
 
@@ -982,16 +1023,22 @@ function DashboardPageContent() {
       return;
     }
 
-    const payload = {
-      action_status: "Done",
-      action_closed: true,
-      action_closed_at: closedAt,
-      hold_reason: null,
-      required_next_action: null,
-      action_owner: null,
-      action_created_at: null,
-      last_manual_update: closedAt,
-    };
+    const payload = rfqCloseMode
+      ? buildCloseRfqActionPayload({
+          mode: rfqCloseMode,
+          timestamp: closedAt,
+          updateSource: "manual",
+        })
+      : {
+          action_status: "Done",
+          action_closed: true,
+          action_closed_at: closedAt,
+          hold_reason: null,
+          required_next_action: null,
+          action_owner: null,
+          action_created_at: null,
+          last_manual_update: closedAt,
+        };
 
     const { error } = await updateWorkOrder(order.work_order_id, payload);
 
@@ -1080,7 +1127,7 @@ function DashboardPageContent() {
 
   const defaultColumnWidths = ["12%", "18%", "12%", "12%", "10%", "16%", "20%"];
   const staleColumnWidths = ["12%", "24%", "18%", "24%", "22%"];
-  const readyColumnWidths = ["18%", "46%", "36%"];
+  const readyColumnWidths = ["16%", "36%", "28%", "20%"];
 
   function renderColumnGroup(widths: string[]) {
     return (
@@ -1338,6 +1385,7 @@ function DashboardPageContent() {
             <th style={headerStyle}>WO</th>
             <th style={headerStyle}>Customer</th>
             <th style={headerStyle}>Type</th>
+            <th style={headerStyle}>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -1353,16 +1401,21 @@ function DashboardPageContent() {
               </td>
               <td style={cellStyle}>{o.customer || "–"}</td>
               <td style={cellStyle}>{o.work_order_type || "–"}</td>
+              <td style={cellStyle}>
+                {o.current_process_step === READY_TO_CLOSE_STEP
+                  ? "Ready to close"
+                  : "Ready to send RFQ"}
+              </td>
             </tr>
           ))}
 
           {list.length === 0 && (
             <tr>
               <td
-                colSpan={3}
+                colSpan={4}
                 style={{ ...cellStyle, textAlign: "center", color: COLORS.textMuted, padding: "32px" }}
               >
-                No orders ready to close
+                No orders ready to close or RFQs ready to send
               </td>
             </tr>
           )}
@@ -1454,10 +1507,10 @@ function DashboardPageContent() {
       render: renderActionsTable,
     },
     ready: {
-      title: "Ready to close in AcMP",
-      count: readyToClose.length,
+      title: "Ready to close / ready to send RFQ",
+      count: readyPanelOrders.length,
       accent: COLORS.green,
-      data: readyToClose,
+      data: readyPanelOrders,
       render: renderReadyTable,
     },
     aog: {
@@ -1813,8 +1866,8 @@ function DashboardPageContent() {
               onClick={() => togglePanel("actions")}
             />
             <KpiCard
-              label="Ready to close"
-              value={readyToClose.length}
+              label="Ready to close / ready to send RFQ"
+              value={readyPanelOrders.length}
               color={COLORS.green}
               active={activePanel === "ready"}
               onClick={() => togglePanel("ready")}

@@ -1,4 +1,5 @@
 import { canPerformStep } from "@/lib/restrictions";
+import { RFQ_AWAITING_APPROVAL_REASON } from "@/lib/rfq-workflow";
 
 type BlockableOrder = {
   hold_reason?: string | null;
@@ -250,7 +251,9 @@ export function blockReason(
 ): string {
   if (order.hold_reason) return order.hold_reason;
   const rfq = normalizeRfqState(order.rfq_state);
-  if (rfq === "rfq send") return options.rfqSentLabel || "RFQ sent";
+  if (rfq === "rfq send") {
+    return options.rfqSentLabel || RFQ_AWAITING_APPROVAL_REASON;
+  }
   if (rfq === "rfq rejected") return "RFQ rejected";
   return "–";
 }

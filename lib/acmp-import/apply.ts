@@ -22,6 +22,7 @@ import {
   startWorkOrderDataTracking,
   syncWorkOrderDataBlockState,
 } from "@/lib/work-order-data";
+import { buildImportedRfqActionClosePayload } from "@/lib/rfq-workflow";
 import { EXISTING_ORDER_SELECT } from "./analyze";
 import {
   ExistingOrderSnapshot,
@@ -92,13 +93,21 @@ export async function applyExistingOrderUpdates({
       const shouldDefaultAssigned =
         Boolean(current?.is_active) &&
         !current?.assigned_person_team?.trim();
+      const autoCloseRfqActionPayload = current
+        ? buildImportedRfqActionClosePayload(
+            current,
+            r.rfq_state,
+            importTimestamp,
+          )
+        : null;
       const changed =
         !current ||
         current.customer !== r.customer ||
         current.rfq_state !== r.rfq_state ||
         current.work_order_type !== r.work_order_type ||
         current.part_number !== r.part_number ||
-        shouldDefaultAssigned;
+        shouldDefaultAssigned ||
+        Boolean(autoCloseRfqActionPayload);
 
       return {
         ...r,
@@ -109,6 +118,7 @@ export async function applyExistingOrderUpdates({
               ),
             }
           : {}),
+        ...(autoCloseRfqActionPayload ?? {}),
         last_system_update: changed ? importTimestamp : r.last_system_update,
       };
     });
@@ -121,17 +131,33 @@ export async function applyExistingOrderUpdates({
     for (const row of batch) {
       const current = currentMap.get(row.work_order_id);
       if (!current?.data_tracking_enabled) continue;
+      const workflowRow = row as Partial<ExistingOrderSnapshot>;
 
       const blockResult = await syncWorkOrderDataBlockState(
         {
           ...current,
           ...row,
           data_tracking_enabled: current.data_tracking_enabled,
-          hold_reason: current.hold_reason,
-          required_next_action: current.required_next_action,
-          action_owner: current.action_owner,
-          action_status: current.action_status,
-          action_closed: current.action_closed,
+          hold_reason:
+            "hold_reason" in workflowRow
+              ? workflowRow.hold_reason ?? null
+              : current.hold_reason,
+          required_next_action:
+            "required_next_action" in workflowRow
+              ? workflowRow.required_next_action ?? null
+              : current.required_next_action,
+          action_owner:
+            "action_owner" in workflowRow
+              ? workflowRow.action_owner ?? null
+              : current.action_owner,
+          action_status:
+            "action_status" in workflowRow
+              ? workflowRow.action_status ?? null
+              : current.action_status,
+          action_closed:
+            "action_closed" in workflowRow
+              ? workflowRow.action_closed ?? null
+              : current.action_closed,
         },
         row.last_system_update ?? importTimestamp,
         client,

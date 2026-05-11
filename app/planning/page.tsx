@@ -45,6 +45,12 @@ import {
   archiveCompletedCorrectiveAction,
   completeExtraAction,
 } from "@/lib/completed-tasks";
+import {
+  RFQ_AWAITING_APPROVAL_REASON,
+  buildCloseRfqActionPayload,
+  isRfqSendAction,
+  type RfqCloseMode,
+} from "@/lib/rfq-workflow";
 import { syncWorkOrderDataBlockState } from "@/lib/work-order-data";
 import { supabase } from "@/lib/supabase";
 import {
@@ -699,7 +705,7 @@ function WorkOrderTimelineRow({
   const overdue = isOverdue(order.due_date);
 
   const reason = blocked
-    ? blockReason(order, { rfqSentLabel: "Waiting for RFQ Approval" })
+    ? blockReason(order, { rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON })
     : null;
   const correctiveAction = getCorrectiveActionContext(order);
   const hasCorrective = hasActiveCorrectiveAction(order);
@@ -1084,6 +1090,8 @@ function PlanningPageContent() {
     due_date: "",
     assigned_person_team: "",
   });
+  const [rfqCloseMode, setRfqCloseMode] =
+    useState<RfqCloseMode>("awaiting_approval");
   const [quickEditStatus, setQuickEditStatus] = useState("");
   const [actionStatus, setActionStatus] = useState("");
   const [isSavingQuickEdit, setIsSavingQuickEdit] = useState(false);
@@ -1303,6 +1311,7 @@ function PlanningPageContent() {
 
   function openCompleteActionConfirmation(order: WorkOrder) {
     setActionConfirmationWorkOrderId(order.work_order_id);
+    setRfqCloseMode("awaiting_approval");
     setActionStatus("");
     setIsCompletingAction(false);
   }
@@ -1831,9 +1840,17 @@ function PlanningPageContent() {
       return;
     }
 
+    const closePayload = isRfqSendAction(actionConfirmationOrder)
+      ? buildCloseRfqActionPayload({
+          mode: rfqCloseMode,
+          timestamp: closedAt,
+          updateSource: "manual",
+        })
+      : getCorrectiveActionCompletionPayload(closedAt);
+
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
       actionConfirmationOrder.work_order_id,
-      getCorrectiveActionCompletionPayload(closedAt),
+      closePayload,
       WORK_ORDER_SELECT,
     );
 
@@ -2214,7 +2231,7 @@ function PlanningPageContent() {
                       o.last_manual_update,
                     );
                     const reason = blockReason(o, {
-                      rfqSentLabel: "Waiting for RFQ Approval",
+                      rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON,
                     });
                     const hasCorrectiveAction = hasActiveCorrectiveAction(o);
                     const correctiveAction = getCorrectiveActionContext(o);
@@ -2761,7 +2778,7 @@ function PlanningPageContent() {
                 <div style={modalEyebrowStyle}>Hold reason</div>
                 <div style={{ fontSize: "14px", color: ui.text }}>
                   {blockReason(actionConfirmationOrder, {
-                    rfqSentLabel: "Waiting for RFQ Approval",
+                    rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON,
                   })}
                 </div>
               </div>
@@ -2771,6 +2788,51 @@ function PlanningPageContent() {
                   {getCorrectiveActionContext(actionConfirmationOrder).summary || "No active corrective action"}
                 </div>
               </div>
+
+              {isRfqSendAction(actionConfirmationOrder) && (
+                <div>
+                  <div style={modalEyebrowStyle}>After completion</div>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => setRfqCloseMode("awaiting_approval")}
+                      style={{
+                        ...modalActionButtonStyle,
+                        borderColor:
+                          rfqCloseMode === "awaiting_approval"
+                            ? ui.blue
+                            : ui.borderStrong,
+                        backgroundColor:
+                          rfqCloseMode === "awaiting_approval"
+                            ? ui.blueSoft
+                            : ui.surface,
+                        color:
+                          rfqCloseMode === "awaiting_approval"
+                            ? ui.blue
+                            : ui.text,
+                      }}
+                      disabled={isCompletingAction}
+                    >
+                      Blocked: {RFQ_AWAITING_APPROVAL_REASON}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRfqCloseMode("continue")}
+                      style={{
+                        ...modalActionButtonStyle,
+                        borderColor:
+                          rfqCloseMode === "continue" ? ui.blue : ui.borderStrong,
+                        backgroundColor:
+                          rfqCloseMode === "continue" ? ui.blueSoft : ui.surface,
+                        color: rfqCloseMode === "continue" ? ui.blue : ui.text,
+                      }}
+                      disabled={isCompletingAction}
+                    >
+                      Open
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {actionStatus && (
                 <div

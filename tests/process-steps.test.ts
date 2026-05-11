@@ -12,6 +12,13 @@ import {
   getExpectedHoursForStep,
   getRemainingHours,
 } from "../lib/capacity";
+import {
+  RFQ_AWAITING_APPROVAL_REASON,
+  RFQ_MUST_BE_SENT_REASON,
+  buildImportedRfqActionClosePayload,
+  getLastIncludedRfqInspectionStep,
+  shouldRequestRfqAfterCompletedStep,
+} from "../lib/rfq-workflow";
 
 function main() {
   const standardWheelRepair = resolveStepsForOrder("Wheel Repair", null);
@@ -101,6 +108,88 @@ function main() {
   assert.equal(
     getRemainingHours("Wheel Repair", "Repair", "PN-1", withRepair),
     4.5,
+  );
+
+  const fullWheelOverhaulSteps = [
+    "Intake",
+    "Disassembly",
+    "Paint Stripping",
+    "Inspection",
+    "Eddy Current",
+    "Penetrant Testing",
+    "Magnetic Test",
+    "Painting",
+    "Assembly",
+    "EASA-Form 1",
+  ];
+  assert.equal(
+    getLastIncludedRfqInspectionStep("Wheel Overhaul", fullWheelOverhaulSteps),
+    "Magnetic Test",
+  );
+  assert.equal(
+    getLastIncludedRfqInspectionStep(
+      "Wheel Overhaul",
+      fullWheelOverhaulSteps.filter((step) => step !== "Magnetic Test"),
+    ),
+    "Penetrant Testing",
+  );
+  assert.equal(
+    getLastIncludedRfqInspectionStep(
+      "Wheel Overhaul",
+      fullWheelOverhaulSteps.filter(
+        (step) => step !== "Magnetic Test" && step !== "Penetrant Testing",
+      ),
+    ),
+    "Eddy Current",
+  );
+  assert.equal(
+    shouldRequestRfqAfterCompletedStep({
+      workOrderType: "Wheel Overhaul",
+      includedSteps: fullWheelOverhaulSteps,
+      completedStep: "Magnetic Test",
+      rfqState: null,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldRequestRfqAfterCompletedStep({
+      workOrderType: "Wheel Overhaul",
+      includedSteps: fullWheelOverhaulSteps,
+      completedStep: "Penetrant Testing",
+      rfqState: null,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRequestRfqAfterCompletedStep({
+      workOrderType: "Wheel Overhaul",
+      includedSteps: fullWheelOverhaulSteps,
+      completedStep: "Magnetic Test",
+      rfqState: "RFQ Send - Continue",
+    }),
+    false,
+  );
+
+  assert.deepEqual(
+    buildImportedRfqActionClosePayload(
+      {
+        required_next_action: RFQ_MUST_BE_SENT_REASON,
+        action_status: "Open",
+        action_closed: false,
+      },
+      "RFQ Send",
+      "2026-05-11T10:00:00.000Z",
+    ),
+    {
+      action_status: "Done",
+      action_closed: true,
+      action_closed_at: "2026-05-11T10:00:00.000Z",
+      hold_reason: RFQ_AWAITING_APPROVAL_REASON,
+      required_next_action: null,
+      action_owner: null,
+      action_created_at: null,
+      last_system_update: "2026-05-11T10:00:00.000Z",
+    },
   );
 }
 

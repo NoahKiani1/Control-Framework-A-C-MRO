@@ -41,6 +41,15 @@ import {
   archiveCompletedCorrectiveAction,
   completeExtraAction,
 } from "@/lib/completed-tasks";
+import {
+  RFQ_AWAITING_APPROVAL_REASON,
+  RFQ_MUST_BE_SENT_REASON,
+  buildCloseRfqActionPayload,
+  buildOpenRfqActionPayload,
+  isRfqSendAction,
+  shouldRequestRfqAfterCompletedStep,
+  type RfqCloseMode,
+} from "@/lib/rfq-workflow";
 import { SearchableSelect } from "@/app/components/searchable-select";
 import { PageHeader } from "@/app/components/page-header";
 import {
@@ -148,6 +157,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const [extraActionCloseStatus, setExtraActionCloseStatus] = useState("");
   const [isClosingExtraAction, setIsClosingExtraAction] = useState(false);
   const [correctiveActionToClose, setCorrectiveActionToClose] = useState<WorkOrder | null>(null);
+  const [rfqCloseMode, setRfqCloseMode] =
+    useState<RfqCloseMode>("awaiting_approval");
   const [correctiveActionCloseStatus, setCorrectiveActionCloseStatus] = useState("");
   const [isClosingCorrectiveAction, setIsClosingCorrectiveAction] = useState(false);
 
@@ -313,6 +324,17 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
         )
       : null;
 
+  const previewWillRequestRfq = Boolean(
+    selectedOrder &&
+      completedStep &&
+      shouldRequestRfqAfterCompletedStep({
+        workOrderType: selectedOrder.work_order_type,
+        includedSteps: previewIncludedSteps,
+        completedStep,
+        rfqState: selectedOrder.rfq_state,
+      }),
+  );
+
   function aogPrioritySuffix(order: WorkOrder): string {
     return order.priority === "AOG" ? " - AOG" : "";
   }
@@ -372,6 +394,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
   function openCloseCorrectiveActionConfirmation(order: WorkOrder) {
     setCorrectiveActionToClose(order);
+    setRfqCloseMode("awaiting_approval");
     setCorrectiveActionCloseStatus("");
     setIsClosingCorrectiveAction(false);
   }
@@ -421,9 +444,17 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
+    const closePayload = isRfqSendAction(correctiveActionToClose)
+      ? buildCloseRfqActionPayload({
+          mode: rfqCloseMode,
+          timestamp: closedAt,
+          updateSource: "manual",
+        })
+      : getCorrectiveActionCompletionPayload(closedAt);
+
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
       correctiveActionToClose.work_order_id,
-      getCorrectiveActionCompletionPayload(closedAt),
+      closePayload,
       SHOP_UPDATE_WORK_ORDER_SELECT,
     );
 
@@ -500,6 +531,14 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
         completedStep,
         includedProcessStepsForSave,
       ) ?? completedStep;
+    const shouldOpenRfqAction =
+      !isBlockedUpdate &&
+      shouldRequestRfqAfterCompletedStep({
+        workOrderType: selectedOrder.work_order_type,
+        includedSteps: includedProcessStepsForSave,
+        completedStep,
+        rfqState: selectedOrder.rfq_state,
+      });
 
     const normalizedHoldReason = holdReason.trim();
     const normalizedRequiredNextAction = requiredNextAction.trim();
@@ -531,19 +570,29 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
     setSaveStatus("Saving...");
 
+    const actionPayload = shouldOpenRfqAction
+      ? buildOpenRfqActionPayload(nowIso)
+      : {
+          hold_reason: isBlockedUpdate ? normalizedHoldReason : null,
+          required_next_action:
+            isBlockedUpdate && normalizedRequiredNextAction
+              ? normalizedRequiredNextAction
+              : null,
+          action_owner:
+            isBlockedUpdate && normalizedActionOwner
+              ? normalizedActionOwner
+              : null,
+          action_status: isBlockedUpdate ? "Open" : null,
+          action_closed: false,
+          action_created_at:
+            isBlockedUpdate && normalizedRequiredNextAction ? nowIso : null,
+          action_closed_at: null,
+        };
+
     const payload = {
       current_process_step: nextProcessStep,
       assigned_person_team: assignedPersonTeam,
-      hold_reason: isBlockedUpdate ? normalizedHoldReason : null,
-      required_next_action:
-        isBlockedUpdate && normalizedRequiredNextAction
-          ? normalizedRequiredNextAction
-          : null,
-      action_owner: isBlockedUpdate && normalizedActionOwner ? normalizedActionOwner : null,
-      action_status: isBlockedUpdate ? "Open" : null,
-      action_closed: false,
-      action_created_at: isBlockedUpdate && normalizedRequiredNextAction ? nowIso : null,
-      action_closed_at: null,
+      ...actionPayload,
       last_manual_update: nowIso,
       ...(shouldAddRepairStep
         ? { included_process_steps: includedProcessStepsForSave }
@@ -913,6 +962,13 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                             </StatusNote>
                           )}
                         </div>
+                      )}
+
+                      {completedStep && previewWillRequestRfq && (
+                        <StatusNote color="red" large={isTablet}>
+                          After saving, this work order will be blocked:{" "}
+                          {RFQ_MUST_BE_SENT_REASON}.
+                        </StatusNote>
                       )}
 
                       {stepTouched &&
@@ -1298,9 +1354,39 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                 </div>
               </div>
 
-              <StatusNote color="green" large={isTablet}>
-                Completing this action removes the block and puts the work order back on open.
-              </StatusNote>
+              {isRfqSendAction(correctiveActionToClose) ? (
+                <>
+                  <StatusNote color="neutral" large={isTablet}>
+                    Choose whether this RFQ keeps the work order blocked as{" "}
+                    {RFQ_AWAITING_APPROVAL_REASON} or releases it back to open.
+                  </StatusNote>
+                  <div>
+                    <div style={eyebrowStyle}>After completion</div>
+                    <div style={{ display: "flex", gap: isTablet ? "14px" : "8px" }}>
+                      <button
+                        type="button"
+                        onClick={() => setRfqCloseMode("awaiting_approval")}
+                        style={choiceBtn(rfqCloseMode === "awaiting_approval")}
+                        disabled={isClosingCorrectiveAction}
+                      >
+                        Blocked
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRfqCloseMode("continue")}
+                        style={choiceBtn(rfqCloseMode === "continue")}
+                        disabled={isClosingCorrectiveAction}
+                      >
+                        Open
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <StatusNote color="green" large={isTablet}>
+                  Completing this action removes the block and puts the work order back on open.
+                </StatusNote>
+              )}
 
               {correctiveActionCloseStatus && (
                 <StatusNote

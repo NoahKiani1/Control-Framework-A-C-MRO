@@ -21,6 +21,7 @@ import {
   priorityTag,
   sortSharedPlanningOrders,
 } from "@/lib/work-order-rules";
+import { RFQ_AWAITING_APPROVAL_REASON } from "@/lib/rfq-workflow";
 import { getEngineerPhotoUrl } from "@/lib/engineers";
 import { getCurrentProfile, type AppRole } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -952,7 +953,7 @@ function ShopPageContent() {
     if (o.hold_reason) return o.hold_reason;
     const rfqState = normalizeRfqState(o.rfq_state);
     if (rfqState === "rfq rejected") return "RFQ Rejected";
-    if (rfqState === "rfq send") return "Waiting for RFQ Approval";
+    if (rfqState === "rfq send") return RFQ_AWAITING_APPROVAL_REASON;
     return "-";
   }
 
