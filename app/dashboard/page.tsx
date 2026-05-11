@@ -1069,6 +1069,57 @@ function DashboardPageContent() {
     );
   }
 
+  async function markRfqSent(order: WorkOrder) {
+    const confirmed = window.confirm(
+      `Mark RFQ as sent for ${order.work_order_id}?\n\n` +
+        `This will close the RFQ action and set the work order to "${RFQ_AWAITING_APPROVAL_REASON}".`,
+    );
+
+    if (!confirmed) return;
+
+    const closedAt = new Date().toISOString();
+    const archiveResult = await archiveCompletedCorrectiveAction(order, closedAt);
+
+    if (archiveResult.error) {
+      window.alert(`Error: ${archiveResult.error.message}`);
+      return;
+    }
+
+    const payload = buildCloseRfqActionPayload({
+      mode: "awaiting_approval",
+      timestamp: closedAt,
+      updateSource: "manual",
+    });
+
+    const { error } = await updateWorkOrder(order.work_order_id, payload);
+
+    if (error) {
+      window.alert(`Error: ${error.message}`);
+      return;
+    }
+
+    const blockResult = await syncWorkOrderDataBlockState({
+      ...order,
+      ...payload,
+    });
+    if (blockResult.error) {
+      console.error(
+        `Failed to sync Work Order Data block state for ${order.work_order_id}: ${blockResult.error.message}`,
+      );
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.work_order_id === order.work_order_id
+          ? {
+              ...o,
+              ...payload,
+            }
+          : o,
+      ),
+    );
+  }
+
   const headerStyle: React.CSSProperties = {
     padding: "12px 14px",
     textAlign: "left",
@@ -1127,7 +1178,89 @@ function DashboardPageContent() {
 
   const defaultColumnWidths = ["12%", "18%", "12%", "12%", "10%", "16%", "20%"];
   const staleColumnWidths = ["12%", "24%", "18%", "24%", "22%"];
-  const readyColumnWidths = ["16%", "36%", "28%", "20%"];
+  const readyColumnWidths = ["14%", "30%", "22%", "21%", "13%"];
+
+  function tableActionButtonStyle(tone: "green" | "red"): React.CSSProperties {
+    const color = tone === "green" ? COLORS.green : COLORS.red;
+    const shadow =
+      tone === "green"
+        ? "0 7px 16px rgba(5, 150, 105, 0.16)"
+        : "0 7px 16px rgba(220, 38, 38, 0.12)";
+
+    return {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: "32px",
+      padding: "7px 10px",
+      fontSize: "12px",
+      lineHeight: 1,
+      fontWeight: 750,
+      border: `1px solid ${color}`,
+      borderRadius: "999px",
+      cursor: "pointer",
+      backgroundColor: color,
+      color: "#ffffff",
+      whiteSpace: "nowrap",
+      boxShadow: shadow,
+      transition:
+        "transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease",
+    };
+  }
+
+  function setTableActionButtonHover(
+    element: HTMLButtonElement,
+    tone: "green" | "red",
+    active: boolean,
+  ) {
+    element.style.backgroundColor = active
+      ? tone === "green"
+        ? "#047857"
+        : "#b91c1c"
+      : tone === "green"
+        ? COLORS.green
+        : COLORS.red;
+    element.style.transform = active ? "translateY(-1px)" : "translateY(0)";
+    element.style.boxShadow = active
+      ? tone === "green"
+        ? "0 10px 20px rgba(5, 150, 105, 0.22)"
+        : "0 10px 20px rgba(220, 38, 38, 0.18)"
+      : tone === "green"
+        ? "0 7px 16px rgba(5, 150, 105, 0.16)"
+        : "0 7px 16px rgba(220, 38, 38, 0.12)";
+  }
+
+  function readyStatusBadgeStyle(isRfq: boolean): React.CSSProperties {
+    const color = isRfq ? COLORS.blue : COLORS.green;
+    const backgroundColor = isRfq ? COLORS.blueSoft : COLORS.greenSoft;
+    return {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "6px",
+      maxWidth: "100%",
+      padding: "5px 8px",
+      borderRadius: "999px",
+      border: `1px solid ${color}2f`,
+      backgroundColor,
+      color,
+      fontSize: "12px",
+      fontWeight: 750,
+      lineHeight: 1.2,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    };
+  }
+
+  function readyStatusDotStyle(isRfq: boolean): React.CSSProperties {
+    return {
+      width: "7px",
+      height: "7px",
+      borderRadius: "999px",
+      backgroundColor: isRfq ? COLORS.blue : COLORS.green,
+      flexShrink: 0,
+    };
+  }
 
   function renderColumnGroup(widths: string[]) {
     return (
@@ -1332,25 +1465,12 @@ function DashboardPageContent() {
                   {!isDone && (
                     <button
                       onClick={() => void closeAction(o)}
-                      style={{
-                        padding: "6px 12px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        border: `1px solid ${COLORS.border}`,
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        backgroundColor: COLORS.surface,
-                        color: COLORS.red,
-                        whiteSpace: "normal",
-                        transition: "all 0.15s ease",
-                      }}
+                      style={tableActionButtonStyle("red")}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = COLORS.redSoft;
-                        e.currentTarget.style.borderColor = COLORS.red;
+                        setTableActionButtonHover(e.currentTarget, "red", true);
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = COLORS.surface;
-                        e.currentTarget.style.borderColor = COLORS.border;
+                        setTableActionButtonHover(e.currentTarget, "red", false);
                       }}
                     >
                       Close action
@@ -1386,33 +1506,62 @@ function DashboardPageContent() {
             <th style={headerStyle}>Customer</th>
             <th style={headerStyle}>Type</th>
             <th style={headerStyle}>Status</th>
+            <th style={headerStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {list.map((o, idx) => (
-            <tr
-              key={o.work_order_id}
-              style={{
-                backgroundColor: idx % 2 === 0 ? COLORS.surface : COLORS.surfaceSubtle,
-              }}
-            >
-              <td style={{ ...cellStyle, fontWeight: 600 }}>
-                {renderWorkOrderIdentifier(o)}
-              </td>
-              <td style={cellStyle}>{o.customer || "–"}</td>
-              <td style={cellStyle}>{o.work_order_type || "–"}</td>
-              <td style={cellStyle}>
-                {o.current_process_step === READY_TO_CLOSE_STEP
-                  ? "Ready to close"
-                  : "Ready to send RFQ"}
-              </td>
-            </tr>
-          ))}
+          {list.map((o, idx) => {
+            const isRfq = hasActiveRfqSendAction(o);
+            const statusLabel =
+              o.current_process_step === READY_TO_CLOSE_STEP
+                ? "Ready to close"
+                : "Ready to send RFQ";
+
+            return (
+              <tr
+                key={o.work_order_id}
+                style={{
+                  backgroundColor:
+                    idx % 2 === 0 ? COLORS.surface : COLORS.surfaceSubtle,
+                }}
+              >
+                <td style={{ ...cellStyle, fontWeight: 600 }}>
+                  {renderWorkOrderIdentifier(o)}
+                </td>
+                <td style={cellStyle}>{o.customer || "–"}</td>
+                <td style={cellStyle}>{o.work_order_type || "–"}</td>
+                <td style={cellStyle}>
+                  <span style={readyStatusBadgeStyle(isRfq)}>
+                    <span style={readyStatusDotStyle(isRfq)} />
+                    {statusLabel}
+                  </span>
+                </td>
+                <td style={{ ...cellStyle, textAlign: "right" }}>
+                  {isRfq ? (
+                    <button
+                      onClick={() => void markRfqSent(o)}
+                      style={tableActionButtonStyle("green")}
+                      onMouseEnter={(e) => {
+                        setTableActionButtonHover(e.currentTarget, "green", true);
+                      }}
+                      onMouseLeave={(e) => {
+                        setTableActionButtonHover(e.currentTarget, "green", false);
+                      }}
+                    >
+                      RFQ is sent
+                    </button>
+                  ) : (
+                    <span style={{ color: COLORS.textMuted }}>–</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
 
           {list.length === 0 && (
             <tr>
               <td
-                colSpan={4}
+                colSpan={5}
                 style={{ ...cellStyle, textAlign: "center", color: COLORS.textMuted, padding: "32px" }}
               >
                 No orders ready to close or RFQs ready to send
