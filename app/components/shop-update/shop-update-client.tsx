@@ -42,10 +42,10 @@ import {
   completeExtraAction,
 } from "@/lib/completed-tasks";
 import {
-  RFQ_AWAITING_APPROVAL_REASON,
   RFQ_MUST_BE_SENT_REASON,
   buildCloseRfqActionPayload,
   buildOpenRfqActionPayload,
+  hasActiveRfqSendAction,
   isRfqSendAction,
   shouldRequestRfqAfterCompletedStep,
   type RfqCloseMode,
@@ -282,6 +282,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const correctiveActions = orders
       .filter((order) => {
         if (!hasActiveCorrectiveAction(order)) return false;
+        if (hasActiveRfqSendAction(order)) return true;
         const owner = getCorrectiveActionContext(order).owner;
         return owner ? engineerNames.has(owner) : false;
       })
@@ -1106,12 +1107,16 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
             <div style={{ display: "grid", gap: isTablet ? "14px" : "10px" }}>
               {taskItems.map((item) => {
                 const isCorrectiveAction = item.kind === "corrective-action";
+                const isRfqAction =
+                  isCorrectiveAction && hasActiveRfqSendAction(item.order);
                 const description = isCorrectiveAction
                   ? getCorrectiveActionContext(item.order).action || "-"
                   : item.action.description;
-                const responsible = isCorrectiveAction
-                  ? normalizeAssignedPersonTeam(getCorrectiveActionContext(item.order).owner)
-                  : normalizeAssignedPersonTeam(item.action.responsible_person_team);
+                const responsible = isRfqAction
+                  ? "-"
+                  : isCorrectiveAction
+                    ? normalizeAssignedPersonTeam(getCorrectiveActionContext(item.order).owner)
+                    : normalizeAssignedPersonTeam(item.action.responsible_person_team);
                 const dueDateLabel = isCorrectiveAction ? "-" : formatDate(item.action.due_date);
 
                 return (
@@ -1344,7 +1349,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
               <div>
                 <div style={eyebrowStyle}>Responsible</div>
                 <div style={{ fontSize: isTablet ? "17px" : "var(--fs-body)", color: COLORS.text }}>
-                  {normalizeAssignedPersonTeam(getCorrectiveActionContext(correctiveActionToClose).owner)}
+                  {isRfqSendAction(correctiveActionToClose)
+                    ? "-"
+                    : normalizeAssignedPersonTeam(
+                        getCorrectiveActionContext(correctiveActionToClose).owner,
+                      )}
                 </div>
               </div>
               <div>
@@ -1357,8 +1366,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
               {isRfqSendAction(correctiveActionToClose) ? (
                 <>
                   <StatusNote color="neutral" large={isTablet}>
-                    Choose whether this RFQ keeps the work order blocked as{" "}
-                    {RFQ_AWAITING_APPROVAL_REASON} or releases it back to open.
+                    Before completing this action, confirm with Rens or Alissa
+                    whether the shop may continue this work order.
                   </StatusNote>
                   <div>
                     <div style={eyebrowStyle}>After completion</div>
@@ -1369,7 +1378,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                         style={choiceBtn(rfqCloseMode === "awaiting_approval")}
                         disabled={isClosingCorrectiveAction}
                       >
-                        Blocked
+                        No, wait for RFQ payment
                       </button>
                       <button
                         type="button"
@@ -1377,7 +1386,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                         style={choiceBtn(rfqCloseMode === "continue")}
                         disabled={isClosingCorrectiveAction}
                       >
-                        Open
+                        Yes, continue
                       </button>
                     </div>
                   </div>

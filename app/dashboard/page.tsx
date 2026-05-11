@@ -156,6 +156,11 @@ type DropboxImportSummary = {
 
 type DropboxStatusTone = "info" | "success" | "error";
 
+type DashboardActionConfirmation = {
+  kind: "close_action" | "rfq_sent";
+  order: WorkOrder;
+};
+
 // Refined palette — modern, clean, professional
 const COLORS = {
   // Surfaces
@@ -568,6 +573,12 @@ function DashboardPageContent() {
   const [dropboxCandidates, setDropboxCandidates] = useState<DropboxCandidate[]>(
     [],
   );
+  const [actionConfirmation, setActionConfirmation] =
+    useState<DashboardActionConfirmation | null>(null);
+  const [rfqCloseMode, setRfqCloseMode] =
+    useState<RfqCloseMode>("awaiting_approval");
+  const [actionConfirmationStatus, setActionConfirmationStatus] = useState("");
+  const [isCompletingAction, setIsCompletingAction] = useState(false);
 
   const loadDashboardData = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -976,74 +987,62 @@ function DashboardPageContent() {
 
   const health = getHealthStatus();
 
-  function chooseRfqCloseMode(workOrderId: string): RfqCloseMode | null {
-    const choice = window.prompt(
-      `Close RFQ action for ${workOrderId}?\n\n` +
-        `Type B to keep it blocked as "${RFQ_AWAITING_APPROVAL_REASON}".\n` +
-        "Type O to put it back on open.",
-      "B",
-    );
-
-    if (choice === null) return null;
-    const normalized = choice.trim().toLowerCase();
-    if (normalized === "b" || normalized.startsWith("block")) {
-      return "awaiting_approval";
-    }
-    if (normalized === "o" || normalized.startsWith("open")) {
-      return "continue";
-    }
-
-    window.alert("Action was not closed. Please type B or O.");
-    return null;
+  function openActionConfirmation(
+    order: WorkOrder,
+    kind: DashboardActionConfirmation["kind"],
+  ) {
+    setActionConfirmation({ kind, order });
+    setRfqCloseMode("awaiting_approval");
+    setActionConfirmationStatus("");
+    setIsCompletingAction(false);
   }
 
-  async function closeAction(order: WorkOrder) {
-    const isRfqAction = isRfqSendAction(order);
-    const rfqCloseMode = isRfqAction
-      ? chooseRfqCloseMode(order.work_order_id)
-      : null;
+  function closeActionConfirmation() {
+    if (isCompletingAction) return;
+    setActionConfirmation(null);
+    setActionConfirmationStatus("");
+  }
 
-    if (isRfqAction && !rfqCloseMode) return;
+  async function completeActionConfirmation() {
+    if (!actionConfirmation) return;
 
-    const confirmed =
-      isRfqAction ||
-      window.confirm(
-        `Close action for ${order.work_order_id}?\n\n` +
-          `This will clear the hold reason and unblock the work order.\n` +
-          `This action cannot be undone.`,
-      );
+    setIsCompletingAction(true);
+    setActionConfirmationStatus("Saving...");
 
-    if (!confirmed) return;
+    const { order, kind } = actionConfirmation;
 
     const closedAt = new Date().toISOString();
     const archiveResult = await archiveCompletedCorrectiveAction(order, closedAt);
 
     if (archiveResult.error) {
-      window.alert(`Error: ${archiveResult.error.message}`);
+      setActionConfirmationStatus(`Error: ${archiveResult.error.message}`);
+      setIsCompletingAction(false);
       return;
     }
 
-    const payload = rfqCloseMode
-      ? buildCloseRfqActionPayload({
-          mode: rfqCloseMode,
-          timestamp: closedAt,
-          updateSource: "manual",
-        })
-      : {
-          action_status: "Done",
-          action_closed: true,
-          action_closed_at: closedAt,
-          hold_reason: null,
-          required_next_action: null,
-          action_owner: null,
-          action_created_at: null,
-          last_manual_update: closedAt,
-        };
+    const payload =
+      kind === "rfq_sent" || isRfqSendAction(order)
+        ? buildCloseRfqActionPayload({
+            mode: rfqCloseMode,
+            timestamp: closedAt,
+            updateSource: "manual",
+          })
+        : {
+            action_status: "Done",
+            action_closed: true,
+            action_closed_at: closedAt,
+            hold_reason: null,
+            required_next_action: null,
+            action_owner: null,
+            action_created_at: null,
+            last_manual_update: closedAt,
+          };
 
     const { error } = await updateWorkOrder(order.work_order_id, payload);
 
     if (error) {
-      window.alert(`Error: ${error.message}`);
+      setActionConfirmationStatus(`Error: ${error.message}`);
+      setIsCompletingAction(false);
       return;
     }
 
@@ -1067,57 +1066,10 @@ function DashboardPageContent() {
           : o,
       ),
     );
-  }
 
-  async function markRfqSent(order: WorkOrder) {
-    const confirmed = window.confirm(
-      `Mark RFQ as sent for ${order.work_order_id}?\n\n` +
-        `This will close the RFQ action and set the work order to "${RFQ_AWAITING_APPROVAL_REASON}".`,
-    );
-
-    if (!confirmed) return;
-
-    const closedAt = new Date().toISOString();
-    const archiveResult = await archiveCompletedCorrectiveAction(order, closedAt);
-
-    if (archiveResult.error) {
-      window.alert(`Error: ${archiveResult.error.message}`);
-      return;
-    }
-
-    const payload = buildCloseRfqActionPayload({
-      mode: "awaiting_approval",
-      timestamp: closedAt,
-      updateSource: "manual",
-    });
-
-    const { error } = await updateWorkOrder(order.work_order_id, payload);
-
-    if (error) {
-      window.alert(`Error: ${error.message}`);
-      return;
-    }
-
-    const blockResult = await syncWorkOrderDataBlockState({
-      ...order,
-      ...payload,
-    });
-    if (blockResult.error) {
-      console.error(
-        `Failed to sync Work Order Data block state for ${order.work_order_id}: ${blockResult.error.message}`,
-      );
-    }
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.work_order_id === order.work_order_id
-          ? {
-              ...o,
-              ...payload,
-            }
-          : o,
-      ),
-    );
+    setActionConfirmation(null);
+    setActionConfirmationStatus("");
+    setIsCompletingAction(false);
   }
 
   const headerStyle: React.CSSProperties = {
@@ -1131,6 +1083,15 @@ function DashboardPageContent() {
     borderBottom: `1px solid ${COLORS.border}`,
     backgroundColor: COLORS.surfaceSubtle,
     whiteSpace: "normal",
+  };
+
+  const modalFieldLabelStyle: React.CSSProperties = {
+    color: COLORS.textMuted,
+    fontSize: "var(--fs-xs)",
+    fontWeight: 800,
+    letterSpacing: "0.08em",
+    marginBottom: "6px",
+    textTransform: "uppercase",
   };
 
   const cellStyle: React.CSSProperties = {
@@ -1464,7 +1425,7 @@ function DashboardPageContent() {
                 <td style={cellStyle}>
                   {!isDone && (
                     <button
-                      onClick={() => void closeAction(o)}
+                      onClick={() => openActionConfirmation(o, "close_action")}
                       style={tableActionButtonStyle("red")}
                       onMouseEnter={(e) => {
                         setTableActionButtonHover(e.currentTarget, "red", true);
@@ -1539,7 +1500,7 @@ function DashboardPageContent() {
                 <td style={{ ...cellStyle, textAlign: "right" }}>
                   {isRfq ? (
                     <button
-                      onClick={() => void markRfqSent(o)}
+                      onClick={() => openActionConfirmation(o, "rfq_sent")}
                       style={tableActionButtonStyle("green")}
                       onMouseEnter={(e) => {
                         setTableActionButtonHover(e.currentTarget, "green", true);
@@ -2394,6 +2355,201 @@ function DashboardPageContent() {
           </div>
         </section>
       </div>
+
+      {actionConfirmation && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(31, 41, 55, 0.28)",
+            display: "grid",
+            placeItems: "center",
+            padding: "24px",
+            zIndex: 70,
+          }}
+          onMouseDown={closeActionConfirmation}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "640px",
+              backgroundColor: "#fcfaf6",
+              border: `1px solid ${COLORS.borderStrong}`,
+              borderRadius: "18px",
+              boxShadow: "0 20px 50px rgba(31, 41, 55, 0.18)",
+              padding: "18px",
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div style={{ marginBottom: "14px" }}>
+              <div
+                style={{
+                  color: COLORS.textMuted,
+                  fontSize: "var(--fs-xs)",
+                  fontWeight: 800,
+                  letterSpacing: "0.08em",
+                  marginBottom: "6px",
+                  textTransform: "uppercase",
+                }}
+              >
+                Confirm action
+              </div>
+              <h2
+                style={{
+                  margin: 0,
+                  color: COLORS.heading,
+                  fontSize: "var(--fs-title)",
+                  fontWeight: 750,
+                  letterSpacing: "-0.02em",
+                  lineHeight: 1.15,
+                }}
+              >
+                {actionConfirmation.kind === "rfq_sent"
+                  ? `RFQ is sent for ${actionConfirmation.order.work_order_id}?`
+                  : `Complete action for ${actionConfirmation.order.work_order_id}?`}
+              </h2>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: "12px",
+                padding: "16px",
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: "14px",
+                backgroundColor: COLORS.surface,
+              }}
+            >
+              <div>
+                <div style={modalFieldLabelStyle}>Hold reason</div>
+                <div style={{ color: COLORS.text, fontSize: "15px" }}>
+                  {actionConfirmation.order.hold_reason || "–"}
+                </div>
+              </div>
+
+              <div>
+                <div style={modalFieldLabelStyle}>Action</div>
+                <div style={{ color: COLORS.text, fontSize: "15px" }}>
+                  {actionConfirmation.order.required_next_action || "–"}
+                </div>
+              </div>
+
+              <div>
+                <div style={modalFieldLabelStyle}>After completion</div>
+                {actionConfirmation.kind === "rfq_sent" ||
+                isRfqSendAction(actionConfirmation.order) ? (
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    {[
+                      ["awaiting_approval", `Blocked: ${RFQ_AWAITING_APPROVAL_REASON}`],
+                      ["continue", "Open"],
+                    ].map(([mode, label]) => {
+                      const selected = rfqCloseMode === mode;
+                      return (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setRfqCloseMode(mode as RfqCloseMode)}
+                          style={{
+                            padding: "8px 12px",
+                            borderRadius: "10px",
+                            border: `1px solid ${
+                              selected ? COLORS.blue : COLORS.borderStrong
+                            }`,
+                            backgroundColor: selected
+                              ? COLORS.blueSoft
+                              : COLORS.surface,
+                            color: selected ? COLORS.blue : COLORS.text,
+                            cursor: "pointer",
+                            fontSize: "var(--fs-sm)",
+                            fontWeight: 750,
+                          }}
+                          disabled={isCompletingAction}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span style={readyStatusBadgeStyle(false)}>
+                    <span style={readyStatusDotStyle(false)} />
+                    Open
+                  </span>
+                )}
+              </div>
+
+              {actionConfirmationStatus && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    border: `1px solid ${
+                      actionConfirmationStatus.startsWith("Error:")
+                        ? COLORS.red
+                        : COLORS.border
+                    }`,
+                    backgroundColor: actionConfirmationStatus.startsWith("Error:")
+                      ? COLORS.redSoft
+                      : COLORS.surfaceSubtle,
+                    color: actionConfirmationStatus.startsWith("Error:")
+                      ? COLORS.red
+                      : COLORS.textSoft,
+                    fontSize: "13px",
+                    fontWeight: 700,
+                  }}
+                >
+                  {actionConfirmationStatus}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "10px",
+                marginTop: "14px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={closeActionConfirmation}
+                style={{
+                  padding: "9px 14px",
+                  borderRadius: "10px",
+                  border: `1px solid ${COLORS.borderStrong}`,
+                  backgroundColor: COLORS.surface,
+                  color: COLORS.text,
+                  cursor: "pointer",
+                  fontSize: "var(--fs-body)",
+                  fontWeight: 750,
+                }}
+                disabled={isCompletingAction}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void completeActionConfirmation()}
+                style={{
+                  padding: "9px 16px",
+                  borderRadius: "10px",
+                  border: `1px solid ${COLORS.blue}`,
+                  backgroundColor: COLORS.blue,
+                  color: "#ffffff",
+                  cursor: "pointer",
+                  fontSize: "var(--fs-body)",
+                  fontWeight: 750,
+                  boxShadow: "0 8px 20px rgba(37, 85, 199, 0.18)",
+                }}
+                disabled={isCompletingAction}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
