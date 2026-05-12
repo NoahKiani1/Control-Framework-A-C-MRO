@@ -967,7 +967,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                       )}
 
                       {completedStep && previewWillRequestRfq && (
-                        <StatusNote color="red" large={isTablet}>
+                        <StatusNote
+                          color="red"
+                          large={isTablet}
+                          style={{ marginTop: isTablet ? "14px" : "8px" }}
+                        >
                           After saving, this work order will be blocked:{" "}
                           {RFQ_MUST_BE_SENT_REASON}.
                         </StatusNote>
@@ -1537,10 +1541,12 @@ function StatusNote({
   children,
   color,
   large = false,
+  style,
 }: {
   children: React.ReactNode;
   color: "blue" | "green" | "red" | "neutral";
   large?: boolean;
+  style?: CSSProperties;
 }) {
   const palette = {
     blue: {
@@ -1575,6 +1581,7 @@ function StatusNote({
         fontWeight: 700,
         lineHeight: 1.45,
         ...palette,
+        ...style,
       }}
     >
       {children}

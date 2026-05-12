@@ -2127,7 +2127,6 @@ function PlanningPageContent() {
             </>
           }
         />
-
         {activeTab === "list" && (
         <>
         <section style={{ ...sectionCardStyle, marginBottom: "var(--gap-section)" }}>
