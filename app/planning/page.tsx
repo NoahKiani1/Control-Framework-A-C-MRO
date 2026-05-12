@@ -459,6 +459,49 @@ const planningCardFooterStyle: React.CSSProperties = {
   fontSize: "var(--fs-sm)",
 };
 
+const blockedPlanningCardStyle: React.CSSProperties = {
+  ...planningCardStyle,
+  gridTemplateColumns: "32px minmax(0, 1fr)",
+  alignItems: "start",
+  cursor: "default",
+  border: `1px solid ${ui.redBorder}`,
+  backgroundColor: "#fffdfb",
+  boxShadow:
+    "0 1px 2px rgba(180, 35, 24, 0.04), 0 4px 14px rgba(180, 35, 24, 0.05)",
+};
+
+const blockedPlanningAlertStyle: React.CSSProperties = {
+  ...planningCardHandleStyle,
+  color: ui.red,
+  backgroundColor: ui.redSoft,
+  border: `1px solid ${ui.redBorder}`,
+  cursor: "default",
+  fontSize: "15px",
+  fontWeight: 800,
+};
+
+const blockedPlanningHoldPanelStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "4px",
+  marginTop: "8px",
+  padding: "9px 11px",
+  borderRadius: "10px",
+  border: `1px solid ${ui.redBorder}`,
+  backgroundColor: "#fff9f7",
+  minWidth: 0,
+};
+
+const blockedPlanningActionButtonStyle: React.CSSProperties = {
+  ...inlineActionButtonStyle,
+  width: "auto",
+  maxWidth: "100%",
+  marginTop: "6px",
+  padding: "6px 12px",
+  whiteSpace: "normal",
+  textAlign: "center",
+  lineHeight: 1.25,
+};
+
 const extraActionsDescriptionColumnStyle: React.CSSProperties = {
   width: "68%",
 };
@@ -600,6 +643,121 @@ function LastUpdateCell({ value }: { value: string | null }) {
   const stale = isStale(value);
 
   return <span style={stale ? { color: ui.red, fontWeight: 600 } : undefined}>{formatDate(value)}</span>;
+}
+
+function BlockedWorkOrderCard({
+  order,
+  onCompleteCorrectiveAction,
+}: {
+  order: WorkOrder;
+  onCompleteCorrectiveAction: (order: WorkOrder) => void;
+}) {
+  const lastUpdate = latestUpdate(
+    order.last_system_update,
+    order.last_manual_update,
+  );
+  const reason = blockReason(order, {
+    rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON,
+  });
+  const hasCorrectiveAction = hasActiveCorrectiveAction(order);
+  const correctiveAction = getCorrectiveActionContext(order);
+
+  return (
+    <article
+      className="planning-mobile-card planning-blocked-card"
+      style={blockedPlanningCardStyle}
+    >
+      <span aria-label={`${order.work_order_id} is blocked`} style={blockedPlanningAlertStyle}>
+        !
+      </span>
+
+      <div style={{ display: "grid", gap: "2px", minWidth: 0 }}>
+        <div className="pmc-mc-row1">
+          <span className="pmc-mc-wo">{order.work_order_id}</span>
+          {priorityTag(order.priority) === "AOG" && (
+            <span style={aogBadgeStyle}>AOG</span>
+          )}
+          {priorityTag(order.priority) === "PRIO" && (
+            <span style={prioBadgeStyle}>PRIO</span>
+          )}
+          <span className="pmc-mc-due">
+            <DueDateCell value={order.due_date} />
+          </span>
+        </div>
+
+        <div className="pmc-mc-customer">{order.customer || "-"}</div>
+
+        <div className="pmc-mc-part">
+          {order.part_number || "-"}
+          {order.work_order_type ? ` · ${order.work_order_type}` : ""}
+        </div>
+
+        <div className="pmc-mc-step">
+          {order.current_process_step || "-"}
+          <span className="pmc-mc-step-sep">·</span>
+          <span className="pmc-mc-step-person">
+            {normalizeAssignedPersonTeam(order.assigned_person_team)}
+          </span>
+        </div>
+
+        <div className="pmc-mc-updated">
+          Updated <LastUpdateCell value={lastUpdate} />
+        </div>
+
+        <div style={blockedPlanningHoldPanelStyle}>
+          <div
+            style={{
+              color: ui.red,
+              fontSize: "var(--fs-md)",
+              fontWeight: 750,
+              lineHeight: 1.35,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {reason}
+          </div>
+
+          {correctiveAction.action && (
+            <div
+              style={{
+                color: ui.muted,
+                fontSize: "var(--fs-sm)",
+                fontWeight: 600,
+                lineHeight: 1.4,
+                overflowWrap: "anywhere",
+              }}
+            >
+              Required action: {correctiveAction.action}
+            </div>
+          )}
+
+          {hasCorrectiveAction && correctiveAction.owner && (
+            <div
+              style={{
+                color: ui.muted,
+                fontSize: "var(--fs-sm)",
+                fontWeight: 600,
+                lineHeight: 1.4,
+                overflowWrap: "anywhere",
+              }}
+            >
+              Owner: {correctiveAction.owner}
+            </div>
+          )}
+
+          {hasCorrectiveAction && (
+            <button
+              type="button"
+              onClick={() => onCompleteCorrectiveAction(order)}
+              style={blockedPlanningActionButtonStyle}
+            >
+              Mark completed
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  );
 }
 
 type TimelineSegment = {
@@ -1098,6 +1256,7 @@ function PlanningPageContent() {
   const [isCompletingAction, setIsCompletingAction] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<PlanningTab>("list");
+  const [isMobilePlanningLayout, setIsMobilePlanningLayout] = useState(false);
   const [extraActions, setExtraActions] = useState<ExtraAction[]>([]);
   const [extraActionToClose, setExtraActionToClose] = useState<ExtraAction | null>(null);
   const [extraActionCloseStatus, setExtraActionCloseStatus] = useState("");
@@ -1248,6 +1407,20 @@ function PlanningPageContent() {
       if (dragAutoScrollFrameRef.current !== null) {
         window.cancelAnimationFrame(dragAutoScrollFrameRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const updateMobileLayout = () => {
+      setIsMobilePlanningLayout(mediaQuery.matches);
+    };
+
+    updateMobileLayout();
+    mediaQuery.addEventListener("change", updateMobileLayout);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateMobileLayout);
     };
   }, []);
 
@@ -2211,7 +2384,21 @@ function PlanningPageContent() {
           )}
 
           {blockedOrders.length > 0 ? (
-            <div style={blockedTableWrapStyle}>
+            isMobilePlanningLayout ? (
+            <div
+              className="planning-blocked-card-list"
+              style={{ display: "grid", gap: "10px" }}
+            >
+              {blockedOrders.map((o) => (
+                <BlockedWorkOrderCard
+                  key={o.work_order_id}
+                  order={o}
+                  onCompleteCorrectiveAction={openCompleteActionConfirmation}
+                />
+              ))}
+            </div>
+            ) : (
+            <div className="planning-blocked-table-wrap" style={blockedTableWrapStyle}>
               <table style={{ ...tableBaseStyle, minWidth: "1120px" }}>
                 <thead>
                   <tr>
@@ -2335,6 +2522,7 @@ function PlanningPageContent() {
                 </tbody>
               </table>
             </div>
+            )
           ) : (
             <div
               style={{
@@ -2828,7 +3016,7 @@ function PlanningPageContent() {
                       }}
                       disabled={isCompletingAction}
                     >
-                      Open
+                      Open: Engineers can continue working
                     </button>
                   </div>
                 </div>

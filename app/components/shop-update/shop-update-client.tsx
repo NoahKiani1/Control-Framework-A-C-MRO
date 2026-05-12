@@ -64,6 +64,7 @@ type WorkOrder = {
   customer: string | null;
   part_number: string | null;
   work_order_type: string | null;
+  due_date: string | null;
   current_process_step: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
@@ -80,7 +81,7 @@ type WorkOrder = {
 };
 
 const SHOP_UPDATE_WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, priority, assigned_person_team, included_process_steps, data_tracking_enabled";
+  "work_order_id, customer, part_number, work_order_type, due_date, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, priority, assigned_person_team, included_process_steps, data_tracking_enabled";
 
 type CorrectiveActionTaskItem = {
   kind: "corrective-action";
@@ -1109,15 +1110,30 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                 const isCorrectiveAction = item.kind === "corrective-action";
                 const isRfqAction =
                   isCorrectiveAction && hasActiveRfqSendAction(item.order);
+                const workOrderLabel = isCorrectiveAction
+                  ? item.order.work_order_id
+                  : "-";
+                const workOrderMeta = isCorrectiveAction
+                  ? [item.order.customer, item.order.part_number ? `PN: ${item.order.part_number}` : null]
+                      .filter(Boolean)
+                      .join(" - ")
+                  : "";
                 const description = isCorrectiveAction
                   ? getCorrectiveActionContext(item.order).action || "-"
                   : item.action.description;
+                const descriptionMeta = isCorrectiveAction
+                  ? [item.order.work_order_type, item.order.current_process_step]
+                      .filter(Boolean)
+                      .join(" - ")
+                  : "";
                 const responsible = isRfqAction
                   ? "-"
                   : isCorrectiveAction
                     ? normalizeAssignedPersonTeam(getCorrectiveActionContext(item.order).owner)
                     : normalizeAssignedPersonTeam(item.action.responsible_person_team);
-                const dueDateLabel = isCorrectiveAction ? "-" : formatDate(item.action.due_date);
+                const dueDateLabel = isCorrectiveAction
+                  ? formatDate(item.order.due_date)
+                  : formatDate(item.action.due_date);
 
                 return (
                 <div
@@ -1128,7 +1144,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                   }
                   style={{
                     display: "grid",
-                    gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 0.8fr) auto",
+                    gridTemplateColumns: isTablet
+                      ? "repeat(2, minmax(0, 1fr))"
+                      : "minmax(140px, 0.95fr) minmax(0, 1.6fr) minmax(110px, 0.85fr) minmax(90px, 0.7fr) auto",
                     gap: isTablet ? "14px" : "10px",
                     alignItems: "center",
                     padding: isTablet ? "18px" : "10px 12px",
@@ -1138,10 +1156,26 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
+                    <div style={eyebrowStyle}>Work order</div>
+                    <div style={{ fontSize: isTablet ? "18px" : "var(--fs-md)", fontWeight: 700, color: COLORS.text }}>
+                      {workOrderLabel}
+                    </div>
+                    {workOrderMeta && (
+                      <div style={{ marginTop: "2px", fontSize: isTablet ? "14px" : "var(--fs-sm)", color: COLORS.textSoft, lineHeight: 1.35 }}>
+                        {workOrderMeta}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={eyebrowStyle}>Description</div>
                     <div style={{ fontSize: isTablet ? "18px" : "var(--fs-md)", fontWeight: 600, color: COLORS.text }}>
                       {description}
                     </div>
+                    {descriptionMeta && (
+                      <div style={{ marginTop: "2px", fontSize: isTablet ? "14px" : "var(--fs-sm)", color: COLORS.textSoft, lineHeight: 1.35 }}>
+                        {descriptionMeta}
+                      </div>
+                    )}
                   </div>
                   <div style={{ minWidth: 0 }}>
                     <div style={eyebrowStyle}>Responsible</div>
@@ -1162,7 +1196,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                         ? openCloseCorrectiveActionConfirmation(item.order)
                         : openCloseExtraActionConfirmation(item.action)
                     }
-                    style={{ ...primaryBtn, width: isTablet ? "100%" : undefined }}
+                    style={{
+                      ...primaryBtn,
+                      width: isTablet ? "100%" : undefined,
+                      ...(isTablet ? { gridColumn: "1 / -1" } : {}),
+                    }}
                   >
                     Complete
                   </button>
@@ -1359,7 +1397,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
               <div>
                 <div style={eyebrowStyle}>Due date</div>
                 <div style={{ fontSize: isTablet ? "17px" : "var(--fs-body)", color: COLORS.text }}>
-                  -
+                  {formatDate(correctiveActionToClose.due_date)}
                 </div>
               </div>
 

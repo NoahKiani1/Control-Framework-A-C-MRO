@@ -2441,7 +2441,7 @@ function DashboardPageContent() {
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     {[
                       ["awaiting_approval", `Blocked: ${RFQ_AWAITING_APPROVAL_REASON}`],
-                      ["continue", "Open"],
+                      ["continue", "Open: Engineers can continue working"],
                     ].map(([mode, label]) => {
                       const selected = rfqCloseMode === mode;
                       return (

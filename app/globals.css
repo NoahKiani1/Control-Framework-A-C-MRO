@@ -224,6 +224,14 @@ td {
   display: none;
 }
 
+.planning-blocked-card-list {
+  display: none;
+}
+
+.planning-blocked-table-wrap {
+  display: block;
+}
+
 .dashboard-meta-label {
   font-size: var(--fs-meta);
   font-weight: 600;
@@ -391,6 +399,14 @@ td {
     row-gap: 2px;
     min-width: 0;
     align-content: start;
+  }
+
+  .planning-blocked-card-list {
+    display: grid !important;
+  }
+
+  .planning-blocked-table-wrap {
+    display: none !important;
   }
 
   .pmc-mc-row1 {
