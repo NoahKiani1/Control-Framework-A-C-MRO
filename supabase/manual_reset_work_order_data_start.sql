@@ -11,7 +11,7 @@
 
 begin;
 
-delete from public.work_order_events;
+delete from public.work_order_tracking;
 delete from public.closed_work_order_reports;
 delete from public.yearly_report_exports;
 delete from public.pending_acmp_work_orders;

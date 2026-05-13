@@ -24,22 +24,6 @@ const ACMP_CLOSE_FALLBACK_HOUR = 16;
 const ACMP_CLOSE_FALLBACK_MINUTE = 30;
 const ACMP_CLOSE_TIME_ZONE = "Europe/Amsterdam";
 
-export type WorkOrderEventPayload = {
-  work_order_id: string;
-  event_type: "activated" | "step_completed" | "blocked_started" | "blocked_ended";
-  occurred_at?: string;
-  previous_step?: string | null;
-  completed_step?: string | null;
-  next_step?: string | null;
-  expected_step?: string | null;
-  is_in_sequence?: boolean;
-  work_order_type?: string | null;
-  part_number?: string | null;
-  customer?: string | null;
-  included_process_steps?: string[] | null;
-  block_reason?: string | null;
-};
-
 export type TrackedWorkOrder = {
   work_order_id: string;
   customer: string | null;
@@ -82,23 +66,6 @@ export type ClosedWorkOrderReport = {
   created_at: string;
 };
 
-export type WorkOrderEvent = {
-  id: number;
-  work_order_id: string;
-  event_type: string;
-  occurred_at: string;
-  previous_step: string | null;
-  completed_step: string | null;
-  next_step: string | null;
-  expected_step: string | null;
-  is_in_sequence: boolean;
-  work_order_type: string | null;
-  part_number: string | null;
-  customer: string | null;
-  included_process_steps: string[] | null;
-  block_reason: string | null;
-};
-
 export type WorkOrderDataFilters = {
   year?: number;
   workOrderType?: string;
@@ -117,39 +84,39 @@ type HelperResult<T = null> = {
   error: { message: string } | null;
 };
 
-type WorkOrderEventInsert = WorkOrderEventPayload & {
+export type CompletedTrackedStep = {
+  step: string;
+  occurred_at: string;
+  previous_step: string | null;
+  next_step: string | null;
+  expected_step: string | null;
   is_in_sequence: boolean;
 };
 
-function isMissingOptionalEventColumnError(error: {
-  code?: string;
-  message?: string;
-}): boolean {
-  return (
-    error.code === "PGRST204" &&
-    (Boolean(error.message?.includes("included_process_steps")) ||
-      Boolean(error.message?.includes("block_reason")))
-  );
-}
+export type TrackedBlockPeriod = {
+  started_at: string;
+  ended_at: string;
+  step: string | null;
+  reason: string | null;
+  seconds: number;
+};
 
-function withoutOptionalEventColumns(
-  payload: WorkOrderEventInsert,
-): Omit<WorkOrderEventInsert, "included_process_steps" | "block_reason"> {
-  const fallbackPayload: Partial<WorkOrderEventInsert> = { ...payload };
-  delete fallbackPayload.included_process_steps;
-  delete fallbackPayload.block_reason;
-  return fallbackPayload as Omit<
-    WorkOrderEventInsert,
-    "included_process_steps" | "block_reason"
-  >;
-}
-
-function yearRange(year: number): { start: string; end: string } {
-  return {
-    start: `${year}-01-01T00:00:00.000Z`,
-    end: `${year + 1}-01-01T00:00:00.000Z`,
-  };
-}
+export type WorkOrderTracking = {
+  work_order_id: string;
+  activated_at: string | null;
+  work_order_type: string | null;
+  part_number: string | null;
+  customer: string | null;
+  included_process_steps: string[] | null;
+  completed_steps: CompletedTrackedStep[] | null;
+  block_periods: TrackedBlockPeriod[] | null;
+  total_blocked_seconds: number | null;
+  current_block_started_at: string | null;
+  current_block_step: string | null;
+  current_block_reason: string | null;
+  sequence_valid: boolean | null;
+  sequence_issue: string | null;
+};
 
 function yearFromDate(value: string | null | undefined): number {
   if (value) {
@@ -191,26 +158,6 @@ function msFromTimestamp(value: string | null): number | null {
   if (!value) return null;
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? null : time;
-}
-
-function getPauseIntervals(events: WorkOrderEvent[]): PauseInterval[] {
-  const intervals: PauseInterval[] = [];
-  let openStart: string | null = null;
-
-  for (const event of events) {
-    if (event.event_type === "blocked_started" && !openStart) {
-      openStart = event.occurred_at;
-    } else if (event.event_type === "blocked_ended" && openStart) {
-      intervals.push({ start: openStart, end: event.occurred_at });
-      openStart = null;
-    }
-  }
-
-  if (openStart) {
-    intervals.push({ start: openStart, end: null });
-  }
-
-  return intervals;
 }
 
 function pausedSecondsBetween(
@@ -269,44 +216,105 @@ function reportTotalDays(row: ClosedWorkOrderReport): number | null {
   return null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function normalizeCompletedSteps(value: unknown): CompletedTrackedStep[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const step = stringValue(item.step);
+    const occurredAt = stringValue(item.occurred_at);
+    if (!step || !occurredAt) return [];
+
+    return [
+      {
+        step,
+        occurred_at: occurredAt,
+        previous_step: stringValue(item.previous_step),
+        next_step: stringValue(item.next_step),
+        expected_step: stringValue(item.expected_step),
+        is_in_sequence: item.is_in_sequence !== false,
+      },
+    ];
+  });
+}
+
+function normalizeBlockPeriods(value: unknown): TrackedBlockPeriod[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const startedAt = stringValue(item.started_at);
+    const endedAt = stringValue(item.ended_at);
+    if (!startedAt || !endedAt) return [];
+
+    return [
+      {
+        started_at: startedAt,
+        ended_at: endedAt,
+        step: stringValue(item.step),
+        reason: stringValue(item.reason),
+        seconds: numberValue(item.seconds),
+      },
+    ];
+  });
+}
+
+function getPauseIntervals(tracking: WorkOrderTracking | null): PauseInterval[] {
+  const intervals: PauseInterval[] = normalizeBlockPeriods(tracking?.block_periods).map(
+    (period) => ({
+      start: period.started_at,
+      end: period.ended_at,
+    }),
+  );
+
+  if (tracking?.current_block_started_at) {
+    intervals.push({ start: tracking.current_block_started_at, end: null });
+  }
+
+  return intervals;
+}
+
 function firstPresentIncludedSteps(
   order: TrackedWorkOrder,
-  events: WorkOrderEvent[],
+  tracking: WorkOrderTracking | null,
 ): string[] | null {
   if (order.included_process_steps && order.included_process_steps.length > 0) {
     return order.included_process_steps;
   }
 
-  const eventWithSteps = events.find(
-    (event) =>
-      event.included_process_steps && event.included_process_steps.length > 0,
-  );
-  return eventWithSteps?.included_process_steps ?? null;
+  return tracking?.included_process_steps &&
+    tracking.included_process_steps.length > 0
+    ? tracking.included_process_steps
+    : null;
 }
 
 function getActivationTimestamp(
   order: TrackedWorkOrder,
-  events: WorkOrderEvent[],
+  tracking: WorkOrderTracking | null,
 ): string | null {
-  return (
-    order.data_tracking_started_at ??
-    events.find((event) => event.event_type === "activated")?.occurred_at ??
-    null
-  );
+  return order.data_tracking_started_at ?? tracking?.activated_at ?? null;
 }
 
 function getCertificationTimestamp(
   order: TrackedWorkOrder,
-  events: WorkOrderEvent[],
+  completedSteps: CompletedTrackedStep[],
   fallbackCloseTimestamp: string | null = null,
 ): string | null {
   return (
     order.easa_selected_at ??
-    events.find(
-      (event) =>
-        event.event_type === "step_completed" &&
-        event.completed_step === FINAL_PROCESS_STEP,
-    )?.occurred_at ??
+    completedSteps.find((step) => step.step === FINAL_PROCESS_STEP)?.occurred_at ??
     fallbackCloseTimestamp ??
     null
   );
@@ -318,7 +326,7 @@ function invalidDurationsForSteps(steps: string[]): StepDurationDays {
 
 function calculateClosedReportTiming(
   order: TrackedWorkOrder,
-  events: WorkOrderEvent[],
+  tracking: WorkOrderTracking | null,
   closeDate: string | null,
 ): {
   activatedAt: string | null;
@@ -330,7 +338,7 @@ function calculateClosedReportTiming(
   sequenceValid: boolean;
   sequenceIssue: string | null;
 } {
-  const includedProcessSteps = firstPresentIncludedSteps(order, events);
+  const includedProcessSteps = firstPresentIncludedSteps(order, tracking);
   const resolvedProcessSteps = resolveStepsForOrder(
     order.work_order_type,
     includedProcessSteps,
@@ -343,57 +351,46 @@ function calculateClosedReportTiming(
     resolvedProcessSteps.length > 0 ? resolvedProcessSteps : includedProcessSteps;
   const expectedSet = new Set(expectedCompletableSteps);
   const fallbackCloseTimestamp = acmpCloseTimestamp(closeDate);
-  const actualCompletedEvents = events.filter(
-    (event) =>
-      event.event_type === "step_completed" &&
-      event.completed_step &&
-      expectedSet.has(event.completed_step),
-  );
-  const hasFinalStepCompletion = actualCompletedEvents.some(
-    (event) => event.completed_step === FINAL_PROCESS_STEP,
+  const actualCompletedSteps = normalizeCompletedSteps(
+    tracking?.completed_steps,
+  ).filter((step) => expectedSet.has(step.step));
+  const hasFinalStepCompletion = actualCompletedSteps.some(
+    (step) => step.step === FINAL_PROCESS_STEP,
   );
   const finalStepIsExpected = expectedSet.has(FINAL_PROCESS_STEP);
-  const completedEvents =
+  const completedSteps =
     fallbackCloseTimestamp && finalStepIsExpected && !hasFinalStepCompletion
       ? [
-          ...actualCompletedEvents,
+          ...actualCompletedSteps,
           {
-            id: Number.MAX_SAFE_INTEGER,
-            work_order_id: order.work_order_id,
-            event_type: "step_completed",
+            step: FINAL_PROCESS_STEP,
             occurred_at: fallbackCloseTimestamp,
             previous_step: null,
-            completed_step: FINAL_PROCESS_STEP,
             next_step: null,
             expected_step: FINAL_PROCESS_STEP,
             is_in_sequence: true,
-            work_order_type: order.work_order_type,
-            part_number: order.part_number,
-            customer: order.customer,
-            included_process_steps: includedProcessSteps,
-            block_reason: null,
           },
         ].sort((a, b) => {
           const timeDiff =
             new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime();
-          return timeDiff || a.id - b.id;
+          return timeDiff;
         })
-      : actualCompletedEvents;
-  const completedByStep = new Map<string, WorkOrderEvent>();
+      : actualCompletedSteps;
+  const completedByStep = new Map<string, CompletedTrackedStep>();
 
-  for (const event of completedEvents) {
-    if (event.completed_step && !completedByStep.has(event.completed_step)) {
-      completedByStep.set(event.completed_step, event);
+  for (const step of completedSteps) {
+    if (!completedByStep.has(step.step)) {
+      completedByStep.set(step.step, step);
     }
   }
 
-  const activatedAt = getActivationTimestamp(order, events);
+  const activatedAt = getActivationTimestamp(order, tracking);
   const certificationSelectedAt = getCertificationTimestamp(
     order,
-    events,
+    completedSteps,
     fallbackCloseTimestamp,
   );
-  const pauseIntervals = getPauseIntervals(events);
+  const pauseIntervals = getPauseIntervals(tracking);
   const totalSecondsToEasa = activeSecondsBetween(
     activatedAt,
     certificationSelectedAt,
@@ -404,8 +401,11 @@ function calculateClosedReportTiming(
     certificationSelectedAt,
     pauseIntervals,
   );
-  const hasOutOfSequenceEvent = events.some((event) => event.is_in_sequence === false);
-  const completedSequence = completedEvents.map((event) => event.completed_step);
+  const hasOutOfSequenceStep =
+    order.sequence_valid === false ||
+    tracking?.sequence_valid === false ||
+    completedSteps.some((step) => step.is_in_sequence === false);
+  const completedSequence = completedSteps.map((step) => step.step);
   const missingStep = expectedCompletableSteps.find(
     (step) => !completedByStep.has(step),
   );
@@ -413,16 +413,16 @@ function calculateClosedReportTiming(
     completedSequence.length === expectedCompletableSteps.length &&
     expectedCompletableSteps.every((step, index) => completedSequence[index] === step);
 
-  let sequenceValid = Boolean(certificationSelectedAt) && !hasOutOfSequenceEvent;
+  let sequenceValid = Boolean(certificationSelectedAt) && !hasOutOfSequenceStep;
   let sequenceIssue: string | null = null;
 
   if (!certificationSelectedAt) {
     sequenceValid = false;
     sequenceIssue = EASA_MISSING_ISSUE;
-  } else if (hasOutOfSequenceEvent || !sequenceMatchesExpected) {
+  } else if (hasOutOfSequenceStep || !sequenceMatchesExpected) {
     sequenceValid = false;
-    sequenceIssue = hasOutOfSequenceEvent
-      ? OUT_OF_SEQUENCE_ISSUE
+    sequenceIssue = hasOutOfSequenceStep
+      ? order.sequence_issue ?? tracking?.sequence_issue ?? OUT_OF_SEQUENCE_ISSUE
       : missingStep
         ? `${MISSING_STEP_ISSUE_PREFIX}: ${missingStep}.`
         : OUT_OF_SEQUENCE_ISSUE;
@@ -445,12 +445,12 @@ function calculateClosedReportTiming(
   let previousTimestamp = activatedAt;
 
   for (const step of expectedCompletableSteps) {
-    const event = completedByStep.get(step);
-    const days = event
-      ? activeDaysBetween(previousTimestamp, event.occurred_at, pauseIntervals)
+    const completedStep = completedByStep.get(step);
+    const days = completedStep
+      ? activeDaysBetween(previousTimestamp, completedStep.occurred_at, pauseIntervals)
       : null;
     stepDurationsDays[step] = days ?? "NaN";
-    previousTimestamp = event?.occurred_at ?? previousTimestamp;
+    previousTimestamp = completedStep?.occurred_at ?? previousTimestamp;
   }
 
   return {
@@ -465,35 +465,69 @@ function calculateClosedReportTiming(
   };
 }
 
-export async function recordWorkOrderEvent(
-  payload: WorkOrderEventPayload,
-  client: SupabaseClient = supabase,
-): Promise<HelperResult> {
-  const insertPayload = {
-    ...payload,
-    is_in_sequence: payload.is_in_sequence ?? true,
+function trackingSnapshotPayload(
+  order: TrackedWorkOrder,
+  activatedAt: string,
+): Record<string, unknown> {
+  return {
+    work_order_id: order.work_order_id,
+    activated_at: activatedAt,
+    work_order_type: order.work_order_type,
+    part_number: order.part_number,
+    customer: order.customer,
+    included_process_steps: order.included_process_steps ?? null,
+    completed_steps: [],
+    block_periods: [],
+    total_blocked_seconds: 0,
+    current_block_started_at: null,
+    current_block_step: null,
+    current_block_reason: null,
+    sequence_valid: true,
+    sequence_issue: null,
+    updated_at: activatedAt,
   };
-  const { error } = await client.from("work_order_events").insert(insertPayload);
+}
+
+async function loadWorkOrderTracking(
+  workOrderId: string,
+  client: SupabaseClient,
+): Promise<HelperResult<WorkOrderTracking>> {
+  const { data, error } = await client
+    .from("work_order_tracking")
+    .select("*")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
 
   if (error) {
-    if (isMissingOptionalEventColumnError(error)) {
-      const { error: fallbackError } = await client
-        .from("work_order_events")
-        .insert(withoutOptionalEventColumns(insertPayload));
-
-      if (!fallbackError) {
-        return { data: null, error: null };
-      }
-
-      console.error("Failed to record Work Order Data event", fallbackError);
-      return { data: null, error: { message: fallbackError.message } };
-    }
-
-    console.error("Failed to record Work Order Data event", error);
+    console.error("Failed to load Work Order Data tracking state", error);
     return { data: null, error: { message: error.message } };
   }
 
-  return { data: null, error: null };
+  return { data: (data as WorkOrderTracking | null) ?? null, error: null };
+}
+
+async function ensureWorkOrderTracking(
+  order: TrackedWorkOrder,
+  activatedAt: string,
+  client: SupabaseClient,
+): Promise<HelperResult<WorkOrderTracking>> {
+  const existing = await loadWorkOrderTracking(order.work_order_id, client);
+  if (existing.error || existing.data) return existing;
+
+  const { data, error } = await client
+    .from("work_order_tracking")
+    .upsert(trackingSnapshotPayload(order, activatedAt), {
+      onConflict: "work_order_id",
+    })
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to initialize Work Order Data tracking state", error);
+    return { data: null, error: { message: error.message } };
+  }
+
+  return { data: (data as WorkOrderTracking | null) ?? null, error: null };
 }
 
 export async function startWorkOrderDataTracking(
@@ -517,17 +551,18 @@ export async function startWorkOrderDataTracking(
     return { data: null, error: { message: updateError.message } };
   }
 
-  return recordWorkOrderEvent({
-    work_order_id: order.work_order_id,
-    event_type: "activated",
-    occurred_at: startedAt,
-    next_step: order.current_process_step,
-    work_order_type: order.work_order_type,
-    part_number: order.part_number,
-    customer: order.customer,
-    included_process_steps: order.included_process_steps ?? null,
-    is_in_sequence: true,
-  }, client);
+  const { error: trackingError } = await client
+    .from("work_order_tracking")
+    .upsert(trackingSnapshotPayload(order, startedAt), {
+      onConflict: "work_order_id",
+    });
+
+  if (trackingError) {
+    console.error("Failed to start Work Order Data tracking state", trackingError);
+    return { data: null, error: { message: trackingError.message } };
+  }
+
+  return { data: null, error: null };
 }
 
 export async function stopWorkOrderDataTracking(
@@ -549,14 +584,14 @@ export async function stopWorkOrderDataTracking(
     return { data: null, error: { message: updateError.message } };
   }
 
-  const { error: eventsError } = await supabase
-    .from("work_order_events")
+  const { error: trackingError } = await supabase
+    .from("work_order_tracking")
     .delete()
     .eq("work_order_id", workOrderId);
 
-  if (eventsError) {
-    console.error("Failed to remove Work Order Data events", eventsError);
-    return { data: null, error: { message: eventsError.message } };
+  if (trackingError) {
+    console.error("Failed to remove Work Order Data tracking state", trackingError);
+    return { data: null, error: { message: trackingError.message } };
   }
 
   const { error: reportError } = await supabase
@@ -567,6 +602,25 @@ export async function stopWorkOrderDataTracking(
   if (reportError) {
     console.error("Failed to remove closed Work Order Data report", reportError);
     return { data: null, error: { message: reportError.message } };
+  }
+
+  return { data: null, error: null };
+}
+
+export async function deleteWorkOrderTrackingRows(
+  workOrderIds: string[],
+  client: SupabaseClient = supabase,
+): Promise<HelperResult> {
+  if (workOrderIds.length === 0) return { data: null, error: null };
+
+  const { error } = await client
+    .from("work_order_tracking")
+    .delete()
+    .in("work_order_id", workOrderIds);
+
+  if (error) {
+    console.error("Failed to remove Work Order Data tracking rows", error);
+    return { data: null, error: { message: error.message } };
   }
 
   return { data: null, error: null };
@@ -602,115 +656,93 @@ export async function syncWorkOrderDataBlockState(
   }
 
   const nextBlockReason = workOrderDataBlockReason(order);
-  const { data: latestEvents, error: latestError } = await client
-    .from("work_order_events")
-    .select("event_type, block_reason")
-    .eq("work_order_id", order.work_order_id)
-    .in("event_type", ["blocked_started", "blocked_ended"])
-    .order("occurred_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(1);
+  const trackingResult = await ensureWorkOrderTracking(
+    order,
+    order.data_tracking_started_at ?? occurredAt,
+    client,
+  );
+  if (trackingResult.error) {
+    return { data: null, error: trackingResult.error };
+  }
 
-  if (latestError) {
-    if (isMissingOptionalEventColumnError(latestError)) {
-      return syncWorkOrderDataBlockStateWithoutBlockReason(
-        order,
-        occurredAt,
-        client,
-      );
+  const tracking = trackingResult.data;
+  const currentlyPaused = Boolean(tracking?.current_block_started_at);
+  const commonPayload = {
+    work_order_type: order.work_order_type,
+    part_number: order.part_number,
+    customer: order.customer,
+    included_process_steps: order.included_process_steps ?? null,
+    updated_at: occurredAt,
+  };
+
+  if (nextBlockReason && !currentlyPaused) {
+    const { error } = await client
+      .from("work_order_tracking")
+      .update({
+        ...commonPayload,
+        current_block_started_at: occurredAt,
+        current_block_step: order.current_process_step,
+        current_block_reason: nextBlockReason,
+      })
+      .eq("work_order_id", order.work_order_id);
+
+    if (error) {
+      console.error("Failed to start Work Order Data block timing", error);
+      return { data: null, error: { message: error.message } };
     }
 
-    console.error("Failed to inspect Work Order Data block state", latestError);
-    return { data: null, error: { message: latestError.message } };
-  }
-
-  const latestEvent = latestEvents?.[0] as
-    | { event_type: string; block_reason: string | null }
-    | undefined;
-  const currentlyPaused = latestEvent?.event_type === "blocked_started";
-
-  if (nextBlockReason && !currentlyPaused) {
-    return recordWorkOrderEvent({
-      work_order_id: order.work_order_id,
-      event_type: "blocked_started",
-      occurred_at: occurredAt,
-      next_step: order.current_process_step,
-      work_order_type: order.work_order_type,
-      part_number: order.part_number,
-      customer: order.customer,
-      included_process_steps: order.included_process_steps ?? null,
-      block_reason: nextBlockReason,
-      is_in_sequence: true,
-    }, client);
+    return { data: null, error: null };
   }
 
   if (!nextBlockReason && currentlyPaused) {
-    return recordWorkOrderEvent({
-      work_order_id: order.work_order_id,
-      event_type: "blocked_ended",
-      occurred_at: occurredAt,
-      next_step: order.current_process_step,
-      work_order_type: order.work_order_type,
-      part_number: order.part_number,
-      customer: order.customer,
-      included_process_steps: order.included_process_steps ?? null,
-      block_reason: latestEvent?.block_reason ?? null,
-      is_in_sequence: true,
-    }, client);
+    const blockedSeconds =
+      secondsBetween(tracking?.current_block_started_at ?? null, occurredAt) ?? 0;
+    const nextBlockPeriods = [
+      ...normalizeBlockPeriods(tracking?.block_periods),
+      {
+        started_at: tracking?.current_block_started_at ?? occurredAt,
+        ended_at: occurredAt,
+        step: tracking?.current_block_step ?? order.current_process_step,
+        reason: tracking?.current_block_reason ?? null,
+        seconds: blockedSeconds,
+      },
+    ];
+    const nextTotalBlockedSeconds =
+      Math.max(0, tracking?.total_blocked_seconds ?? 0) + blockedSeconds;
+
+    const { error } = await client
+      .from("work_order_tracking")
+      .update({
+        ...commonPayload,
+        block_periods: nextBlockPeriods,
+        total_blocked_seconds: nextTotalBlockedSeconds,
+        current_block_started_at: null,
+        current_block_step: null,
+        current_block_reason: null,
+      })
+      .eq("work_order_id", order.work_order_id);
+
+    if (error) {
+      console.error("Failed to finish Work Order Data block timing", error);
+      return { data: null, error: { message: error.message } };
+    }
+
+    return { data: null, error: null };
   }
 
-  return { data: null, error: null };
-}
+  if (nextBlockReason && currentlyPaused && nextBlockReason !== tracking?.current_block_reason) {
+    const { error } = await client
+      .from("work_order_tracking")
+      .update({
+        ...commonPayload,
+        current_block_reason: nextBlockReason,
+      })
+      .eq("work_order_id", order.work_order_id);
 
-async function syncWorkOrderDataBlockStateWithoutBlockReason(
-  order: WorkOrderDataBlockStateOrder,
-  occurredAt: string,
-  client: SupabaseClient,
-): Promise<HelperResult> {
-  const nextBlockReason = workOrderDataBlockReason(order);
-  const { data: latestEvents, error: latestError } = await client
-    .from("work_order_events")
-    .select("event_type")
-    .eq("work_order_id", order.work_order_id)
-    .in("event_type", ["blocked_started", "blocked_ended"])
-    .order("occurred_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(1);
-
-  if (latestError) {
-    console.error("Failed to inspect Work Order Data block state", latestError);
-    return { data: null, error: { message: latestError.message } };
-  }
-
-  const latestEvent = latestEvents?.[0] as { event_type: string } | undefined;
-  const currentlyPaused = latestEvent?.event_type === "blocked_started";
-
-  if (nextBlockReason && !currentlyPaused) {
-    return recordWorkOrderEvent({
-      work_order_id: order.work_order_id,
-      event_type: "blocked_started",
-      occurred_at: occurredAt,
-      next_step: order.current_process_step,
-      work_order_type: order.work_order_type,
-      part_number: order.part_number,
-      customer: order.customer,
-      included_process_steps: order.included_process_steps ?? null,
-      is_in_sequence: true,
-    }, client);
-  }
-
-  if (!nextBlockReason && currentlyPaused) {
-    return recordWorkOrderEvent({
-      work_order_id: order.work_order_id,
-      event_type: "blocked_ended",
-      occurred_at: occurredAt,
-      next_step: order.current_process_step,
-      work_order_type: order.work_order_type,
-      part_number: order.part_number,
-      customer: order.customer,
-      included_process_steps: order.included_process_steps ?? null,
-      is_in_sequence: true,
-    }, client);
+    if (error) {
+      console.error("Failed to update Work Order Data block reason", error);
+      return { data: null, error: { message: error.message } };
+    }
   }
 
   return { data: null, error: null };
@@ -749,22 +781,53 @@ export async function recordTrackedShopStepCompletion({
     updatePayload.easa_selected_at = now;
   }
 
-  const eventResult = await recordWorkOrderEvent({
-    work_order_id: selectedOrder.work_order_id,
-    event_type: "step_completed",
-    occurred_at: now,
-    previous_step: selectedOrder.current_process_step,
-    completed_step: completedStep,
-    next_step: nextProcessStep,
-    expected_step: expectedStep,
-    is_in_sequence: isInSequence,
-    work_order_type: selectedOrder.work_order_type,
-    part_number: selectedOrder.part_number,
-    customer: selectedOrder.customer,
-    included_process_steps: selectedOrder.included_process_steps ?? null,
-  });
+  const trackingResult = await ensureWorkOrderTracking(
+    selectedOrder,
+    selectedOrder.data_tracking_started_at ?? now,
+    supabase,
+  );
+  if (trackingResult.error) {
+    return { data: null, error: trackingResult.error };
+  }
 
-  if (eventResult.error) return eventResult;
+  const tracking = trackingResult.data;
+  const completedSteps = normalizeCompletedSteps(tracking?.completed_steps);
+  const nextCompletedSteps: CompletedTrackedStep[] = [
+    ...completedSteps,
+    {
+      step: completedStep,
+      occurred_at: now,
+      previous_step: selectedOrder.current_process_step,
+      next_step: nextProcessStep,
+      expected_step: expectedStep,
+      is_in_sequence: isInSequence,
+    },
+  ];
+  const nextSequenceValid =
+    Boolean(tracking?.sequence_valid ?? selectedOrder.sequence_valid ?? true) &&
+    isInSequence;
+  const nextSequenceIssue = !isInSequence
+    ? OUT_OF_SEQUENCE_ISSUE
+    : tracking?.sequence_issue ?? selectedOrder.sequence_issue ?? null;
+
+  const { error: trackingError } = await supabase
+    .from("work_order_tracking")
+    .update({
+      work_order_type: selectedOrder.work_order_type,
+      part_number: selectedOrder.part_number,
+      customer: selectedOrder.customer,
+      included_process_steps: selectedOrder.included_process_steps ?? null,
+      completed_steps: nextCompletedSteps,
+      sequence_valid: nextSequenceValid,
+      sequence_issue: nextSequenceIssue,
+      updated_at: now,
+    })
+    .eq("work_order_id", selectedOrder.work_order_id);
+
+  if (trackingError) {
+    console.error("Failed to record Work Order Data step", trackingError);
+    return { data: null, error: { message: trackingError.message } };
+  }
 
   if (Object.keys(updatePayload).length === 0) {
     return { data: null, error: null };
@@ -810,20 +873,14 @@ export async function createClosedWorkOrderReportFromWorkOrder({
     return { data: { created: false }, error: null };
   }
 
-  const { data: eventRows, error: eventError } = await client
-    .from("work_order_events")
-    .select("*")
-    .eq("work_order_id", workOrderId)
-    .order("occurred_at", { ascending: true });
-
-  if (eventError) {
-    console.error("Failed to inspect Work Order Data events", eventError);
-    return { data: null, error: { message: eventError.message } };
+  const trackingResult = await loadWorkOrderTracking(workOrderId, client);
+  if (trackingResult.error) {
+    return { data: null, error: trackingResult.error };
   }
 
   const timing = calculateClosedReportTiming(
     trackedOrder,
-    (eventRows as WorkOrderEvent[]) || [],
+    trackingResult.data,
     closeDate,
   );
 
@@ -851,6 +908,16 @@ export async function createClosedWorkOrderReportFromWorkOrder({
   if (reportError) {
     console.error("Failed to create closed Work Order Data report", reportError);
     return { data: null, error: { message: reportError.message } };
+  }
+
+  const { error: cleanupError } = await client
+    .from("work_order_tracking")
+    .delete()
+    .eq("work_order_id", workOrderId);
+
+  if (cleanupError) {
+    console.error("Failed to clean closed Work Order Data tracking", cleanupError);
+    return { data: null, error: { message: cleanupError.message } };
   }
 
   return { data: { created: true }, error: null };
@@ -985,7 +1052,6 @@ export async function recordWorkOrderDataExport(
 export async function cleanWorkOrderDataYear(
   year: number,
 ): Promise<HelperResult> {
-  const range = yearRange(year);
   const now = new Date().toISOString();
   const {
     data: { user },
@@ -1004,17 +1070,6 @@ export async function cleanWorkOrderDataYear(
   if (exportError) {
     console.error("Failed to mark Work Order Data year as cleaned", exportError);
     return { data: null, error: { message: exportError.message } };
-  }
-
-  const { error: eventsError } = await supabase
-    .from("work_order_events")
-    .delete()
-    .gte("occurred_at", range.start)
-    .lt("occurred_at", range.end);
-
-  if (eventsError) {
-    console.error("Failed to clean Work Order Data events", eventsError);
-    return { data: null, error: { message: eventsError.message } };
   }
 
   const { error: reportsError } = await supabase

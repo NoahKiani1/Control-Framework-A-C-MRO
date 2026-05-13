@@ -19,6 +19,7 @@ import {
 } from "@/lib/work-orders";
 import {
   createClosedWorkOrderReportFromWorkOrder,
+  deleteWorkOrderTrackingRows,
   startWorkOrderDataTracking,
   syncWorkOrderDataBlockState,
 } from "@/lib/work-order-data";
@@ -379,6 +380,12 @@ export async function applyDeletions({
   let deleted = 0;
   for (let i = 0; i < oldIds.length; i += BATCH_SIZE) {
     const batch = oldIds.slice(i, i + BATCH_SIZE);
+    const trackingResult = await deleteWorkOrderTrackingRows(batch, client);
+    if (trackingResult.error) {
+      console.error(
+        `Failed to clean Work Order Data tracking rows before deleting old work orders: ${trackingResult.error.message}`,
+      );
+    }
     await deleteWorkOrdersByIds(batch, {}, client);
     deleted += batch.length;
   }
