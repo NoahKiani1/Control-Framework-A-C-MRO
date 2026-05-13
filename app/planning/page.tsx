@@ -20,6 +20,7 @@ import {
   getCorrectiveActionContext,
   hasActiveCorrectiveAction,
   isBlocked,
+  isRfqBlockedState,
   isStale,
   latestUpdate,
   localDateKey,
@@ -47,6 +48,7 @@ import {
 } from "@/lib/completed-tasks";
 import {
   RFQ_AWAITING_APPROVAL_REASON,
+  RFQ_MUST_BE_SENT_REASON,
   buildCloseRfqActionPayload,
   isRfqSendAction,
   type RfqCloseMode,
@@ -356,6 +358,15 @@ const inlineActionButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const inlineUnblockButtonStyle: React.CSSProperties = {
+  ...inlineActionButtonStyle,
+  marginTop: "6px",
+  padding: "3px 9px",
+  minWidth: "78px",
+  backgroundColor: "#fff9f7",
+  lineHeight: 1.25,
+};
+
 const planningCardStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "var(--planning-card-grid)",
@@ -492,14 +503,14 @@ const blockedPlanningHoldPanelStyle: React.CSSProperties = {
 };
 
 const blockedPlanningActionButtonStyle: React.CSSProperties = {
-  ...inlineActionButtonStyle,
+  ...inlineUnblockButtonStyle,
   width: "auto",
   maxWidth: "100%",
-  marginTop: "6px",
-  padding: "6px 12px",
+  justifySelf: "start",
+  marginTop: "5px",
+  padding: "4px 10px",
   whiteSpace: "normal",
   textAlign: "center",
-  lineHeight: 1.25,
 };
 
 const extraActionsDescriptionColumnStyle: React.CSSProperties = {
@@ -645,12 +656,42 @@ function LastUpdateCell({ value }: { value: string | null }) {
   return <span style={stale ? { color: ui.red, fontWeight: 600 } : undefined}>{formatDate(value)}</span>;
 }
 
+function normalizedBlockText(value: string | null | undefined): string {
+  return (value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function hasRfqWorkflowBlock(order: WorkOrder): boolean {
+  const holdReason = normalizedBlockText(order.hold_reason);
+  return (
+    isRfqBlockedState(order.rfq_state) ||
+    holdReason === normalizedBlockText(RFQ_AWAITING_APPROVAL_REASON) ||
+    holdReason === normalizedBlockText(RFQ_MUST_BE_SENT_REASON)
+  );
+}
+
+function canManuallyUnblockOrder(order: WorkOrder): boolean {
+  return isBlocked(order) && !hasRfqWorkflowBlock(order);
+}
+
+function getManualUnblockPayload(timestamp: string) {
+  return {
+    hold_reason: null,
+    required_next_action: null,
+    action_owner: null,
+    action_status: null,
+    action_closed: false,
+    action_created_at: null,
+    action_closed_at: null,
+    last_manual_update: timestamp,
+  };
+}
+
 function BlockedWorkOrderCard({
   order,
-  onCompleteCorrectiveAction,
+  onUnblock,
 }: {
   order: WorkOrder;
-  onCompleteCorrectiveAction: (order: WorkOrder) => void;
+  onUnblock: (order: WorkOrder) => void;
 }) {
   const lastUpdate = latestUpdate(
     order.last_system_update,
@@ -661,6 +702,7 @@ function BlockedWorkOrderCard({
   });
   const hasCorrectiveAction = hasActiveCorrectiveAction(order);
   const correctiveAction = getCorrectiveActionContext(order);
+  const canUnblock = canManuallyUnblockOrder(order);
 
   return (
     <article
@@ -745,13 +787,13 @@ function BlockedWorkOrderCard({
             </div>
           )}
 
-          {hasCorrectiveAction && (
+          {canUnblock && (
             <button
               type="button"
-              onClick={() => onCompleteCorrectiveAction(order)}
+              onClick={() => onUnblock(order)}
               style={blockedPlanningActionButtonStyle}
             >
-              Mark completed
+              Unblock
             </button>
           )}
         </div>
@@ -1444,6 +1486,12 @@ function PlanningPageContent() {
   const actionConfirmationOrder = actionConfirmationWorkOrderId
     ? orders.find((order) => order.work_order_id === actionConfirmationWorkOrderId) || null
     : null;
+  const actionConfirmationHasCorrectiveAction = actionConfirmationOrder
+    ? hasActiveCorrectiveAction(actionConfirmationOrder)
+    : false;
+  const actionConfirmationCorrectiveAction = actionConfirmationOrder
+    ? getCorrectiveActionContext(actionConfirmationOrder)
+    : null;
 
   const dueDateRequired =
     quickEdit?.field === "due_date" &&
@@ -1482,14 +1530,16 @@ function PlanningPageContent() {
     setIsSavingQuickEdit(false);
   }
 
-  function openCompleteActionConfirmation(order: WorkOrder) {
+  function openUnblockConfirmation(order: WorkOrder) {
+    if (!canManuallyUnblockOrder(order)) return;
+
     setActionConfirmationWorkOrderId(order.work_order_id);
-    setRfqCloseMode("awaiting_approval");
+    setRfqCloseMode(isRfqSendAction(order) ? "continue" : "awaiting_approval");
     setActionStatus("");
     setIsCompletingAction(false);
   }
 
-  function closeCompleteActionConfirmation() {
+  function closeUnblockConfirmation() {
     if (isCompletingAction) return;
     setActionConfirmationWorkOrderId(null);
   }
@@ -1995,40 +2045,53 @@ function PlanningPageContent() {
     setIsSavingExtraActionEdit(false);
   }
 
-  async function completeCorrectiveAction() {
+  async function confirmUnblockWorkOrder() {
     if (!actionConfirmationOrder) return;
+
+    if (!canManuallyUnblockOrder(actionConfirmationOrder)) {
+      setActionStatus(
+        "This work order is blocked by an AcMP RFQ status and cannot be manually unblocked.",
+      );
+      return;
+    }
 
     setIsCompletingAction(true);
     setActionStatus("Saving...");
 
-    const closedAt = new Date().toISOString();
-    const archiveResult = await archiveCompletedCorrectiveAction(
-      actionConfirmationOrder,
-      closedAt,
-    );
+    const updatedAt = new Date().toISOString();
+    const hasCorrectiveAction = hasActiveCorrectiveAction(actionConfirmationOrder);
 
-    if (archiveResult.error) {
-      setActionStatus(`Error: ${archiveResult.error.message}`);
-      setIsCompletingAction(false);
-      return;
+    if (hasCorrectiveAction) {
+      const archiveResult = await archiveCompletedCorrectiveAction(
+        actionConfirmationOrder,
+        updatedAt,
+      );
+
+      if (archiveResult.error) {
+        setActionStatus(`Error: ${archiveResult.error.message}`);
+        setIsCompletingAction(false);
+        return;
+      }
     }
 
-    const closePayload = isRfqSendAction(actionConfirmationOrder)
-      ? buildCloseRfqActionPayload({
-          mode: rfqCloseMode,
-          timestamp: closedAt,
-          updateSource: "manual",
-        })
-      : getCorrectiveActionCompletionPayload(closedAt);
+    const unblockPayload = hasCorrectiveAction
+      ? isRfqSendAction(actionConfirmationOrder)
+        ? buildCloseRfqActionPayload({
+            mode: rfqCloseMode,
+            timestamp: updatedAt,
+            updateSource: "manual",
+          })
+        : getCorrectiveActionCompletionPayload(updatedAt)
+      : getManualUnblockPayload(updatedAt);
 
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
       actionConfirmationOrder.work_order_id,
-      closePayload,
+      unblockPayload,
       WORK_ORDER_SELECT,
     );
 
     if (error || !savedOrder) {
-      setActionStatus(`Error: ${error?.message || "Unable to complete the corrective action."}`);
+      setActionStatus(`Error: ${error?.message || "Unable to unblock the work order."}`);
       setIsCompletingAction(false);
       return;
     }
@@ -2050,7 +2113,13 @@ function PlanningPageContent() {
       ),
     );
     setActionConfirmationWorkOrderId(null);
-    setActionStatus(`Corrective action completed for ${actionConfirmationOrder.work_order_id}.`);
+    setActionStatus(
+      isBlocked(savedOrder)
+        ? `Action completed for ${actionConfirmationOrder.work_order_id}. Still blocked: ${blockReason(savedOrder, {
+            rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON,
+          })}.`
+        : `Work order ${actionConfirmationOrder.work_order_id} unblocked.`,
+    );
     setIsCompletingAction(false);
   }
 
@@ -2392,7 +2461,7 @@ function PlanningPageContent() {
                 <BlockedWorkOrderCard
                   key={o.work_order_id}
                   order={o}
-                  onCompleteCorrectiveAction={openCompleteActionConfirmation}
+                  onUnblock={openUnblockConfirmation}
                 />
               ))}
             </div>
@@ -2421,6 +2490,7 @@ function PlanningPageContent() {
                     });
                     const hasCorrectiveAction = hasActiveCorrectiveAction(o);
                     const correctiveAction = getCorrectiveActionContext(o);
+                    const canUnblock = canManuallyUnblockOrder(o);
                     const isLast = idx === blockedOrders.length - 1;
                     const cell = isLast
                       ? { ...tableCellStyle, borderBottom: 0 }
@@ -2502,13 +2572,14 @@ function PlanningPageContent() {
                               Owner: {correctiveAction.owner}
                             </div>
                           )}
-                          {hasCorrectiveAction && (
+                          {canUnblock && (
                             <button
                               type="button"
-                              onClick={() => openCompleteActionConfirmation(o)}
-                              style={inlineActionButtonStyle}
+                              onClick={() => openUnblockConfirmation(o)}
+                              style={inlineUnblockButtonStyle}
+                              aria-label={`Unblock ${o.work_order_id}`}
                             >
-                              Mark corrective action as completed
+                              Unblock
                             </button>
                           )}
                         </td>
@@ -2948,15 +3019,17 @@ function PlanningPageContent() {
       )}
 
       {actionConfirmationOrder && (
-        <div style={modalBackdropStyle} onMouseDown={closeCompleteActionConfirmation}>
+        <div style={modalBackdropStyle} onMouseDown={closeUnblockConfirmation}>
           <div
             style={modalCardStyle}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div style={{ marginBottom: "14px" }}>
-              <div style={modalEyebrowStyle}>Confirm action</div>
+              <div style={modalEyebrowStyle}>Confirm unblock</div>
               <h2 style={modalTitleStyle}>
-                Complete corrective action for {actionConfirmationOrder.work_order_id}?
+                {actionConfirmationHasCorrectiveAction
+                  ? `Unblock and close action for ${actionConfirmationOrder.work_order_id}?`
+                  : `Unblock ${actionConfirmationOrder.work_order_id}?`}
               </h2>
             </div>
 
@@ -2969,14 +3042,17 @@ function PlanningPageContent() {
                   })}
                 </div>
               </div>
-              <div>
-                <div style={modalEyebrowStyle}>Active corrective action</div>
-                <div style={{ fontSize: "14px", color: ui.text }}>
-                  {getCorrectiveActionContext(actionConfirmationOrder).summary || "No active corrective action"}
+              {actionConfirmationHasCorrectiveAction && (
+                <div>
+                  <div style={modalEyebrowStyle}>Active corrective action</div>
+                  <div style={{ fontSize: "14px", color: ui.text }}>
+                    {actionConfirmationCorrectiveAction?.summary || "No active corrective action"}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {isRfqSendAction(actionConfirmationOrder) && (
+              {actionConfirmationHasCorrectiveAction &&
+                isRfqSendAction(actionConfirmationOrder) && (
                 <div>
                   <div style={modalEyebrowStyle}>After completion</div>
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -3049,7 +3125,7 @@ function PlanningPageContent() {
             >
               <button
                 type="button"
-                onClick={closeCompleteActionConfirmation}
+                onClick={closeUnblockConfirmation}
                 style={modalActionButtonStyle}
                 disabled={isCompletingAction}
               >
@@ -3057,11 +3133,11 @@ function PlanningPageContent() {
               </button>
               <button
                 type="button"
-                onClick={() => void completeCorrectiveAction()}
+                onClick={() => void confirmUnblockWorkOrder()}
                 style={modalPrimaryButtonStyle}
                 disabled={isCompletingAction}
               >
-                Confirm
+                Unblock
               </button>
             </div>
           </div>

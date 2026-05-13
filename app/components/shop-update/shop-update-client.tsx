@@ -5,7 +5,6 @@ import {
   addRepairAfterInspectionForOrder,
   canAddRepairAfterInspectionForOrder,
   getCompletableStepsForOrder,
-  getDefaultCompletedStepForOrder,
   getNextProcessStepAfterCompletedForOrder,
   READY_TO_CLOSE_STEP,
 } from "@/lib/process-steps";
@@ -348,13 +347,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const hasBlocker = Boolean(order.hold_reason?.trim());
 
     setSelectedId(id);
-    setCompletedStep(
-      getDefaultCompletedStepForOrder(
-        order.work_order_type,
-        order.current_process_step,
-        order.included_process_steps,
-      ),
-    );
+    setCompletedStep("");
     setStepTouched(false);
     setRepairNecessary(null);
     setRepairDecisionError(false);
@@ -494,16 +487,14 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
-    if (!completedStep) {
-      setSaveStatus("Please choose the completed step.");
-      return;
-    }
-
-    const repairDecisionRequired = canAddRepairAfterInspectionForOrder(
-      selectedOrder.work_order_type,
-      completedStep,
-      selectedOrder.included_process_steps,
-    );
+    const hasCompletedStep = Boolean(completedStep);
+    const repairDecisionRequired =
+      hasCompletedStep &&
+      canAddRepairAfterInspectionForOrder(
+        selectedOrder.work_order_type,
+        completedStep,
+        selectedOrder.included_process_steps,
+      );
 
     if (repairDecisionRequired && repairNecessary === null) {
       setRepairDecisionError(true);
@@ -516,59 +507,68 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
-    const shouldAddRepairStep = canAddRepairAfterInspectionForOrder(
-      selectedOrder.work_order_type,
-      completedStep,
-      selectedOrder.included_process_steps,
-    ) && repairNecessary === true;
-    const includedProcessStepsForSave = shouldAddRepairStep
-      ? addRepairAfterInspectionForOrder(
-          selectedOrder.work_order_type,
-          selectedOrder.included_process_steps,
-        )
-      : selectedOrder.included_process_steps;
-    const nextProcessStep =
-      getNextProcessStepAfterCompletedForOrder(
-        selectedOrder.work_order_type,
-        completedStep,
-        includedProcessStepsForSave,
-      ) ?? completedStep;
-    const shouldOpenRfqAction =
-      !isBlockedUpdate &&
-      shouldRequestRfqAfterCompletedStep({
-        workOrderType: selectedOrder.work_order_type,
-        includedSteps: includedProcessStepsForSave,
-        completedStep,
-        rfqState: selectedOrder.rfq_state,
-      });
-
     const normalizedHoldReason = holdReason.trim();
     const normalizedRequiredNextAction = requiredNextAction.trim();
     const normalizedActionOwner = actionOwner.trim();
     const nowIso = new Date().toISOString();
-    const completedStepWasRestricted = hasActiveRestrictionForStep(
-      completedStep,
-      shopStaff,
-    );
-    const nextStepIsRestricted = hasActiveRestrictionForStep(
-      nextProcessStep,
-      shopStaff,
-    );
-    const autoAssignBasis = isRensOfficeAssigneeName(
-      selectedOrder.assigned_person_team,
-    )
-      ? DEFAULT_ASSIGNED_PERSON_TEAM
-      : selectedOrder.assigned_person_team;
-    const assignedPersonTeam =
-      completedStepWasRestricted && !nextStepIsRestricted
-        ? DEFAULT_ASSIGNED_PERSON_TEAM
-        : autoAssignForStep(
-            autoAssignBasis,
-            nextProcessStep,
-            shopStaff,
-            todayAbsentShopEngineerNames,
+    let shouldAddRepairStep = false;
+    let includedProcessStepsForSave = selectedOrder.included_process_steps;
+    let nextProcessStep = selectedOrder.current_process_step;
+    let assignedPersonTeam = selectedOrder.assigned_person_team;
+    let shouldOpenRfqAction = false;
+
+    if (hasCompletedStep) {
+      shouldAddRepairStep =
+        canAddRepairAfterInspectionForOrder(
+          selectedOrder.work_order_type,
+          completedStep,
+          selectedOrder.included_process_steps,
+        ) && repairNecessary === true;
+      includedProcessStepsForSave = shouldAddRepairStep
+        ? addRepairAfterInspectionForOrder(
             selectedOrder.work_order_type,
-          );
+            selectedOrder.included_process_steps,
+          )
+        : selectedOrder.included_process_steps;
+      nextProcessStep =
+        getNextProcessStepAfterCompletedForOrder(
+          selectedOrder.work_order_type,
+          completedStep,
+          includedProcessStepsForSave,
+        ) ?? completedStep;
+      shouldOpenRfqAction =
+        !isBlockedUpdate &&
+        shouldRequestRfqAfterCompletedStep({
+          workOrderType: selectedOrder.work_order_type,
+          includedSteps: includedProcessStepsForSave,
+          completedStep,
+          rfqState: selectedOrder.rfq_state,
+        });
+
+      const completedStepWasRestricted = hasActiveRestrictionForStep(
+        completedStep,
+        shopStaff,
+      );
+      const nextStepIsRestricted = hasActiveRestrictionForStep(
+        nextProcessStep,
+        shopStaff,
+      );
+      const autoAssignBasis = isRensOfficeAssigneeName(
+        selectedOrder.assigned_person_team,
+      )
+        ? DEFAULT_ASSIGNED_PERSON_TEAM
+        : selectedOrder.assigned_person_team;
+      assignedPersonTeam =
+        completedStepWasRestricted && !nextStepIsRestricted
+          ? DEFAULT_ASSIGNED_PERSON_TEAM
+          : autoAssignForStep(
+              autoAssignBasis,
+              nextProcessStep,
+              shopStaff,
+              todayAbsentShopEngineerNames,
+              selectedOrder.work_order_type,
+            );
+    }
 
     setSaveStatus("Saving...");
 
@@ -592,8 +592,12 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
         };
 
     const payload = {
-      current_process_step: nextProcessStep,
-      assigned_person_team: assignedPersonTeam,
+      ...(hasCompletedStep
+        ? {
+            current_process_step: nextProcessStep,
+            assigned_person_team: assignedPersonTeam,
+          }
+        : {}),
       ...actionPayload,
       last_manual_update: nowIso,
       ...(shouldAddRepairStep
@@ -608,14 +612,14 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
-    if (selectedOrder.data_tracking_enabled) {
+    if (hasCompletedStep && selectedOrder.data_tracking_enabled) {
       const trackingResult = await recordTrackedShopStepCompletion({
         selectedOrder: {
           ...selectedOrder,
           included_process_steps: includedProcessStepsForSave,
         },
         completedStep,
-        nextProcessStep,
+        nextProcessStep: nextProcessStep ?? completedStep,
       });
       if (trackingResult.error) {
         console.error(
@@ -627,8 +631,12 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const nextOrder = {
       ...selectedOrder,
       ...payload,
-      current_process_step: nextProcessStep,
-      included_process_steps: includedProcessStepsForSave,
+      current_process_step: hasCompletedStep
+        ? nextProcessStep
+        : selectedOrder.current_process_step,
+      included_process_steps: hasCompletedStep
+        ? includedProcessStepsForSave
+        : selectedOrder.included_process_steps,
     };
     const blockResult = await syncWorkOrderDataBlockState(nextOrder);
     if (blockResult.error) {
