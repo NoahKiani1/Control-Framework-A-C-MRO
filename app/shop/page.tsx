@@ -11,17 +11,16 @@ import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
   applyTodayQualificationBlocks,
+  blockReason,
   formatDate,
   getCorrectiveActionContext,
   hasActiveCorrectiveAction,
   isBlocked,
   localDateKey,
   normalizeAssignedPersonTeam,
-  normalizeRfqState,
   priorityTag,
   sortSharedPlanningOrders,
 } from "@/lib/work-order-rules";
-import { RFQ_AWAITING_APPROVAL_REASON } from "@/lib/rfq-workflow";
 import { getEngineerPhotoUrl } from "@/lib/engineers";
 import { getCurrentProfile, type AppRole } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -950,11 +949,7 @@ function ShopPageContent() {
   }
 
   function holdReasonDisplay(o: WorkOrder): string {
-    if (o.hold_reason) return o.hold_reason;
-    const rfqState = normalizeRfqState(o.rfq_state);
-    if (rfqState === "rfq rejected") return "RFQ Rejected";
-    if (rfqState === "rfq send") return RFQ_AWAITING_APPROVAL_REASON;
-    return "-";
+    return blockReason(o);
   }
 
   function renderMetaRail({

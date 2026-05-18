@@ -48,9 +48,8 @@ import {
 } from "@/lib/completed-tasks";
 import {
   RFQ_AWAITING_APPROVAL_REASON,
-  RFQ_MUST_BE_SENT_REASON,
   buildCloseRfqActionPayload,
-  isRfqSendAction,
+  hasActiveRfqSendAction,
   type RfqCloseMode,
 } from "@/lib/rfq-workflow";
 import { syncWorkOrderDataBlockState } from "@/lib/work-order-data";
@@ -656,21 +655,8 @@ function LastUpdateCell({ value }: { value: string | null }) {
   return <span style={stale ? { color: ui.red, fontWeight: 600 } : undefined}>{formatDate(value)}</span>;
 }
 
-function normalizedBlockText(value: string | null | undefined): string {
-  return (value || "").trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-function hasRfqWorkflowBlock(order: WorkOrder): boolean {
-  const holdReason = normalizedBlockText(order.hold_reason);
-  return (
-    isRfqBlockedState(order.rfq_state) ||
-    holdReason === normalizedBlockText(RFQ_AWAITING_APPROVAL_REASON) ||
-    holdReason === normalizedBlockText(RFQ_MUST_BE_SENT_REASON)
-  );
-}
-
 function canManuallyUnblockOrder(order: WorkOrder): boolean {
-  return isBlocked(order) && !hasRfqWorkflowBlock(order);
+  return isBlocked(order) && !isRfqBlockedState(order.rfq_state);
 }
 
 function getManualUnblockPayload(timestamp: string) {
@@ -1534,7 +1520,7 @@ function PlanningPageContent() {
     if (!canManuallyUnblockOrder(order)) return;
 
     setActionConfirmationWorkOrderId(order.work_order_id);
-    setRfqCloseMode(isRfqSendAction(order) ? "continue" : "awaiting_approval");
+    setRfqCloseMode(hasActiveRfqSendAction(order) ? "continue" : "awaiting_approval");
     setActionStatus("");
     setIsCompletingAction(false);
   }
@@ -2075,7 +2061,7 @@ function PlanningPageContent() {
     }
 
     const unblockPayload = hasCorrectiveAction
-      ? isRfqSendAction(actionConfirmationOrder)
+      ? hasActiveRfqSendAction(actionConfirmationOrder)
         ? buildCloseRfqActionPayload({
             mode: rfqCloseMode,
             timestamp: updatedAt,
@@ -3052,7 +3038,7 @@ function PlanningPageContent() {
               )}
 
               {actionConfirmationHasCorrectiveAction &&
-                isRfqSendAction(actionConfirmationOrder) && (
+                hasActiveRfqSendAction(actionConfirmationOrder) && (
                 <div>
                   <div style={modalEyebrowStyle}>After completion</div>
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>

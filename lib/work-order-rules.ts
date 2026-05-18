@@ -249,12 +249,12 @@ export function blockReason(
   order: BlockableOrder,
   options: BlockReasonOptions = {},
 ): string {
-  if (order.hold_reason) return order.hold_reason;
   const rfq = normalizeRfqState(order.rfq_state);
   if (rfq === "rfq send") {
     return options.rfqSentLabel || RFQ_AWAITING_APPROVAL_REASON;
   }
   if (rfq === "rfq rejected") return "RFQ rejected";
+  if (order.hold_reason) return order.hold_reason;
   return "–";
 }
 

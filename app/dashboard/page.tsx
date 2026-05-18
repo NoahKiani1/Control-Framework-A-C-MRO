@@ -8,8 +8,12 @@ import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
 import {
+  blockReason as getWorkOrderBlockReason,
   formatDate,
+  getCorrectiveActionCompletionPayload,
+  hasActiveCorrectiveAction,
   isBlocked,
+  isRfqBlockedState,
   isStale,
   latestUpdate,
   normalizeAssignedPersonTeam,
@@ -22,7 +26,6 @@ import {
   RFQ_AWAITING_APPROVAL_REASON,
   buildCloseRfqActionPayload,
   hasActiveRfqSendAction,
-  isRfqSendAction,
   type RfqCloseMode,
 } from "@/lib/rfq-workflow";
 import {
@@ -246,7 +249,22 @@ function isOverdue(dateStr: string | null): boolean {
 }
 
 function hasOpenAction(o: WorkOrder): boolean {
-  return !!(o.hold_reason || o.required_next_action) && o.action_status !== "Done";
+  if (isRfqBlockedState(o.rfq_state)) return false;
+  if (hasActiveCorrectiveAction(o)) return true;
+  return Boolean(o.hold_reason?.trim()) && o.action_status !== "Done" && !o.action_closed;
+}
+
+function getManualUnblockPayload(timestamp: string) {
+  return {
+    hold_reason: null,
+    required_next_action: null,
+    action_owner: null,
+    action_status: null,
+    action_closed: false,
+    action_created_at: null,
+    action_closed_at: null,
+    last_manual_update: timestamp,
+  };
 }
 
 function engineerCanDoRestriction(eng: Engineer, restriction: string): boolean {
@@ -254,10 +272,9 @@ function engineerCanDoRestriction(eng: Engineer, restriction: string): boolean {
 }
 
 function blockedReason(order: WorkOrder): string {
-  if (order.hold_reason) return order.hold_reason;
-  if (order.rfq_state === "RFQ Rejected") return "RFQ Rejected";
-  if (order.rfq_state === "RFQ Send") return RFQ_AWAITING_APPROVAL_REASON;
-  return "Blocked";
+  return getWorkOrderBlockReason(order, {
+    rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON,
+  });
 }
 
 function formatAnimatedNumber(value: number, decimals: number): string {
@@ -1003,40 +1020,75 @@ function DashboardPageContent() {
     setActionConfirmationStatus("");
   }
 
+  function isDashboardRfqAction(
+    confirmation: DashboardActionConfirmation,
+  ): boolean {
+    return (
+      confirmation.kind === "rfq_sent" ||
+      hasActiveRfqSendAction(confirmation.order)
+    );
+  }
+
+  function actionConfirmationTitle(
+    confirmation: DashboardActionConfirmation,
+  ): string {
+    if (confirmation.kind === "rfq_sent") {
+      return `RFQ is sent for ${confirmation.order.work_order_id}?`;
+    }
+
+    if (hasActiveCorrectiveAction(confirmation.order)) {
+      return `Complete action for ${confirmation.order.work_order_id}?`;
+    }
+
+    return `Unblock ${confirmation.order.work_order_id}?`;
+  }
+
+  function actionConfirmationPrimaryLabel(
+    confirmation: DashboardActionConfirmation,
+  ): string {
+    return hasActiveCorrectiveAction(confirmation.order) ? "Confirm" : "Unblock";
+  }
+
   async function completeActionConfirmation() {
     if (!actionConfirmation) return;
 
     setIsCompletingAction(true);
     setActionConfirmationStatus("Saving...");
 
-    const { order, kind } = actionConfirmation;
+    const { order } = actionConfirmation;
 
     const closedAt = new Date().toISOString();
-    const archiveResult = await archiveCompletedCorrectiveAction(order, closedAt);
+    const hasCorrectiveAction = hasActiveCorrectiveAction(order);
+    const isRfqAction = isDashboardRfqAction(actionConfirmation);
 
-    if (archiveResult.error) {
-      setActionConfirmationStatus(`Error: ${archiveResult.error.message}`);
+    if (!hasCorrectiveAction && !isRfqAction && isRfqBlockedState(order.rfq_state)) {
+      setActionConfirmationStatus(
+        "This work order is blocked by an AcMP RFQ status and cannot be manually unblocked.",
+      );
       setIsCompletingAction(false);
       return;
     }
 
+    if (hasCorrectiveAction) {
+      const archiveResult = await archiveCompletedCorrectiveAction(order, closedAt);
+
+      if (archiveResult.error) {
+        setActionConfirmationStatus(`Error: ${archiveResult.error.message}`);
+        setIsCompletingAction(false);
+        return;
+      }
+    }
+
     const payload =
-      kind === "rfq_sent" || isRfqSendAction(order)
+      isRfqAction
         ? buildCloseRfqActionPayload({
             mode: rfqCloseMode,
             timestamp: closedAt,
             updateSource: "manual",
           })
-        : {
-            action_status: "Done",
-            action_closed: true,
-            action_closed_at: closedAt,
-            hold_reason: null,
-            required_next_action: null,
-            action_owner: null,
-            action_created_at: null,
-            last_manual_update: closedAt,
-          };
+        : hasCorrectiveAction
+          ? getCorrectiveActionCompletionPayload(closedAt)
+          : getManualUnblockPayload(closedAt);
 
     const { error } = await updateWorkOrder(order.work_order_id, payload);
 
@@ -1379,6 +1431,7 @@ function DashboardPageContent() {
         <tbody>
           {list.map((o, idx) => {
             const isDone = o.action_status === "Done";
+            const hasCorrectiveAction = hasActiveCorrectiveAction(o);
 
             return (
               <tr
@@ -1434,7 +1487,7 @@ function DashboardPageContent() {
                         setTableActionButtonHover(e.currentTarget, "red", false);
                       }}
                     >
-                      Close action
+                      {hasCorrectiveAction ? "Close action" : "Unblock"}
                     </button>
                   )}
                 </td>
@@ -2404,9 +2457,7 @@ function DashboardPageContent() {
                   lineHeight: 1.15,
                 }}
               >
-                {actionConfirmation.kind === "rfq_sent"
-                  ? `RFQ is sent for ${actionConfirmation.order.work_order_id}?`
-                  : `Complete action for ${actionConfirmation.order.work_order_id}?`}
+                {actionConfirmationTitle(actionConfirmation)}
               </h2>
             </div>
 
@@ -2436,8 +2487,7 @@ function DashboardPageContent() {
 
               <div>
                 <div style={modalFieldLabelStyle}>After completion</div>
-                {actionConfirmation.kind === "rfq_sent" ||
-                isRfqSendAction(actionConfirmation.order) ? (
+                {isDashboardRfqAction(actionConfirmation) ? (
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     {[
                       ["awaiting_approval", `Blocked: ${RFQ_AWAITING_APPROVAL_REASON}`],
@@ -2544,7 +2594,7 @@ function DashboardPageContent() {
                 }}
                 disabled={isCompletingAction}
               >
-                Confirm
+                {actionConfirmationPrimaryLabel(actionConfirmation)}
               </button>
             </div>
           </div>

@@ -239,7 +239,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
     void load();
   }, []);
-
+//noah was hier
   const selectedOrder = useMemo(
     () => orders.find((o) => o.work_order_id === selectedId),
     [orders, selectedId],
