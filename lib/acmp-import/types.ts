@@ -33,6 +33,7 @@ export type ExistingOrderSnapshot = ParsedRow & {
   inactive_absent_engineer_name?: string | null;
   inactive_absence_date?: string | null;
   hold_reason: string | null;
+  rfq_manual_approved_at: string | null;
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;

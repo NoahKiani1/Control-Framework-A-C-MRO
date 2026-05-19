@@ -15,10 +15,13 @@ import {
 import {
   RFQ_AWAITING_APPROVAL_REASON,
   RFQ_MUST_BE_SENT_REASON,
+  buildCloseRfqActionPayload,
   buildImportedRfqActionClosePayload,
+  getImportedRfqManualApprovedAt,
   getLastIncludedRfqInspectionStep,
   shouldRequestRfqAfterCompletedStep,
 } from "../lib/rfq-workflow";
+import { isBlocked, rfqDisplay } from "../lib/work-order-rules";
 
 function main() {
   const standardWheelRepair = resolveStepsForOrder("Wheel Repair", null);
@@ -185,11 +188,85 @@ function main() {
       action_closed: true,
       action_closed_at: "2026-05-11T10:00:00.000Z",
       hold_reason: RFQ_AWAITING_APPROVAL_REASON,
+      rfq_manual_approved_at: null,
       required_next_action: null,
       action_owner: null,
       action_created_at: null,
       last_system_update: "2026-05-11T10:00:00.000Z",
     },
+  );
+
+  assert.equal(
+    isBlocked({ rfq_state: "RFQ Send", rfq_manual_approved_at: null }),
+    true,
+  );
+  assert.equal(
+    isBlocked({
+      rfq_state: "RFQ Send",
+      rfq_manual_approved_at: "2026-05-11T10:00:00.000Z",
+    }),
+    false,
+  );
+  assert.equal(
+    isBlocked({
+      rfq_state: "RFQ Rejected",
+      rfq_manual_approved_at: "2026-05-11T10:00:00.000Z",
+    }),
+    true,
+  );
+  assert.deepEqual(
+    rfqDisplay("RFQ Send", "2026-05-11T10:00:00.000Z"),
+    { label: "Manual approved", color: "#16a34a" },
+  );
+  assert.deepEqual(
+    buildCloseRfqActionPayload({
+      mode: "continue",
+      timestamp: "2026-05-11T10:00:00.000Z",
+      updateSource: "manual",
+    }),
+    {
+      action_status: "Done",
+      action_closed: true,
+      action_closed_at: "2026-05-11T10:00:00.000Z",
+      hold_reason: null,
+      rfq_manual_approved_at: "2026-05-11T10:00:00.000Z",
+      required_next_action: null,
+      action_owner: null,
+      action_created_at: null,
+      last_manual_update: "2026-05-11T10:00:00.000Z",
+    },
+  );
+  assert.deepEqual(
+    buildCloseRfqActionPayload({
+      mode: "continue",
+      timestamp: "2026-05-11T10:00:00.000Z",
+      updateSource: "system",
+    }),
+    {
+      action_status: "Done",
+      action_closed: true,
+      action_closed_at: "2026-05-11T10:00:00.000Z",
+      hold_reason: null,
+      rfq_manual_approved_at: null,
+      required_next_action: null,
+      action_owner: null,
+      action_created_at: null,
+      last_system_update: "2026-05-11T10:00:00.000Z",
+    },
+  );
+  assert.equal(
+    getImportedRfqManualApprovedAt(
+      "2026-05-11T10:00:00.000Z",
+      "RFQ Send",
+    ),
+    "2026-05-11T10:00:00.000Z",
+  );
+  assert.equal(
+    getImportedRfqManualApprovedAt(
+      "2026-05-11T10:00:00.000Z",
+      "RFQ Send - Continue",
+    ),
+    null,
   );
 }
 

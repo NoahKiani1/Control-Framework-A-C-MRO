@@ -38,6 +38,7 @@ type WorkOrder = {
   current_process_step: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
+  rfq_manual_approved_at: string | null;
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;

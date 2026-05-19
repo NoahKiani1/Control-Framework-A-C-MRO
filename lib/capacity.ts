@@ -256,6 +256,7 @@ export function calculateWeekCapacity(
     due_date: string | null;
     hold_reason: string | null;
     rfq_state: string | null;
+    rfq_manual_approved_at?: string | null;
   }[],
   engineersOrCount: number | CapacityEngineer[],
   absenceDates: Date[],

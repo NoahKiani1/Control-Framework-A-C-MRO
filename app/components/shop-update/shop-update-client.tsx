@@ -67,6 +67,7 @@ type WorkOrder = {
   current_process_step: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
+  rfq_manual_approved_at: string | null;
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;
@@ -80,7 +81,7 @@ type WorkOrder = {
 };
 
 const SHOP_UPDATE_WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, due_date, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, priority, assigned_person_team, included_process_steps, data_tracking_enabled";
+  "work_order_id, customer, part_number, work_order_type, due_date, current_process_step, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, priority, assigned_person_team, included_process_steps, data_tracking_enabled";
 
 type CorrectiveActionTaskItem = {
   kind: "corrective-action";

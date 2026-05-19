@@ -20,10 +20,11 @@ import {
   getCorrectiveActionContext,
   hasActiveCorrectiveAction,
   isBlocked,
-  isRfqBlockedState,
+  isRfqRejectedState,
   isStale,
   latestUpdate,
   localDateKey,
+  normalizeRfqState,
   normalizeAssignedPersonTeam,
   priorityTag,
   sortSharedPlanningOrders,
@@ -78,6 +79,7 @@ type WorkOrder = {
   current_process_step: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
+  rfq_manual_approved_at: string | null;
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;
@@ -121,7 +123,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, last_manual_update, last_system_update, included_process_steps, data_tracking_enabled, shared_planning_rank, is_active, inactive_note, inactive_absent_engineer_id, inactive_absent_engineer_name, inactive_absence_date";
+  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, last_manual_update, last_system_update, included_process_steps, data_tracking_enabled, shared_planning_rank, is_active, inactive_note, inactive_absent_engineer_id, inactive_absent_engineer_name, inactive_absence_date";
 
 const ui = {
   pageBg: "#f2efe9",
@@ -656,12 +658,16 @@ function LastUpdateCell({ value }: { value: string | null }) {
 }
 
 function canManuallyUnblockOrder(order: WorkOrder): boolean {
-  return isBlocked(order) && !isRfqBlockedState(order.rfq_state);
+  return isBlocked(order) && !isRfqRejectedState(order.rfq_state);
 }
 
-function getManualUnblockPayload(timestamp: string) {
+function getManualUnblockPayload(order: WorkOrder, timestamp: string) {
   return {
     hold_reason: null,
+    rfq_manual_approved_at:
+      normalizeRfqState(order.rfq_state) === "rfq send"
+        ? order.rfq_manual_approved_at ?? timestamp
+        : null,
     required_next_action: null,
     action_owner: null,
     action_status: null,
@@ -2068,7 +2074,7 @@ function PlanningPageContent() {
             updateSource: "manual",
           })
         : getCorrectiveActionCompletionPayload(updatedAt)
-      : getManualUnblockPayload(updatedAt);
+      : getManualUnblockPayload(actionConfirmationOrder, updatedAt);
 
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
       actionConfirmationOrder.work_order_id,

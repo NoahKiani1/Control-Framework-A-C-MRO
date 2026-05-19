@@ -52,6 +52,7 @@ type WorkOrder = {
   assigned_person_team: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
+  rfq_manual_approved_at: string | null;
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;
@@ -162,7 +163,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, is_active, work_order_type, current_process_step, part_number, included_process_steps, data_tracking_enabled, inactive_note, inactive_absent_engineer_id, inactive_absent_engineer_name, inactive_absence_date";
+  "work_order_id, customer, due_date, priority, assigned_person_team, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, is_active, work_order_type, current_process_step, part_number, included_process_steps, data_tracking_enabled, inactive_note, inactive_absent_engineer_id, inactive_absent_engineer_name, inactive_absence_date";
 
 function localDateKey(date = new Date()): string {
   const year = date.getFullYear();

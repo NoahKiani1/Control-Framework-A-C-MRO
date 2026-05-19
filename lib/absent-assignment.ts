@@ -27,6 +27,7 @@ export type AbsentInactiveWorkOrder = {
   data_tracking_enabled?: boolean | null;
   hold_reason?: string | null;
   rfq_state?: string | null;
+  rfq_manual_approved_at?: string | null;
   required_next_action?: string | null;
   action_owner?: string | null;
   action_status?: string | null;
@@ -39,7 +40,7 @@ export type AbsentInactiveWorkOrder = {
 export const ABSENT_TODAY_SUFFIX = " (absent today)";
 
 const AUTO_REACTIVATE_SELECT =
-  "work_order_id, customer, part_number, work_order_type, current_process_step, included_process_steps, data_tracking_enabled, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, inactive_absent_engineer_id, inactive_absent_engineer_name, inactive_note";
+  "work_order_id, customer, part_number, work_order_type, current_process_step, included_process_steps, data_tracking_enabled, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, inactive_absent_engineer_id, inactive_absent_engineer_name, inactive_note";
 
 export function formatStaffOptionLabel<T extends StaffMemberLike>(
   staffMember: T,

@@ -13,6 +13,7 @@ const RFQ_TRIGGER_PROCESS_STEPS = [
 type RfqActionOrder = {
   hold_reason?: string | null;
   rfq_state?: string | null;
+  rfq_manual_approved_at?: string | null;
   required_next_action?: string | null;
   action_status?: string | null;
   action_closed?: boolean | null;
@@ -134,6 +135,8 @@ export function buildCloseRfqActionPayload({
     action_closed_at: timestamp,
     hold_reason:
       mode === "awaiting_approval" ? RFQ_AWAITING_APPROVAL_REASON : null,
+    rfq_manual_approved_at:
+      mode === "continue" && updateSource === "manual" ? timestamp : null,
     required_next_action: null,
     action_owner: null,
     action_created_at: null,
@@ -149,6 +152,15 @@ export function getRfqCloseModeForImportedState(
   if (isRfqPendingApprovalState(rfqState)) return "awaiting_approval";
   if (isRfqApprovedOrContinueState(rfqState)) return "continue";
   return null;
+}
+
+export function getImportedRfqManualApprovedAt(
+  currentManualApprovedAt: string | null | undefined,
+  importedRfqState: string | null | undefined,
+): string | null {
+  return isRfqPendingApprovalState(importedRfqState)
+    ? currentManualApprovedAt ?? null
+    : null;
 }
 
 export function buildImportedRfqActionClosePayload(

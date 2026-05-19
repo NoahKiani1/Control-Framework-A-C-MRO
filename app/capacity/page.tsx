@@ -46,6 +46,7 @@ type WorkOrder = {
   due_date: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
+  rfq_manual_approved_at: string | null;
 };
 
 type GroupedAbsence = {
@@ -189,7 +190,7 @@ function CapacityPageContent() {
 
     const woData = await getWorkOrders<WorkOrder>({
       select:
-        "work_order_id, customer, work_order_type, part_number, current_process_step, included_process_steps, due_date, hold_reason, rfq_state",
+        "work_order_id, customer, work_order_type, part_number, current_process_step, included_process_steps, due_date, hold_reason, rfq_state, rfq_manual_approved_at",
       isOpen: true,
       isActive: true,
     });

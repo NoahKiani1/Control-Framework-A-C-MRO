@@ -19,6 +19,7 @@ type WorkOrder = {
   customer: string | null;
   part_number: string | null;
   rfq_state: string | null;
+  rfq_manual_approved_at: string | null;
   work_order_type: string | null;
   last_system_update: string | null;
   last_manual_update: string | null;
@@ -70,7 +71,7 @@ function BacklogPageContent() {
 
       const data = await getWorkOrders<WorkOrder>({
         select:
-          "work_order_id, customer, part_number, rfq_state, work_order_type, last_system_update, last_manual_update, inactive_note",
+          "work_order_id, customer, part_number, rfq_state, rfq_manual_approved_at, work_order_type, last_system_update, last_manual_update, inactive_note",
         isOpen: true,
         isActive: false,
         orderBy: [
@@ -252,7 +253,10 @@ function BacklogPageContent() {
                       order.last_system_update,
                       order.last_manual_update,
                     );
-                    const rfq = rfqDisplay(order.rfq_state);
+                    const rfq = rfqDisplay(
+                      order.rfq_state,
+                      order.rfq_manual_approved_at,
+                    );
                     const isLast = index === orders.length - 1;
                     const rowCellStyle = isLast
                       ? { ...cellStyle, borderBottom: 0 }

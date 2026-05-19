@@ -4,6 +4,7 @@ import { RFQ_AWAITING_APPROVAL_REASON } from "@/lib/rfq-workflow";
 type BlockableOrder = {
   hold_reason?: string | null;
   rfq_state?: string | null;
+  rfq_manual_approved_at?: string | null;
 };
 
 type SortableOrder = BlockableOrder & {
@@ -81,9 +82,26 @@ export function isRfqBlockedState(state: string | null | undefined): boolean {
   return rfq === "rfq send" || rfq === "rfq rejected";
 }
 
+export function isRfqRejectedState(state: string | null | undefined): boolean {
+  return normalizeRfqState(state) === "rfq rejected";
+}
+
+export function isRfqManualApprovalBlocked(order: BlockableOrder): boolean {
+  return (
+    normalizeRfqState(order.rfq_state) === "rfq send" &&
+    !order.rfq_manual_approved_at
+  );
+}
+
+export function isRfqBlockedOrder(order: BlockableOrder): boolean {
+  if (isRfqRejectedState(order.rfq_state)) return true;
+  if (isRfqManualApprovalBlocked(order)) return true;
+  return false;
+}
+
 export function isBlocked(order: BlockableOrder): boolean {
   if (order.hold_reason?.trim()) return true;
-  if (isRfqBlockedState(order.rfq_state)) return true;
+  if (isRfqBlockedOrder(order)) return true;
   return false;
 }
 
@@ -250,7 +268,7 @@ export function blockReason(
   options: BlockReasonOptions = {},
 ): string {
   const rfq = normalizeRfqState(order.rfq_state);
-  if (rfq === "rfq send") {
+  if (rfq === "rfq send" && !order.rfq_manual_approved_at) {
     return options.rfqSentLabel || RFQ_AWAITING_APPROVAL_REASON;
   }
   if (rfq === "rfq rejected") return "RFQ rejected";
@@ -258,9 +276,15 @@ export function blockReason(
   return "–";
 }
 
-export function rfqDisplay(rfqState: string | null): { label: string; color: string } {
+export function rfqDisplay(
+  rfqState: string | null,
+  rfqManualApprovedAt?: string | null,
+): { label: string; color: string } {
   const rfq = normalizeRfqState(rfqState);
   if (!rfq || rfq === "undefined") return { label: "No RFQ", color: "#999" };
+  if (rfq === "rfq send" && rfqManualApprovedAt) {
+    return { label: "Manual approved", color: "#16a34a" };
+  }
   if (rfq === "rfq send") return { label: "RFQ Send", color: "#dc2626" };
   if (rfq === "rfq rejected") return { label: "RFQ Rejected", color: "#dc2626" };
   if (rfq === "rfq send - continue") return { label: "RFQ Send - Continue", color: "#16a34a" };

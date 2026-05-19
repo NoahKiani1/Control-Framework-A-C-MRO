@@ -23,7 +23,10 @@ import {
   startWorkOrderDataTracking,
   syncWorkOrderDataBlockState,
 } from "@/lib/work-order-data";
-import { buildImportedRfqActionClosePayload } from "@/lib/rfq-workflow";
+import {
+  buildImportedRfqActionClosePayload,
+  getImportedRfqManualApprovedAt,
+} from "@/lib/rfq-workflow";
 import { EXISTING_ORDER_SELECT } from "./analyze";
 import {
   ExistingOrderSnapshot,
@@ -91,6 +94,10 @@ export async function applyExistingOrderUpdates({
   for (let i = 0; i < existingOrders.length; i += BATCH_SIZE) {
     const batch = existingOrders.slice(i, i + BATCH_SIZE).map((r) => {
       const current = currentMap.get(r.work_order_id);
+      const rfqManualApprovedAt = getImportedRfqManualApprovedAt(
+        current?.rfq_manual_approved_at,
+        r.rfq_state,
+      );
       const shouldDefaultAssigned =
         Boolean(current?.is_active) &&
         !current?.assigned_person_team?.trim();
@@ -101,10 +108,15 @@ export async function applyExistingOrderUpdates({
             importTimestamp,
           )
         : null;
+      const workflowPayload = autoCloseRfqActionPayload ?? {};
+      const nextRfqManualApprovedAt = autoCloseRfqActionPayload
+        ? autoCloseRfqActionPayload.rfq_manual_approved_at
+        : rfqManualApprovedAt;
       const changed =
         !current ||
         current.customer !== r.customer ||
         current.rfq_state !== r.rfq_state ||
+        current.rfq_manual_approved_at !== rfqManualApprovedAt ||
         current.work_order_type !== r.work_order_type ||
         current.part_number !== r.part_number ||
         shouldDefaultAssigned ||
@@ -119,7 +131,8 @@ export async function applyExistingOrderUpdates({
               ),
             }
           : {}),
-        ...(autoCloseRfqActionPayload ?? {}),
+        ...workflowPayload,
+        rfq_manual_approved_at: nextRfqManualApprovedAt,
         last_system_update: changed ? importTimestamp : r.last_system_update,
       };
     });

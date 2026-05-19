@@ -13,9 +13,11 @@ import {
   getCorrectiveActionCompletionPayload,
   hasActiveCorrectiveAction,
   isBlocked,
-  isRfqBlockedState,
+  isRfqManualApprovalBlocked,
+  isRfqRejectedState,
   isStale,
   latestUpdate,
+  normalizeRfqState,
   normalizeAssignedPersonTeam,
   priorityTag,
   sortOrders,
@@ -56,6 +58,7 @@ type WorkOrder = {
   current_process_step: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
+  rfq_manual_approved_at: string | null;
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;
@@ -249,14 +252,19 @@ function isOverdue(dateStr: string | null): boolean {
 }
 
 function hasOpenAction(o: WorkOrder): boolean {
-  if (isRfqBlockedState(o.rfq_state)) return false;
+  if (isRfqRejectedState(o.rfq_state)) return false;
+  if (isRfqManualApprovalBlocked(o)) return true;
   if (hasActiveCorrectiveAction(o)) return true;
   return Boolean(o.hold_reason?.trim()) && o.action_status !== "Done" && !o.action_closed;
 }
 
-function getManualUnblockPayload(timestamp: string) {
+function getManualUnblockPayload(order: WorkOrder, timestamp: string) {
   return {
     hold_reason: null,
+    rfq_manual_approved_at:
+      normalizeRfqState(order.rfq_state) === "rfq send"
+        ? order.rfq_manual_approved_at ?? timestamp
+        : null,
     required_next_action: null,
     action_owner: null,
     action_status: null,
@@ -1061,7 +1069,7 @@ function DashboardPageContent() {
     const hasCorrectiveAction = hasActiveCorrectiveAction(order);
     const isRfqAction = isDashboardRfqAction(actionConfirmation);
 
-    if (!hasCorrectiveAction && !isRfqAction && isRfqBlockedState(order.rfq_state)) {
+    if (!hasCorrectiveAction && !isRfqAction && isRfqRejectedState(order.rfq_state)) {
       setActionConfirmationStatus(
         "This work order is blocked by an AcMP RFQ status and cannot be manually unblocked.",
       );
@@ -1088,7 +1096,7 @@ function DashboardPageContent() {
           })
         : hasCorrectiveAction
           ? getCorrectiveActionCompletionPayload(closedAt)
-          : getManualUnblockPayload(closedAt);
+          : getManualUnblockPayload(order, closedAt);
 
     const { error } = await updateWorkOrder(order.work_order_id, payload);
 
@@ -1432,12 +1440,25 @@ function DashboardPageContent() {
           {list.map((o, idx) => {
             const isDone = o.action_status === "Done";
             const hasCorrectiveAction = hasActiveCorrectiveAction(o);
+            const displayedHoldReason = getWorkOrderBlockReason(o, {
+              rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON,
+            });
+            const canUnblockOnly =
+              !hasCorrectiveAction &&
+              (Boolean(o.hold_reason?.trim()) || isRfqManualApprovalBlocked(o));
+            const canUseActionButton = !isDone || canUnblockOnly;
+            const statusLabel = canUnblockOnly
+              ? "Blocked"
+              : isDone
+                ? "Closed"
+                : "Open";
+            const statusIsClosed = statusLabel === "Closed";
 
             return (
               <tr
                 key={o.work_order_id}
                 style={{
-                  backgroundColor: o.hold_reason
+                  backgroundColor: displayedHoldReason !== "–"
                     ? COLORS.amberSoft
                     : idx % 2 === 0
                       ? COLORS.surface
@@ -1448,8 +1469,13 @@ function DashboardPageContent() {
                   {renderWorkOrderIdentifier(o)}
                 </td>
                 <td style={cellStyle}>{o.customer || "–"}</td>
-                <td style={{ ...cellStyle, fontWeight: o.hold_reason ? 600 : 400 }}>
-                  {o.hold_reason || "–"}
+                <td
+                  style={{
+                    ...cellStyle,
+                    fontWeight: displayedHoldReason !== "–" ? 600 : 400,
+                  }}
+                >
+                  {displayedHoldReason}
                 </td>
                 <td style={cellStyle}>{o.required_next_action || "–"}</td>
                 <td style={cellStyle}>{o.action_owner || "–"}</td>
@@ -1464,19 +1490,19 @@ function DashboardPageContent() {
                       fontSize: "11px",
                       fontWeight: 700,
                       borderRadius: "999px",
-                      backgroundColor: isDone ? COLORS.greenSoft : COLORS.amberSoft,
-                      color: isDone ? COLORS.green : COLORS.amber,
-                      border: `1px solid ${isDone ? COLORS.green : COLORS.amber}22`,
+                      backgroundColor: statusIsClosed ? COLORS.greenSoft : COLORS.amberSoft,
+                      color: statusIsClosed ? COLORS.green : COLORS.amber,
+                      border: `1px solid ${statusIsClosed ? COLORS.green : COLORS.amber}22`,
                       whiteSpace: "nowrap",
                       overflowWrap: "normal",
                       wordBreak: "normal",
                     }}
                   >
-                    {isDone ? "Closed" : "Open"}
+                    {statusLabel}
                   </span>
                 </td>
                 <td style={cellStyle}>
-                  {!isDone && (
+                  {canUseActionButton && (
                     <button
                       onClick={() => openActionConfirmation(o, "close_action")}
                       style={tableActionButtonStyle("red")}
@@ -2474,7 +2500,9 @@ function DashboardPageContent() {
               <div>
                 <div style={modalFieldLabelStyle}>Hold reason</div>
                 <div style={{ color: COLORS.text, fontSize: "15px" }}>
-                  {actionConfirmation.order.hold_reason || "–"}
+                  {getWorkOrderBlockReason(actionConfirmation.order, {
+                    rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON,
+                  })}
                 </div>
               </div>
 

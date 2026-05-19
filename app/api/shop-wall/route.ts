@@ -21,6 +21,7 @@ type ShopWallWorkOrder = {
   current_process_step: string | null;
   hold_reason: string | null;
   rfq_state: string | null;
+  rfq_manual_approved_at: string | null;
   required_next_action: string | null;
   action_owner: string | null;
   action_status: string | null;
@@ -138,7 +139,7 @@ export async function GET(request: Request) {
   const ordersResult = await supabase
     .from("work_orders")
     .select(
-      "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps, shared_planning_rank",
+      "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps, shared_planning_rank",
     )
     .eq("is_open", true)
     .eq("is_active", true);
