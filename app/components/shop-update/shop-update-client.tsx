@@ -1290,7 +1290,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
             Blocked work orders
           </h2>
           <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
-            {blockedOrders.length} blocked work order{blockedOrders.length !== 1 ? "s" : ""} at this moment. {unblockableBlockedOrderCount} can be unblocked from here.
+            {blockedOrders.length} blocked work order{blockedOrders.length !== 1 ? "s" : ""} at this moment. 
           </p>
 
           <div
