@@ -20,12 +20,15 @@ import {
 } from "@/lib/engineers";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
+  blockReason,
   formatDate,
   getCorrectiveActionCompletionPayload,
   getCorrectiveActionContext,
   hasActiveCorrectiveAction,
   isBlocked,
+  isRfqManualApprovalBlocked,
   localDateKey as workOrderLocalDateKey,
+  normalizeRfqState,
   normalizeAssignedPersonTeam,
   sortOrders,
   applyTodayQualificationBlocks,
@@ -41,6 +44,7 @@ import {
   completeExtraAction,
 } from "@/lib/completed-tasks";
 import {
+  RFQ_AWAITING_APPROVAL_REASON,
   RFQ_MUST_BE_SENT_REASON,
   buildCloseRfqActionPayload,
   buildOpenRfqActionPayload,
@@ -112,6 +116,55 @@ type ShopUpdateClientProps = {
   variant: "desktop" | "tablet";
 };
 
+function normalizeStatusText(value: string | null | undefined): string {
+  return (value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function isAwaitingRfqApprovalBlock(order: WorkOrder): boolean {
+  return (
+    isRfqManualApprovalBlocked(order) ||
+    normalizeStatusText(order.hold_reason) ===
+      normalizeStatusText(RFQ_AWAITING_APPROVAL_REASON)
+  );
+}
+
+function canShopUnblockOrder(order: WorkOrder): boolean {
+  return (
+    isBlocked(order) &&
+    !isAwaitingRfqApprovalBlock(order) &&
+    normalizeRfqState(order.rfq_state) !== "rfq rejected"
+  );
+}
+
+function getShopUnblockUnavailableMessage(order: WorkOrder): string {
+  if (isAwaitingRfqApprovalBlock(order)) {
+    return `This work order is blocked by ${RFQ_AWAITING_APPROVAL_REASON} and cannot be unblocked from Shop Update.`;
+  }
+
+  if (normalizeRfqState(order.rfq_state) === "rfq rejected") {
+    return "This work order is blocked by an AcMP RFQ status and cannot be unblocked from Shop Update.";
+  }
+
+  return "This work order cannot be unblocked from Shop Update.";
+}
+
+function getManualUnblockPayload(order: WorkOrder, timestamp: string) {
+  return {
+    hold_reason: null,
+    rfq_manual_approved_at:
+      normalizeRfqState(order.rfq_state) === "rfq send"
+        ? order.rfq_manual_approved_at ?? timestamp
+        : null,
+    required_next_action: null,
+    action_owner: null,
+    action_status: null,
+    action_closed: false,
+    action_created_at: null,
+    action_closed_at: null,
+    last_manual_update: timestamp,
+  };
+}
+
 const COLORS = {
   pageBg: "#f2efe9",
   panelBg: "#ffffff",
@@ -142,6 +195,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const [shopStaff, setShopStaff] = useState<StaffMember[]>([]);
   const [officeStaff, setOfficeStaff] = useState<StaffMember[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const [selectedMode, setSelectedMode] = useState<"open" | "blocked" | null>(null);
   const [completedStep, setCompletedStep] = useState("");
   const [stepTouched, setStepTouched] = useState(false);
   const [repairNecessary, setRepairNecessary] = useState<boolean | null>(null);
@@ -162,6 +216,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     useState<RfqCloseMode>("awaiting_approval");
   const [correctiveActionCloseStatus, setCorrectiveActionCloseStatus] = useState("");
   const [isClosingCorrectiveAction, setIsClosingCorrectiveAction] = useState(false);
+  const [isUnblockingSelected, setIsUnblockingSelected] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -254,6 +309,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     [orders],
   );
 
+  const blockedOrders = useMemo(
+    () => orders.filter((order) => isBlocked(order)),
+    [orders],
+  );
+
   const todayAbsentEngineerIdSet = useMemo(
     () => new Set(todayAbsentEngineerIds),
     [todayAbsentEngineerIds],
@@ -341,13 +401,34 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     return order.priority === "AOG" ? " - AOG" : "";
   }
 
-  function selectOrder(id: string) {
+  function resetSelectedWorkOrderState() {
+    setCompletedStep("");
+    setStepTouched(false);
+    setRepairNecessary(null);
+    setRepairDecisionError(false);
+    setHoldReason("");
+    setRequiredNextAction("");
+    setActionOwner("");
+    setIsBlockedUpdate(false);
+  }
+
+  function selectOrder(id: string, mode: "open" | "blocked") {
+    if (!id) {
+      setSelectedId("");
+      setSelectedMode(null);
+      resetSelectedWorkOrderState();
+      setSaveStatus("");
+      setIsUnblockingSelected(false);
+      return;
+    }
+
     const order = orders.find((o) => o.work_order_id === id);
     if (!order) return;
 
     const hasBlocker = Boolean(order.hold_reason?.trim());
 
     setSelectedId(id);
+    setSelectedMode(mode);
     setCompletedStep("");
     setStepTouched(false);
     setRepairNecessary(null);
@@ -355,8 +436,10 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setHoldReason(order.hold_reason || "");
     setRequiredNextAction(order.required_next_action || "");
     setActionOwner(order.hold_reason?.trim() ? order.action_owner || "" : "");
-    setIsBlockedUpdate(hasBlocker);
+    setIsBlockedUpdate(mode === "open" && hasBlocker);
+    setRfqCloseMode("awaiting_approval");
     setSaveStatus("");
+    setIsUnblockingSelected(false);
   }
 
   function handleCompletedStepChange(value: string) {
@@ -481,10 +564,12 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
   async function saveUpdate() {
     if (!selectedId || !selectedOrder) return;
+    if (selectedMode !== "open") return;
 
     if (isBlocked(selectedOrder) || hasActiveCorrectiveAction(selectedOrder)) {
       setSaveStatus("This work order is blocked and cannot be updated by shop.");
       setSelectedId("");
+      setSelectedMode(null);
       return;
     }
 
@@ -660,6 +745,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const savedId = selectedId;
 
     setSelectedId("");
+    setSelectedMode(null);
     setCompletedStep("");
     setStepTouched(false);
     setRepairNecessary(null);
@@ -669,6 +755,83 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setActionOwner("");
     setIsBlockedUpdate(false);
     setSaveStatus(`${savedId} updated. Select the next work order.`);
+  }
+
+  async function unblockSelectedWorkOrder() {
+    if (!selectedOrder) return;
+
+    if (!canShopUnblockOrder(selectedOrder)) {
+      setSaveStatus(getShopUnblockUnavailableMessage(selectedOrder));
+      return;
+    }
+
+    setIsUnblockingSelected(true);
+    setSaveStatus("Saving...");
+
+    const updatedAt = new Date().toISOString();
+    const hasCorrectiveAction = hasActiveCorrectiveAction(selectedOrder);
+
+    if (hasCorrectiveAction) {
+      const archiveResult = await archiveCompletedCorrectiveAction(
+        selectedOrder,
+        updatedAt,
+      );
+
+      if (archiveResult.error) {
+        setSaveStatus(`Error: ${archiveResult.error.message}`);
+        setIsUnblockingSelected(false);
+        return;
+      }
+    }
+
+    const unblockPayload = hasCorrectiveAction
+      ? hasActiveRfqSendAction(selectedOrder)
+        ? buildCloseRfqActionPayload({
+            mode: rfqCloseMode,
+            timestamp: updatedAt,
+            updateSource: "manual",
+          })
+        : getCorrectiveActionCompletionPayload(updatedAt)
+      : getManualUnblockPayload(selectedOrder, updatedAt);
+
+    const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
+      selectedOrder.work_order_id,
+      unblockPayload,
+      SHOP_UPDATE_WORK_ORDER_SELECT,
+    );
+
+    if (error || !savedOrder) {
+      setSaveStatus(`Error: ${error?.message || "Unable to unblock the work order."}`);
+      setIsUnblockingSelected(false);
+      return;
+    }
+
+    const blockResult = await syncWorkOrderDataBlockState(savedOrder);
+    if (blockResult.error) {
+      console.error(
+        `Failed to sync Work Order Data block state for ${savedOrder.work_order_id}: ${blockResult.error.message}`,
+      );
+    }
+
+    setOrders((prev) =>
+      sortOrders(
+        prev.map((order) =>
+          order.work_order_id === savedOrder.work_order_id ? savedOrder : order,
+        ),
+      ),
+    );
+
+    setSelectedId("");
+    setSelectedMode(null);
+    resetSelectedWorkOrderState();
+    setIsUnblockingSelected(false);
+    setSaveStatus(
+      isBlocked(savedOrder)
+        ? `Action completed for ${savedOrder.work_order_id}. Still blocked: ${blockReason(savedOrder, {
+            rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON,
+          })}.`
+        : `Work order ${savedOrder.work_order_id} unblocked. Select the next work order.`,
+    );
   }
 
   const pageStyle: CSSProperties = {
@@ -784,6 +947,17 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     label: `${o.work_order_id} - PN: ${o.part_number || "-"} - ${o.customer || "-"} - ${o.work_order_type || "-"}${aogPrioritySuffix(o)}`,
   }));
 
+  const blockedWorkOrderOptions = blockedOrders.map((o) => ({
+    value: o.work_order_id,
+    label: `${o.work_order_id} - ${o.part_number || "-"} - ${o.customer || "-"}`,
+  }));
+  const unblockableBlockedOrderCount = blockedOrders.filter((order) =>
+    canShopUnblockOrder(order),
+  ).length;
+  const selectedOrderCanBeUnblocked = selectedOrder
+    ? canShopUnblockOrder(selectedOrder)
+    : false;
+
   return (
     <main style={pageStyle}>
       <div style={shellStyle}>
@@ -791,14 +965,19 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
           title={isTablet ? "Shop Form" : "Shop Update"}
           description={
             isTablet
-              ? "Touch-friendly shop update for portrait iPad. Select a work order, confirm the completed step, and save the update."
-              : "Select a work order, confirm the current details, then save the completed step or, if applicable, indicate why you cannot proceed with the work order."
+              ? "Touch-friendly shop update for portrait iPad. Select an open work order to update, or unblock a blocked work order that can continue."
+              : "Select an open work order to update, or unblock a blocked work order that can continue."
           }
         />
 
-        <section style={{ ...sectionCard, marginBottom: majorSectionGap }}>
+        <section
+          style={{
+            ...sectionCard,
+            marginBottom: majorSectionGap,
+          }}
+        >
           <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
-            Search for a work order to update
+            Search for a work order
           </h2>
           <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
             {openOrders.length} open work orders available.
@@ -815,8 +994,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
               <div style={eyebrowStyle}>Search</div>
               <SearchableSelect
                 options={workOrderOptions}
-                value={selectedId}
-                onChange={(v) => selectOrder(v)}
+                value={selectedMode === "open" ? selectedId : ""}
+                onChange={(v) => selectOrder(v, "open")}
                 placeholder="Search by work order, part number or customer..."
                 style={{ marginTop: "2px" }}
                 inputStyle={
@@ -845,8 +1024,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
             <div style={innerCard}>
               <div style={eyebrowStyle}>Browse list</div>
               <select
-                value={selectedId}
-                onChange={(e) => selectOrder(e.target.value)}
+                value={selectedMode === "open" ? selectedId : ""}
+                onChange={(e) => selectOrder(e.target.value, "open")}
                 style={inputStyle}
               >
                 <option value="">Select from list...</option>
@@ -859,8 +1038,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
             </div>
           </div>
 
-          {selectedOrder && (
-            <>
+          {selectedOrder && selectedMode === "open" && (
+            <div>
               <div style={sectionDividerStyle} />
               <div style={eyebrowStyle}>Selected work order</div>
               <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: isTablet ? "18px" : "12px" }}>
@@ -885,222 +1064,398 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                   large={isTablet}
                 />
               </div>
+                  <div style={sectionDividerStyle} />
+                  <div style={eyebrowStyle}>Work order update</div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1fr) minmax(0, 1fr)",
+                      gap: isTablet ? "22px" : "12px",
+                    }}
+                  >
+                    <div style={sectionCard}>
+                      <div style={eyebrowStyle}>Step update</div>
+                      <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
+                        Completed Step
+                      </h2>
 
-              <div style={sectionDividerStyle} />
-              <div style={eyebrowStyle}>Work order update</div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1fr) minmax(0, 1fr)",
-                  gap: isTablet ? "22px" : "12px",
-                }}
-              >
-                <div style={sectionCard}>
-                  <div style={eyebrowStyle}>Step update</div>
-                  <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
-                    Completed Step
-                  </h2>
+                      {completableSteps.length > 0 ? (
+                        <>
+                          <select
+                            value={completedStep}
+                            onChange={(e) => handleCompletedStepChange(e.target.value)}
+                            style={inputStyle}
+                          >
+                            <option value="">Select completed step...</option>
+                            {completableSteps.map((step) => (
+                              <option key={step} value={step}>
+                                {step}
+                              </option>
+                            ))}
+                          </select>
 
-                  {completableSteps.length > 0 ? (
-                    <>
-                      <select
-                        value={completedStep}
-                        onChange={(e) => handleCompletedStepChange(e.target.value)}
-                        style={inputStyle}
-                      >
-                        <option value="">Select completed step...</option>
-                        {completableSteps.map((step) => (
-                          <option key={step} value={step}>
-                            {step}
-                          </option>
-                        ))}
-                      </select>
+                          {canAddRepairStep && (
+                            <div
+                              style={{
+                                display: "grid",
+                                gap: isTablet ? "12px" : "8px",
+                                marginTop: isTablet ? "18px" : "12px",
+                                padding: isTablet ? "18px" : "12px",
+                                backgroundColor: "#fffdfa",
+                                border: `1px solid ${
+                                  repairDecisionError ? COLORS.red : COLORS.border
+                                }`,
+                                borderRadius: isTablet ? "18px" : "10px",
+                                boxShadow: repairDecisionError
+                                  ? `0 0 0 3px ${COLORS.redSoft}`
+                                  : undefined,
+                              }}
+                            >
+                              <div>
+                                <div style={eyebrowStyle}>Inspection result</div>
+                                <h3
+                                  style={{
+                                    ...fieldTitleStyle,
+                                    fontSize: isTablet ? "22px" : "var(--fs-md)",
+                                    marginBottom: "0",
+                                  }}
+                                >
+                                  Repair necessary?
+                                </h3>
+                              </div>
+                              <div style={{ display: "flex", gap: isTablet ? "14px" : "8px" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRepairNecessary(false);
+                                    setRepairDecisionError(false);
+                                  }}
+                                  style={choiceBtn(repairNecessary === false)}
+                                >
+                                  No
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRepairNecessary(true);
+                                    setRepairDecisionError(false);
+                                  }}
+                                  style={choiceBtn(repairNecessary === true)}
+                                >
+                                  Yes
+                                </button>
+                              </div>
+                              {repairDecisionError && (
+                                <StatusNote color="red" large={isTablet}>
+                                  Please fill this in.
+                                </StatusNote>
+                              )}
+                            </div>
+                          )}
 
-                      {canAddRepairStep && (
+                          {completedStep && previewWillRequestRfq && (
+                            <StatusNote
+                              color="red"
+                              large={isTablet}
+                              style={{ marginTop: isTablet ? "14px" : "8px" }}
+                            >
+                              After saving, this work order will be blocked:{" "}
+                              {RFQ_MUST_BE_SENT_REASON}.
+                            </StatusNote>
+                          )}
+
+                          {stepTouched &&
+                            completedStep &&
+                            previewNextStep &&
+                            previewNextStep !== READY_TO_CLOSE_STEP && (
+                              <StatusNote color="blue" large={isTablet}>
+                                Next step: {previewNextStep}
+                              </StatusNote>
+                            )}
+
+                          {stepTouched &&
+                            completedStep &&
+                            previewNextStep === READY_TO_CLOSE_STEP && (
+                              <StatusNote color="green" large={isTablet}>
+                                Final step completed - ready to close
+                              </StatusNote>
+                            )}
+                        </>
+                      ) : (
+                        <StatusNote color="red" large={isTablet}>
+                          No steps available - work order type is not set.
+                        </StatusNote>
+                      )}
+                    </div>
+
+                    <div style={sectionCard}>
+                      <div style={eyebrowStyle}>Blocker update</div>
+                      <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
+                        Blocked?
+                      </h2>
+                      <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
+                        Only complete this section if the work cannot continue.
+                      </p>
+
+                      <div style={{ display: "flex", gap: isTablet ? "14px" : "8px", marginBottom: isTablet ? "18px" : "12px" }}>
+                        <button type="button" onClick={() => setBlockedChoice(false)} style={choiceBtn(!isBlockedUpdate)}>
+                          No
+                        </button>
+                        <button type="button" onClick={() => setBlockedChoice(true)} style={choiceBtn(isBlockedUpdate)}>
+                          Yes
+                        </button>
+                      </div>
+
+                      {isBlockedUpdate && (
                         <div
                           style={{
                             display: "grid",
-                            gap: isTablet ? "12px" : "8px",
-                            marginTop: isTablet ? "18px" : "12px",
+                            gap: isTablet ? "14px" : "8px",
                             padding: isTablet ? "18px" : "12px",
                             backgroundColor: "#fffdfa",
-                            border: `1px solid ${
-                              repairDecisionError ? COLORS.red : COLORS.border
-                            }`,
+                            border: `1px solid ${COLORS.border}`,
                             borderRadius: isTablet ? "18px" : "10px",
-                            boxShadow: repairDecisionError
-                              ? `0 0 0 3px ${COLORS.redSoft}`
-                              : undefined,
                           }}
                         >
+                          <input
+                            value={holdReason}
+                            onChange={(e) => setHoldReason(e.target.value)}
+                            placeholder="Hold reason..."
+                            style={inputStyle}
+                          />
+                          <input
+                            value={requiredNextAction}
+                            onChange={(e) => setRequiredNextAction(e.target.value)}
+                            placeholder="Action required..."
+                            style={inputStyle}
+                          />
                           <div>
-                            <div style={eyebrowStyle}>Inspection result</div>
-                            <h3
-                              style={{
-                                ...fieldTitleStyle,
-                                fontSize: isTablet ? "22px" : "var(--fs-md)",
-                                marginBottom: "0",
-                              }}
+                            <div style={eyebrowStyle}>Action owner</div>
+                            <select
+                              value={actionOwner}
+                              onChange={(e) => setActionOwner(e.target.value)}
+                              style={inputStyle}
                             >
-                              Repair necessary?
-                            </h3>
+                              <option value="">Select owner...</option>
+                              {officeStaff.length > 0 && (
+                                <optgroup label="Office">
+                                  {officeStaff.map((staffMember) => (
+                                    <option key={staffMember.id} value={staffMember.name}>
+                                      {staffMember.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              {shopStaff.length > 0 && (
+                                <optgroup label="Shop">
+                                  {shopStaff.map((staffMember) => (
+                                    <option key={staffMember.id} value={staffMember.name}>
+                                      {formatStaffOptionLabel(
+                                        staffMember,
+                                        todayAbsentEngineerIdSet,
+                                      )}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </select>
                           </div>
-                          <div style={{ display: "flex", gap: isTablet ? "14px" : "8px" }}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRepairNecessary(false);
-                                setRepairDecisionError(false);
-                              }}
-                              style={choiceBtn(repairNecessary === false)}
-                            >
-                              No
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRepairNecessary(true);
-                                setRepairDecisionError(false);
-                              }}
-                              style={choiceBtn(repairNecessary === true)}
-                            >
-                              Yes
-                            </button>
+                          <div style={{ fontSize: isTablet ? "15px" : "var(--fs-sm)", color: COLORS.textSoft, paddingTop: "2px" }}>
+                            Status will be saved as <strong>Open</strong>.
                           </div>
-                          {repairDecisionError && (
-                            <StatusNote color="red" large={isTablet}>
-                              Please fill this in.
-                            </StatusNote>
-                          )}
                         </div>
                       )}
-
-                      {completedStep && previewWillRequestRfq && (
-                        <StatusNote
-                          color="red"
-                          large={isTablet}
-                          style={{ marginTop: isTablet ? "14px" : "8px" }}
-                        >
-                          After saving, this work order will be blocked:{" "}
-                          {RFQ_MUST_BE_SENT_REASON}.
-                        </StatusNote>
-                      )}
-
-                      {stepTouched &&
-                        completedStep &&
-                        previewNextStep &&
-                        previewNextStep !== READY_TO_CLOSE_STEP && (
-                          <StatusNote color="blue" large={isTablet}>
-                            Next step: {previewNextStep}
-                          </StatusNote>
-                        )}
-
-                      {stepTouched &&
-                        completedStep &&
-                        previewNextStep === READY_TO_CLOSE_STEP && (
-                          <StatusNote color="green" large={isTablet}>
-                            Final step completed - ready to close
-                          </StatusNote>
-                        )}
-                    </>
-                  ) : (
-                    <StatusNote color="red" large={isTablet}>
-                      No steps available - work order type is not set.
-                    </StatusNote>
-                  )}
-                </div>
-
-                <div style={sectionCard}>
-                  <div style={eyebrowStyle}>Blocker update</div>
-                  <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
-                    Blocked?
-                  </h2>
-                  <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
-                    Only complete this section if the work cannot continue.
-                  </p>
-
-                  <div style={{ display: "flex", gap: isTablet ? "14px" : "8px", marginBottom: isTablet ? "18px" : "12px" }}>
-                    <button type="button" onClick={() => setBlockedChoice(false)} style={choiceBtn(!isBlockedUpdate)}>
-                      No
-                    </button>
-                    <button type="button" onClick={() => setBlockedChoice(true)} style={choiceBtn(isBlockedUpdate)}>
-                      Yes
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      marginTop: isTablet ? "24px" : "14px",
+                    }}
+                  >
+                    <button
+                      onClick={() => void saveUpdate()}
+                      style={{ ...primaryBtn, width: isTablet ? "100%" : undefined }}
+                    >
+                      Save Update
                     </button>
                   </div>
+            </div>
+          )}
+        </section>
 
-                  {isBlockedUpdate && (
-                    <div
-                      style={{
-                        display: "grid",
-                        gap: isTablet ? "14px" : "8px",
-                        padding: isTablet ? "18px" : "12px",
-                        backgroundColor: "#fffdfa",
-                        border: `1px solid ${COLORS.border}`,
-                        borderRadius: isTablet ? "18px" : "10px",
-                      }}
-                    >
-                      <input
-                        value={holdReason}
-                        onChange={(e) => setHoldReason(e.target.value)}
-                        placeholder="Hold reason..."
-                        style={inputStyle}
-                      />
-                      <input
-                        value={requiredNextAction}
-                        onChange={(e) => setRequiredNextAction(e.target.value)}
-                        placeholder="Action required..."
-                        style={inputStyle}
-                      />
-                      <div>
-                        <div style={eyebrowStyle}>Action owner</div>
-                        <select
-                          value={actionOwner}
-                          onChange={(e) => setActionOwner(e.target.value)}
-                          style={inputStyle}
-                        >
-                          <option value="">Select owner...</option>
-                          {officeStaff.length > 0 && (
-                            <optgroup label="Office">
-                              {officeStaff.map((staffMember) => (
-                                <option key={staffMember.id} value={staffMember.name}>
-                                  {staffMember.name}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                          {shopStaff.length > 0 && (
-                            <optgroup label="Shop">
-                              {shopStaff.map((staffMember) => (
-                                <option key={staffMember.id} value={staffMember.name}>
-                                  {formatStaffOptionLabel(
-                                    staffMember,
-                                    todayAbsentEngineerIdSet,
-                                  )}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                        </select>
-                      </div>
-                      <div style={{ fontSize: isTablet ? "15px" : "var(--fs-sm)", color: COLORS.textSoft, paddingTop: "2px" }}>
-                        Status will be saved as <strong>Open</strong>.
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+        <section style={{ ...sectionCard, marginBottom: majorSectionGap }}>
+          <h2 style={{ ...fieldTitleStyle, fontSize: isTablet ? "25px" : "17px", marginBottom: "4px" }}>
+            Blocked work orders
+          </h2>
+          <p style={{ ...subtitleStyle, marginBottom: isTablet ? "18px" : "14px" }}>
+            {blockedOrders.length} blocked work order{blockedOrders.length !== 1 ? "s" : ""} at this moment. {unblockableBlockedOrderCount} can be unblocked from here.
+          </p>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1.65fr) minmax(0, 1fr)",
+              gap: isTablet ? "16px" : "var(--gap-default)",
+            }}
+          >
+            <div style={innerCard}>
+              <div style={eyebrowStyle}>Search blocked</div>
+              <SearchableSelect
+                options={blockedWorkOrderOptions}
+                value={selectedMode === "blocked" ? selectedId : ""}
+                onChange={(v) => selectOrder(v, "blocked")}
+                placeholder="Search blocked work orders..."
+                style={{ marginTop: "2px" }}
+                inputStyle={
+                  isTablet
+                    ? {
+                        padding: "16px",
+                        borderRadius: "14px",
+                        fontSize: "18px",
+                        minHeight: "58px",
+                        backgroundColor: COLORS.inputBg,
+                        borderColor: COLORS.borderStrong,
+                      }
+                    : undefined
+                }
+                optionStyle={
+                  isTablet
+                    ? {
+                        padding: "15px 16px",
+                        fontSize: "17px",
+                      }
+                    : undefined
+                }
+              />
+            </div>
+
+            <div style={innerCard}>
+              <div style={eyebrowStyle}>Blocked list</div>
+              <select
+                value={selectedMode === "blocked" ? selectedId : ""}
+                onChange={(e) => selectOrder(e.target.value, "blocked")}
+                style={inputStyle}
+              >
+                <option value="">Select blocked order...</option>
+                {blockedOrders.map((o) => (
+                  <option key={o.work_order_id} value={o.work_order_id}>
+                    {o.work_order_id} - {o.part_number || "-"} - {o.customer || "-"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {selectedOrder && selectedMode === "blocked" && (
+            <>
+              <div style={sectionDividerStyle} />
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  marginTop: isTablet ? "24px" : "14px",
+                  display: "grid",
+                  gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1fr) auto",
+                  gap: isTablet ? "14px" : "16px",
+                  alignItems: "center",
                 }}
               >
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: isTablet ? "22px" : "18px",
+                      fontWeight: 750,
+                      color: COLORS.text,
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {selectedOrder.work_order_id}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: "3px",
+                      fontSize: isTablet ? "15px" : "var(--fs-sm)",
+                      color: COLORS.textSoft,
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    {selectedOrder.customer || "-"}
+                    {selectedOrder.part_number ? ` - PN: ${selectedOrder.part_number}` : ""}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: isTablet ? "8px" : "6px",
+                      fontSize: isTablet ? "16px" : "var(--fs-body)",
+                      fontWeight: 700,
+                      color: selectedOrderCanBeUnblocked ? COLORS.green : COLORS.red,
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    Blocked: {blockReason(selectedOrder, {
+                      rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON,
+                    })}
+                  </div>
+                  {!selectedOrderCanBeUnblocked && (
+                    <div
+                      style={{
+                        marginTop: "3px",
+                        fontSize: isTablet ? "14px" : "var(--fs-sm)",
+                        color: COLORS.textSoft,
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      Cannot be unblocked from Shop Update.
+                    </div>
+                  )}
+                  {selectedOrderCanBeUnblocked &&
+                    hasActiveRfqSendAction(selectedOrder) && (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: isTablet ? "12px" : "8px",
+                          marginTop: isTablet ? "12px" : "8px",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setRfqCloseMode("awaiting_approval")}
+                          style={choiceBtn(rfqCloseMode === "awaiting_approval")}
+                          disabled={isUnblockingSelected}
+                        >
+                          Wait
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRfqCloseMode("continue")}
+                          style={choiceBtn(rfqCloseMode === "continue")}
+                          disabled={isUnblockingSelected}
+                        >
+                          Continue
+                        </button>
+                      </div>
+                    )}
+                </div>
                 <button
-                  onClick={() => void saveUpdate()}
-                  style={{ ...primaryBtn, width: isTablet ? "100%" : undefined }}
+                  onClick={() => void unblockSelectedWorkOrder()}
+                  disabled={!selectedOrderCanBeUnblocked || isUnblockingSelected}
+                  style={{
+                    ...primaryBtn,
+                    width: isTablet ? "100%" : "144px",
+                    minHeight: isTablet ? "56px" : "40px",
+                    fontSize: isTablet ? "17px" : "14px",
+                    boxShadow: "0 4px 12px rgba(37, 85, 199, 0.12)",
+                    opacity:
+                      !selectedOrderCanBeUnblocked || isUnblockingSelected
+                        ? 0.72
+                        : 1,
+                  }}
                 >
-                  Save Update
+                  {!selectedOrderCanBeUnblocked
+                    ? "Cannot unblock"
+                    : isUnblockingSelected
+                      ? "Saving..."
+                      : hasActiveRfqSendAction(selectedOrder)
+                        ? "Complete RFQ"
+                        : "Unblock"}
                 </button>
               </div>
             </>
