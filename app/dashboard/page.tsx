@@ -2556,6 +2556,25 @@ function DashboardPageContent() {
                 )}
               </div>
 
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  border: `1px solid ${COLORS.red}`,
+                  backgroundColor: COLORS.redSoft,
+                  color: COLORS.red,
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  lineHeight: 1.45,
+                }}
+              >
+                Are you sure you want to do this? This updates the block state
+                immediately
+                {isDashboardRfqAction(actionConfirmation)
+                  ? " and should only be used after RFQ approval/payment is confirmed."
+                  : "."}
+              </div>
+
               {actionConfirmationStatus && (
                 <div
                   style={{

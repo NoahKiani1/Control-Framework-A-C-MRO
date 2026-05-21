@@ -46,12 +46,9 @@ import {
 import {
   RFQ_AWAITING_APPROVAL_REASON,
   RFQ_MUST_BE_SENT_REASON,
-  buildCloseRfqActionPayload,
   buildOpenRfqActionPayload,
-  hasActiveRfqSendAction,
   isRfqSendAction,
   shouldRequestRfqAfterCompletedStep,
-  type RfqCloseMode,
 } from "@/lib/rfq-workflow";
 import { SearchableSelect } from "@/app/components/searchable-select";
 import { PageHeader } from "@/app/components/page-header";
@@ -128,21 +125,23 @@ function isAwaitingRfqApprovalBlock(order: WorkOrder): boolean {
   );
 }
 
-function canShopUnblockOrder(order: WorkOrder): boolean {
+function isShopRfqBlock(order: WorkOrder): boolean {
+  const rfqState = normalizeRfqState(order.rfq_state);
   return (
-    isBlocked(order) &&
-    !isAwaitingRfqApprovalBlock(order) &&
-    normalizeRfqState(order.rfq_state) !== "rfq rejected"
+    isAwaitingRfqApprovalBlock(order) ||
+    isRfqSendAction(order) ||
+    rfqState === "rfq send" ||
+    rfqState === "rfq rejected"
   );
 }
 
-function getShopUnblockUnavailableMessage(order: WorkOrder): string {
-  if (isAwaitingRfqApprovalBlock(order)) {
-    return `This work order is blocked by ${RFQ_AWAITING_APPROVAL_REASON} and cannot be unblocked from Shop Update.`;
-  }
+function canShopUnblockOrder(order: WorkOrder): boolean {
+  return isBlocked(order) && !isShopRfqBlock(order);
+}
 
-  if (normalizeRfqState(order.rfq_state) === "rfq rejected") {
-    return "This work order is blocked by an AcMP RFQ status and cannot be unblocked from Shop Update.";
+function getShopUnblockUnavailableMessage(order: WorkOrder): string {
+  if (isShopRfqBlock(order)) {
+    return "RFQ blocks cannot be unblocked from Shop Update. Use Dashboard or Shared Planning.";
   }
 
   return "This work order cannot be unblocked from Shop Update.";
@@ -212,11 +211,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const [extraActionCloseStatus, setExtraActionCloseStatus] = useState("");
   const [isClosingExtraAction, setIsClosingExtraAction] = useState(false);
   const [correctiveActionToClose, setCorrectiveActionToClose] = useState<WorkOrder | null>(null);
-  const [rfqCloseMode, setRfqCloseMode] =
-    useState<RfqCloseMode>("awaiting_approval");
   const [correctiveActionCloseStatus, setCorrectiveActionCloseStatus] = useState("");
   const [isClosingCorrectiveAction, setIsClosingCorrectiveAction] = useState(false);
   const [isUnblockingSelected, setIsUnblockingSelected] = useState(false);
+  const [selectedUnblockConfirmationOpen, setSelectedUnblockConfirmationOpen] =
+    useState(false);
 
   useEffect(() => {
     async function load() {
@@ -343,7 +342,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const correctiveActions = orders
       .filter((order) => {
         if (!hasActiveCorrectiveAction(order)) return false;
-        if (hasActiveRfqSendAction(order)) return true;
+        if (isRfqSendAction(order)) return false;
         const owner = getCorrectiveActionContext(order).owner;
         return owner ? engineerNames.has(owner) : false;
       })
@@ -419,6 +418,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       resetSelectedWorkOrderState();
       setSaveStatus("");
       setIsUnblockingSelected(false);
+      setSelectedUnblockConfirmationOpen(false);
       return;
     }
 
@@ -437,9 +437,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setRequiredNextAction(order.required_next_action || "");
     setActionOwner(order.hold_reason?.trim() ? order.action_owner || "" : "");
     setIsBlockedUpdate(mode === "open" && hasBlocker);
-    setRfqCloseMode("awaiting_approval");
     setSaveStatus("");
     setIsUnblockingSelected(false);
+    setSelectedUnblockConfirmationOpen(false);
   }
 
   function handleCompletedStepChange(value: string) {
@@ -472,8 +472,12 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   }
 
   function openCloseCorrectiveActionConfirmation(order: WorkOrder) {
+    if (isRfqSendAction(order)) {
+      setSaveStatus("RFQ actions cannot be completed from Shop Update.");
+      return;
+    }
+
     setCorrectiveActionToClose(order);
-    setRfqCloseMode("awaiting_approval");
     setCorrectiveActionCloseStatus("");
     setIsClosingCorrectiveAction(false);
   }
@@ -482,6 +486,23 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     if (isClosingCorrectiveAction) return;
     setCorrectiveActionToClose(null);
     setCorrectiveActionCloseStatus("");
+  }
+
+  function openSelectedUnblockConfirmation() {
+    if (!selectedOrder) return;
+
+    if (!canShopUnblockOrder(selectedOrder)) {
+      setSaveStatus(getShopUnblockUnavailableMessage(selectedOrder));
+      return;
+    }
+
+    setSaveStatus("");
+    setSelectedUnblockConfirmationOpen(true);
+  }
+
+  function closeSelectedUnblockConfirmation() {
+    if (isUnblockingSelected) return;
+    setSelectedUnblockConfirmationOpen(false);
   }
 
   async function confirmCloseExtraAction() {
@@ -508,6 +529,12 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   async function confirmCloseCorrectiveAction() {
     if (!correctiveActionToClose) return;
 
+    if (isRfqSendAction(correctiveActionToClose)) {
+      setCorrectiveActionCloseStatus("RFQ actions cannot be completed from Shop Update.");
+      setIsClosingCorrectiveAction(false);
+      return;
+    }
+
     setIsClosingCorrectiveAction(true);
     setCorrectiveActionCloseStatus("Saving...");
 
@@ -523,13 +550,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
-    const closePayload = isRfqSendAction(correctiveActionToClose)
-      ? buildCloseRfqActionPayload({
-          mode: rfqCloseMode,
-          timestamp: closedAt,
-          updateSource: "manual",
-        })
-      : getCorrectiveActionCompletionPayload(closedAt);
+    const closePayload = getCorrectiveActionCompletionPayload(closedAt);
 
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
       correctiveActionToClose.work_order_id,
@@ -766,6 +787,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     }
 
     setIsUnblockingSelected(true);
+    setSelectedUnblockConfirmationOpen(false);
     setSaveStatus("Saving...");
 
     const updatedAt = new Date().toISOString();
@@ -785,13 +807,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     }
 
     const unblockPayload = hasCorrectiveAction
-      ? hasActiveRfqSendAction(selectedOrder)
-        ? buildCloseRfqActionPayload({
-            mode: rfqCloseMode,
-            timestamp: updatedAt,
-            updateSource: "manual",
-          })
-        : getCorrectiveActionCompletionPayload(updatedAt)
+      ? getCorrectiveActionCompletionPayload(updatedAt)
       : getManualUnblockPayload(selectedOrder, updatedAt);
 
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
@@ -825,6 +841,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setSelectedMode(null);
     resetSelectedWorkOrderState();
     setIsUnblockingSelected(false);
+    setSelectedUnblockConfirmationOpen(false);
     setSaveStatus(
       isBlocked(savedOrder)
         ? `Action completed for ${savedOrder.work_order_id}. Still blocked: ${blockReason(savedOrder, {
@@ -951,11 +968,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     value: o.work_order_id,
     label: `${o.work_order_id} - ${o.part_number || "-"} - ${o.customer || "-"}`,
   }));
-  const unblockableBlockedOrderCount = blockedOrders.filter((order) =>
-    canShopUnblockOrder(order),
-  ).length;
   const selectedOrderCanBeUnblocked = selectedOrder
     ? canShopUnblockOrder(selectedOrder)
+    : false;
+  const selectedOrderHasShopRfqBlock = selectedOrder
+    ? isShopRfqBlock(selectedOrder)
     : false;
 
   return (
@@ -1386,7 +1403,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                       marginTop: isTablet ? "8px" : "6px",
                       fontSize: isTablet ? "16px" : "var(--fs-body)",
                       fontWeight: 700,
-                      color: selectedOrderCanBeUnblocked ? COLORS.green : COLORS.red,
+                      color: selectedOrderCanBeUnblocked ? COLORS.red : COLORS.red,
                       lineHeight: 1.3,
                     }}
                   >
@@ -1403,60 +1420,32 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                         lineHeight: 1.3,
                       }}
                     >
-                      Cannot be unblocked from Shop Update.
                     </div>
                   )}
-                  {selectedOrderCanBeUnblocked &&
-                    hasActiveRfqSendAction(selectedOrder) && (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: isTablet ? "12px" : "8px",
-                          marginTop: isTablet ? "12px" : "8px",
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setRfqCloseMode("awaiting_approval")}
-                          style={choiceBtn(rfqCloseMode === "awaiting_approval")}
-                          disabled={isUnblockingSelected}
-                        >
-                          Wait
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setRfqCloseMode("continue")}
-                          style={choiceBtn(rfqCloseMode === "continue")}
-                          disabled={isUnblockingSelected}
-                        >
-                          Continue
-                        </button>
-                      </div>
-                    )}
                 </div>
-                <button
-                  onClick={() => void unblockSelectedWorkOrder()}
-                  disabled={!selectedOrderCanBeUnblocked || isUnblockingSelected}
-                  style={{
-                    ...primaryBtn,
-                    width: isTablet ? "100%" : "144px",
-                    minHeight: isTablet ? "56px" : "40px",
-                    fontSize: isTablet ? "17px" : "14px",
-                    boxShadow: "0 4px 12px rgba(37, 85, 199, 0.12)",
-                    opacity:
-                      !selectedOrderCanBeUnblocked || isUnblockingSelected
-                        ? 0.72
-                        : 1,
-                  }}
-                >
-                  {!selectedOrderCanBeUnblocked
-                    ? "Cannot unblock"
-                    : isUnblockingSelected
-                      ? "Saving..."
-                      : hasActiveRfqSendAction(selectedOrder)
-                        ? "Complete RFQ"
+                {!selectedOrderHasShopRfqBlock && (
+                  <button
+                    onClick={openSelectedUnblockConfirmation}
+                    disabled={!selectedOrderCanBeUnblocked || isUnblockingSelected}
+                    style={{
+                      ...primaryBtn,
+                      width: isTablet ? "100%" : "144px",
+                      minHeight: isTablet ? "56px" : "40px",
+                      fontSize: isTablet ? "17px" : "14px",
+                      boxShadow: "0 4px 12px rgba(37, 85, 199, 0.12)",
+                      opacity:
+                        !selectedOrderCanBeUnblocked || isUnblockingSelected
+                          ? 0.72
+                          : 1,
+                    }}
+                  >
+                    {!selectedOrderCanBeUnblocked
+                      ? "Cannot unblock"
+                      : isUnblockingSelected
+                        ? "Saving..."
                         : "Unblock"}
-                </button>
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -1476,8 +1465,6 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
             <div style={{ display: "grid", gap: isTablet ? "14px" : "10px" }}>
               {taskItems.map((item) => {
                 const isCorrectiveAction = item.kind === "corrective-action";
-                const isRfqAction =
-                  isCorrectiveAction && hasActiveRfqSendAction(item.order);
                 const workOrderLabel = isCorrectiveAction
                   ? item.order.work_order_id
                   : "-";
@@ -1494,11 +1481,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                       .filter(Boolean)
                       .join(" - ")
                   : "";
-                const responsible = isRfqAction
-                  ? "-"
-                  : isCorrectiveAction
-                    ? normalizeAssignedPersonTeam(getCorrectiveActionContext(item.order).owner)
-                    : normalizeAssignedPersonTeam(item.action.responsible_person_team);
+                const responsible = isCorrectiveAction
+                  ? normalizeAssignedPersonTeam(getCorrectiveActionContext(item.order).owner)
+                  : normalizeAssignedPersonTeam(item.action.responsible_person_team);
                 const dueDateLabel = isCorrectiveAction
                   ? formatDate(item.order.due_date)
                   : formatDate(item.action.due_date);
@@ -1595,6 +1580,116 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
           </div>
         )}
       </div>
+
+      {selectedUnblockConfirmationOpen && selectedOrder && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(31, 41, 55, 0.28)",
+            display: "grid",
+            placeItems: "center",
+            padding: isTablet ? "22px" : "20px",
+            zIndex: 60,
+          }}
+          onMouseDown={closeSelectedUnblockConfirmation}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: isTablet ? "620px" : "520px",
+              backgroundColor: "#fcfaf6",
+              border: `1px solid ${COLORS.borderStrong}`,
+              borderRadius: isTablet ? "24px" : "18px",
+              boxShadow: "0 20px 50px rgba(31, 41, 55, 0.18)",
+              padding: isTablet ? "22px" : "16px",
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div style={{ marginBottom: isTablet ? "12px" : "14px" }}>
+              <div style={eyebrowStyle}>Confirm unblock</div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: isTablet ? "26px" : "var(--fs-title)",
+                  fontWeight: isTablet ? 700 : 750,
+                  letterSpacing: 0,
+                  color: COLORS.text,
+                  lineHeight: isTablet ? 1.15 : 1.1,
+                }}
+              >
+                {`Unblock ${selectedOrder.work_order_id}?`}
+              </h2>
+            </div>
+
+            <div
+              style={{
+                ...innerCard,
+                backgroundColor: COLORS.panelBg,
+                borderRadius: isTablet ? "18px" : "14px",
+                padding: isTablet ? "18px" : "13px",
+                display: "grid",
+                gap: isTablet ? "14px" : "10px",
+              }}
+            >
+              <div>
+                <div style={eyebrowStyle}>Hold reason</div>
+                <div style={{ fontSize: isTablet ? "17px" : "var(--fs-body)", color: COLORS.text }}>
+                  {blockReason(selectedOrder, {
+                    rfqSentLabel: RFQ_AWAITING_APPROVAL_REASON,
+                  })}
+                </div>
+              </div>
+
+              <StatusNote color="red" large={isTablet}>
+                Are you sure you want to do this? This action cannot be reversed.
+            
+              </StatusNote>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: isTablet ? "14px" : "10px",
+                marginTop: isTablet ? "18px" : "14px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={closeSelectedUnblockConfirmation}
+                style={{
+                  padding: isTablet ? "16px 20px" : "8px 12px",
+                  borderRadius: isTablet ? "15px" : "10px",
+                  border: `1px solid ${COLORS.borderStrong}`,
+                  backgroundColor: COLORS.panelBg,
+                  color: COLORS.text,
+                  fontSize: isTablet ? "17px" : "var(--fs-body)",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  minHeight: isTablet ? "58px" : undefined,
+                }}
+                disabled={isUnblockingSelected}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void unblockSelectedWorkOrder()}
+                style={{
+                  ...primaryBtn,
+                  padding: isTablet ? "17px 24px" : "8px 12px",
+                  borderRadius: isTablet ? "16px" : "10px",
+                  boxShadow: "0 8px 20px rgba(37, 85, 199, 0.18)",
+                }}
+                disabled={isUnblockingSelected}
+              >
+                {isUnblockingSelected ? "Saving..." : "Unblock"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {extraActionToClose && (
         <div
@@ -1755,11 +1850,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
               <div>
                 <div style={eyebrowStyle}>Responsible</div>
                 <div style={{ fontSize: isTablet ? "17px" : "var(--fs-body)", color: COLORS.text }}>
-                  {isRfqSendAction(correctiveActionToClose)
-                    ? "-"
-                    : normalizeAssignedPersonTeam(
-                        getCorrectiveActionContext(correctiveActionToClose).owner,
-                      )}
+                  {normalizeAssignedPersonTeam(
+                    getCorrectiveActionContext(correctiveActionToClose).owner,
+                  )}
                 </div>
               </div>
               <div>
@@ -1769,39 +1862,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                 </div>
               </div>
 
-              {isRfqSendAction(correctiveActionToClose) ? (
-                <>
-                  <StatusNote color="neutral" large={isTablet}>
-                    Before completing this action, confirm with Rens or Alissa
-                    whether the shop may continue this work order.
-                  </StatusNote>
-                  <div>
-                    <div style={eyebrowStyle}>After completion</div>
-                    <div style={{ display: "flex", gap: isTablet ? "14px" : "8px" }}>
-                      <button
-                        type="button"
-                        onClick={() => setRfqCloseMode("awaiting_approval")}
-                        style={choiceBtn(rfqCloseMode === "awaiting_approval")}
-                        disabled={isClosingCorrectiveAction}
-                      >
-                        No, wait for RFQ payment
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRfqCloseMode("continue")}
-                        style={choiceBtn(rfqCloseMode === "continue")}
-                        disabled={isClosingCorrectiveAction}
-                      >
-                        Yes, continue
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <StatusNote color="green" large={isTablet}>
-                  Completing this action removes the block and puts the work order back on open.
-                </StatusNote>
-              )}
+              <StatusNote color="green" large={isTablet}>
+                Completing this action removes the block and puts the work order back on open.
+              </StatusNote>
 
               {correctiveActionCloseStatus && (
                 <StatusNote

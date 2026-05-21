@@ -1484,6 +1484,10 @@ function PlanningPageContent() {
   const actionConfirmationCorrectiveAction = actionConfirmationOrder
     ? getCorrectiveActionContext(actionConfirmationOrder)
     : null;
+  const actionConfirmationIsRfqUnblock = actionConfirmationOrder
+    ? hasActiveRfqSendAction(actionConfirmationOrder) ||
+      normalizeRfqState(actionConfirmationOrder.rfq_state) === "rfq send"
+    : false;
 
   const dueDateRequired =
     quickEdit?.field === "due_date" &&
@@ -3088,6 +3092,25 @@ function PlanningPageContent() {
                   </div>
                 </div>
               )}
+
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  border: `1px solid ${ui.redBorder}`,
+                  backgroundColor: ui.redSoft,
+                  color: ui.red,
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  lineHeight: 1.45,
+                }}
+              >
+                Are you sure you want to do this? This updates the block state
+                immediately
+                {actionConfirmationIsRfqUnblock
+                  ? " and should only be used after RFQ approval/payment is confirmed."
+                  : "."}
+              </div>
 
               {actionStatus && (
                 <div
