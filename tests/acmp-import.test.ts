@@ -16,10 +16,13 @@ import {
   analyzeImportRows,
   findMissingClosedWorkOrderIds,
 } from "../lib/acmp-import/analyze";
+import { applyExistingOrderUpdates } from "../lib/acmp-import/apply";
 import type { AcmpImportResult } from "../lib/acmp-import/run";
 import { createRowsSignature } from "../lib/acmp-import/signature";
 import { isProcessedRowsSignatureDuplicate } from "../lib/acmp-import/import-files";
 import { zonedDateTimeToUtcIso } from "../lib/time-zone";
+import { RFQ_AWAITING_APPROVAL_REASON } from "../lib/rfq-workflow";
+import { isBlocked } from "../lib/work-order-rules";
 
 const SUCCESS_RESULT: AcmpImportResult = {
   processed: 1,
@@ -185,6 +188,61 @@ function createWorkOrderIdClient(workOrderIds: string[]) {
   } as never;
 }
 
+function createExistingOrderUpdateClient(
+  initialRows: Record<string, unknown>[],
+) {
+  const rows = new Map(
+    initialRows.map((row) => [String(row.work_order_id), { ...row }]),
+  );
+  const upsertedRows: Record<string, unknown>[] = [];
+
+  const client = {
+    from(table: string) {
+      assert.equal(table, "work_orders");
+      let idsFilter: string[] | null = null;
+      const query = {
+        select() {
+          return query;
+        },
+        in(column: string, values: string[]) {
+          assert.equal(column, "work_order_id");
+          idsFilter = values;
+          return query;
+        },
+        upsert(payload: Record<string, unknown>[]) {
+          upsertedRows.push(...payload);
+          for (const row of payload) {
+            const id = String(row.work_order_id);
+            rows.set(id, { ...(rows.get(id) || {}), ...row });
+          }
+          return Promise.resolve({ error: null });
+        },
+        then<TResult1 = unknown, TResult2 = never>(
+          onfulfilled?:
+            | ((value: { data: Record<string, unknown>[]; error: null }) => TResult1 | PromiseLike<TResult1>)
+            | null,
+          onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+        ) {
+          const data = Array.from(rows.values()).filter((row) =>
+            idsFilter ? idsFilter.includes(String(row.work_order_id)) : true,
+          );
+          return Promise.resolve({ data, error: null }).then(
+            onfulfilled,
+            onrejected,
+          );
+        },
+      };
+      return query;
+    },
+  } as never;
+
+  return {
+    client,
+    rows,
+    upsertedRows,
+  };
+}
+
 async function main() {
   assert.deepEqual(parseAcmpExportFilename("werkorders_130326.xlsx"), {
     filename: "werkorders_130326.xlsx",
@@ -277,6 +335,64 @@ async function main() {
     createWorkOrderIdClient(["100"]),
   );
   assert.equal(invalidExportAnalysis.missingClosed, 0);
+
+  {
+    const { client, rows, upsertedRows } = createExistingOrderUpdateClient([
+      {
+        work_order_id: "200",
+        customer: "ACMP",
+        rfq_state: null,
+        rfq_manual_approved_at: null,
+        last_system_update: "2026-05-10T10:00:00.000Z",
+        is_open: true,
+        work_order_type: "Wheel Repair",
+        part_number: "PN-200",
+        is_active: true,
+        current_process_step: "Assembly",
+        assigned_person_team: "Shop",
+        included_process_steps: null,
+        hold_reason: RFQ_AWAITING_APPROVAL_REASON,
+        required_next_action: null,
+        action_owner: null,
+        action_status: "Done",
+        action_closed: true,
+        data_tracking_enabled: false,
+      },
+    ]);
+
+    const result = await applyExistingOrderUpdates({
+      existingOrders: [
+        {
+          work_order_id: "200",
+          customer: "ACMP",
+          rfq_state: null,
+          last_system_update: "2026-05-11T10:00:00.000Z",
+          is_open: true,
+          work_order_type: "Wheel Repair",
+          part_number: "PN-200",
+        },
+      ],
+      importTimestamp: "2026-05-11T10:00:00.000Z",
+      client,
+    });
+
+    assert.equal(result.error, null);
+    assert.equal(upsertedRows.length, 1);
+    assert.equal("hold_reason" in upsertedRows[0], false);
+    assert.equal(
+      rows.get("200")?.hold_reason,
+      RFQ_AWAITING_APPROVAL_REASON,
+    );
+    assert.equal(
+      isBlocked({
+        hold_reason: rows.get("200")?.hold_reason as string | null,
+        rfq_state: rows.get("200")?.rfq_state as string | null,
+        rfq_manual_approved_at: rows.get("200")
+          ?.rfq_manual_approved_at as string | null,
+      }),
+      true,
+    );
+  }
 
   {
     const pdfPath = "/work order planning app/import/notes.pdf";
