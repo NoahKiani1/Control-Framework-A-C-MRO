@@ -66,8 +66,8 @@ function main() {
     "Disassembly",
     "Cleaning",
     "Inspection",
-    "Repair",
     "Eddy Current",
+    "Repair",
     "Assembly",
     "EASA-Form 1",
   ]);
@@ -78,7 +78,64 @@ function main() {
       "Inspection",
       withRepair,
     ),
+    "Eddy Current",
+  );
+  assert.equal(
+    getNextProcessStepAfterCompletedForOrder(
+      "Wheel Repair",
+      "Eddy Current",
+      withRepair,
+    ),
     "Repair",
+  );
+  assert.equal(
+    shouldRequestRfqAfterCompletedStep({
+      workOrderType: "Wheel Repair",
+      includedSteps: withRepair,
+      completedStep: "Inspection",
+      rfqState: null,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRequestRfqAfterCompletedStep({
+      workOrderType: "Wheel Repair",
+      includedSteps: withRepair,
+      completedStep: "Eddy Current",
+      rfqState: null,
+    }),
+    true,
+  );
+
+  const wheelRepairWithoutNdt = [
+    "Intake",
+    "Disassembly",
+    "Cleaning",
+    "Inspection",
+    "Assembly",
+    "EASA-Form 1",
+  ];
+  const withRepairWithoutNdt = addRepairAfterInspectionForOrder(
+    "Wheel Repair",
+    wheelRepairWithoutNdt,
+  );
+  assert.deepEqual(withRepairWithoutNdt, [
+    "Intake",
+    "Disassembly",
+    "Cleaning",
+    "Inspection",
+    "Repair",
+    "Assembly",
+    "EASA-Form 1",
+  ]);
+  assert.equal(
+    shouldRequestRfqAfterCompletedStep({
+      workOrderType: "Wheel Repair",
+      includedSteps: withRepairWithoutNdt,
+      completedStep: "Inspection",
+      rfqState: null,
+    }),
+    true,
   );
   assert.deepEqual(
     resolveStepsForOrder("Wheel Overhaul", [
@@ -110,7 +167,7 @@ function main() {
   assert.equal(getExpectedHoursForStep("Wheel Repair", "Repair", "PN-1"), 1.5);
   assert.equal(
     getRemainingHours("Wheel Repair", "Repair", "PN-1", withRepair),
-    4.5,
+    3.3,
   );
 
   const fullWheelOverhaulSteps = [
@@ -125,6 +182,22 @@ function main() {
     "Assembly",
     "EASA-Form 1",
   ];
+  assert.deepEqual(
+    addRepairAfterInspectionForOrder("Wheel Overhaul", fullWheelOverhaulSteps),
+    [
+      "Intake",
+      "Disassembly",
+      "Paint Stripping",
+      "Inspection",
+      "Eddy Current",
+      "Penetrant Testing",
+      "Magnetic Test",
+      "Painting",
+      "Repair",
+      "Assembly",
+      "EASA-Form 1",
+    ],
+  );
   assert.equal(
     getLastIncludedRfqInspectionStep("Wheel Overhaul", fullWheelOverhaulSteps),
     "Magnetic Test",

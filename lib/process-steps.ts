@@ -14,7 +14,8 @@
  * that order. Office sets it during import / activation (Standard uses the
  * default active steps for the type; Custom lets them add/drop tasks such as
  * Magnetic Test. Shop-added steps such as Repair are only inserted while an
- * active order is moving through the shop flow.
+ * active order is moving through the shop flow and stay in the configured
+ * process order.
  *
  * Template-level helpers (those that only take `workOrderType`) remain for
  * places where no order is in scope — for example restriction lookups and the
@@ -31,7 +32,7 @@ export const SHOP_ADDED_PROCESS_STEPS = ["Repair"];
 /** The inspection gate where a shop engineer can add the dynamic repair step. */
 export const INSPECTION_PROCESS_STEP = "Inspection";
 
-/** Dynamic step inserted after inspection when repair is required. */
+/** Dynamic step selected after inspection and executed before assembly. */
 export const REPAIR_PROCESS_STEP = "Repair";
 
 /** The last tracked step in every flow. */
@@ -50,9 +51,9 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Disassembly",
     "Cleaning",
     "Inspection",
-    "Repair",
     "Eddy Current",
     "Magnetic Test",
+    "Repair",
     "Assembly",
     "EASA-Form 1",
   ],
@@ -61,11 +62,11 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Disassembly",
     "Paint Stripping",
     "Inspection",
-    "Repair",
     "Eddy Current",
     "Penetrant Testing",
     "Magnetic Test",
     "Painting",
+    "Repair",
     "Assembly",
     "EASA-Form 1",
   ],
@@ -74,9 +75,9 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Disassembly",
     "Cleaning",
     "Inspection",
-    "Repair",
     "Eddy Current",
     "Magnetic Test",
+    "Repair",
     "Assembly",
     "EASA-Form 1",
   ],
@@ -85,11 +86,11 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Disassembly",
     "Paint Stripping",
     "Inspection",
-    "Repair",
     "Eddy Current",
     "Penetrant Testing",
     "Magnetic Test",
     "Painting",
+    "Repair",
     "Assembly",
     "EASA-Form 1",
   ],

@@ -853,11 +853,11 @@ const timelineLegendEntries = [
   "Cleaning",
   "Paint Stripping",
   "Inspection",
-  "Repair",
   "Eddy Current",
   "Penetrant Testing",
   "Magnetic Test",
   "Painting",
+  "Repair",
   "Assembly",
   FINAL_PROCESS_STEP,
 ].map((step) => ({
