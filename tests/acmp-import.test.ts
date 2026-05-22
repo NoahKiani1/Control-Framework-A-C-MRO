@@ -378,7 +378,7 @@ async function main() {
 
     assert.equal(result.error, null);
     assert.equal(upsertedRows.length, 1);
-    assert.equal("hold_reason" in upsertedRows[0], false);
+    assert.equal(upsertedRows[0].hold_reason, RFQ_AWAITING_APPROVAL_REASON);
     assert.equal(
       rows.get("200")?.hold_reason,
       RFQ_AWAITING_APPROVAL_REASON,
@@ -391,6 +391,142 @@ async function main() {
           ?.rfq_manual_approved_at as string | null,
       }),
       true,
+    );
+  }
+
+  {
+    const { client, rows, upsertedRows } = createExistingOrderUpdateClient([
+      {
+        work_order_id: "210",
+        customer: "ACMP",
+        rfq_state: "RFQ Send",
+        rfq_manual_approved_at: null,
+        last_system_update: "2026-05-10T10:00:00.000Z",
+        is_open: true,
+        work_order_type: "Wheel Repair",
+        part_number: "PN-210",
+        is_active: true,
+        current_process_step: "Assembly",
+        assigned_person_team: "Shop",
+        included_process_steps: null,
+        hold_reason: RFQ_AWAITING_APPROVAL_REASON,
+        required_next_action: null,
+        action_owner: null,
+        action_status: "Done",
+        action_closed: true,
+        action_created_at: null,
+        action_closed_at: "2026-05-10T10:00:00.000Z",
+        data_tracking_enabled: false,
+      },
+      {
+        work_order_id: "211",
+        customer: "ACMP",
+        rfq_state: null,
+        rfq_manual_approved_at: null,
+        last_system_update: "2026-05-10T10:00:00.000Z",
+        is_open: true,
+        work_order_type: "Wheel Repair",
+        part_number: "PN-211",
+        is_active: true,
+        current_process_step: "Assembly",
+        assigned_person_team: "Shop",
+        included_process_steps: null,
+        hold_reason: "RFQ must be sent",
+        required_next_action: "RFQ must be sent",
+        action_owner: null,
+        action_status: "Open",
+        action_closed: false,
+        action_created_at: "2026-05-10T10:00:00.000Z",
+        action_closed_at: null,
+        data_tracking_enabled: false,
+      },
+    ]);
+
+    const result = await applyExistingOrderUpdates({
+      existingOrders: [
+        {
+          work_order_id: "210",
+          customer: "ACMP",
+          rfq_state: null,
+          last_system_update: "2026-05-11T10:00:00.000Z",
+          is_open: true,
+          work_order_type: "Wheel Repair",
+          part_number: "PN-210",
+        },
+        {
+          work_order_id: "211",
+          customer: "ACMP",
+          rfq_state: "RFQ Send",
+          last_system_update: "2026-05-11T10:00:00.000Z",
+          is_open: true,
+          work_order_type: "Wheel Repair",
+          part_number: "PN-211",
+        },
+      ],
+      importTimestamp: "2026-05-11T10:00:00.000Z",
+      client,
+    });
+
+    assert.equal(result.error, null);
+    assert.equal(upsertedRows.length, 2);
+    assert.equal(upsertedRows[0].hold_reason, RFQ_AWAITING_APPROVAL_REASON);
+    assert.equal(rows.get("210")?.hold_reason, RFQ_AWAITING_APPROVAL_REASON);
+    assert.equal(rows.get("210")?.rfq_state, null);
+    assert.equal(rows.get("211")?.hold_reason, RFQ_AWAITING_APPROVAL_REASON);
+  }
+
+  {
+    const { client, rows } = createExistingOrderUpdateClient([
+      {
+        work_order_id: "220",
+        customer: "ACMP",
+        rfq_state: null,
+        rfq_manual_approved_at: null,
+        last_system_update: "2026-05-10T10:00:00.000Z",
+        is_open: true,
+        work_order_type: "Wheel Repair",
+        part_number: "PN-220",
+        is_active: true,
+        current_process_step: "Assembly",
+        assigned_person_team: "Shop",
+        included_process_steps: null,
+        hold_reason: RFQ_AWAITING_APPROVAL_REASON,
+        required_next_action: null,
+        action_owner: null,
+        action_status: "Done",
+        action_closed: true,
+        action_created_at: null,
+        action_closed_at: "2026-05-10T10:00:00.000Z",
+        data_tracking_enabled: false,
+      },
+    ]);
+
+    const result = await applyExistingOrderUpdates({
+      existingOrders: [
+        {
+          work_order_id: "220",
+          customer: "ACMP",
+          rfq_state: "RFQ Send - Continue",
+          last_system_update: "2026-05-11T10:00:00.000Z",
+          is_open: true,
+          work_order_type: "Wheel Repair",
+          part_number: "PN-220",
+        },
+      ],
+      importTimestamp: "2026-05-11T10:00:00.000Z",
+      client,
+    });
+
+    assert.equal(result.error, null);
+    assert.equal(rows.get("220")?.hold_reason, null);
+    assert.equal(
+      isBlocked({
+        hold_reason: rows.get("220")?.hold_reason as string | null,
+        rfq_state: rows.get("220")?.rfq_state as string | null,
+        rfq_manual_approved_at: rows.get("220")
+          ?.rfq_manual_approved_at as string | null,
+      }),
+      false,
     );
   }
 

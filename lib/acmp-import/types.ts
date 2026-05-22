@@ -38,6 +38,8 @@ export type ExistingOrderSnapshot = ParsedRow & {
   action_owner: string | null;
   action_status: string | null;
   action_closed: boolean | null;
+  action_created_at: string | null;
+  action_closed_at: string | null;
   data_tracking_enabled: boolean | null;
 };
 

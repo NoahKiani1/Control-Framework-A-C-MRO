@@ -39,7 +39,7 @@ export function findMissingClosedWorkOrderIds(
 }
 
 const EXISTING_ORDER_SELECT =
-  "work_order_id, customer, rfq_state, rfq_manual_approved_at, last_system_update, is_open, work_order_type, part_number, is_active, current_process_step, assigned_person_team, included_process_steps, hold_reason, required_next_action, action_owner, action_status, action_closed, data_tracking_enabled";
+  "work_order_id, customer, rfq_state, rfq_manual_approved_at, last_system_update, is_open, work_order_type, part_number, is_active, current_process_step, assigned_person_team, included_process_steps, hold_reason, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, data_tracking_enabled";
 
 export async function analyzeImportRows(
   rows: Record<string, unknown>[],

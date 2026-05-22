@@ -24,8 +24,11 @@ import {
   syncWorkOrderDataBlockState,
 } from "@/lib/work-order-data";
 import {
+  RFQ_AWAITING_APPROVAL_REASON,
   buildImportedRfqActionClosePayload,
   getImportedRfqManualApprovedAt,
+  isRfqApprovedOrContinueState,
+  normalizeRfqWorkflowState,
 } from "@/lib/rfq-workflow";
 import { EXISTING_ORDER_SELECT } from "./analyze";
 import {
@@ -60,6 +63,39 @@ type ExistingUpdateResult = {
   updated: number;
   error: { message: string } | null;
 };
+
+function isAwaitingRfqApprovalHold(reason: string | null | undefined): boolean {
+  return (
+    normalizeRfqWorkflowState(reason) ===
+    normalizeRfqWorkflowState(RFQ_AWAITING_APPROVAL_REASON)
+  );
+}
+
+function getPreservedWorkflowPayload(current: ExistingOrderSnapshot) {
+  return {
+    hold_reason: current.hold_reason ?? null,
+    required_next_action: current.required_next_action ?? null,
+    action_owner: current.action_owner ?? null,
+    action_status: current.action_status ?? null,
+    action_closed: current.action_closed ?? null,
+    action_created_at: current.action_created_at ?? null,
+    action_closed_at: current.action_closed_at ?? null,
+  };
+}
+
+function buildImportedAwaitingApprovalReleasePayload(
+  current: ExistingOrderSnapshot,
+  importedRfqState: string | null | undefined,
+  timestamp: string,
+) {
+  if (!isAwaitingRfqApprovalHold(current.hold_reason)) return null;
+  if (!isRfqApprovedOrContinueState(importedRfqState)) return null;
+
+  return {
+    hold_reason: null,
+    last_system_update: timestamp,
+  };
+}
 
 /**
  * Sync AcMP system fields onto work_orders for every existing order in the
@@ -108,7 +144,20 @@ export async function applyExistingOrderUpdates({
             importTimestamp,
           )
         : null;
-      const workflowPayload = autoCloseRfqActionPayload ?? {};
+      const autoReleaseRfqHoldPayload =
+        current && !autoCloseRfqActionPayload
+          ? buildImportedAwaitingApprovalReleasePayload(
+              current,
+              r.rfq_state,
+              importTimestamp,
+            )
+          : null;
+      const workflowPayload = current
+        ? {
+            ...getPreservedWorkflowPayload(current),
+            ...(autoCloseRfqActionPayload ?? autoReleaseRfqHoldPayload ?? {}),
+          }
+        : {};
       const nextRfqManualApprovedAt = autoCloseRfqActionPayload
         ? autoCloseRfqActionPayload.rfq_manual_approved_at
         : rfqManualApprovedAt;
@@ -116,11 +165,12 @@ export async function applyExistingOrderUpdates({
         !current ||
         current.customer !== r.customer ||
         current.rfq_state !== r.rfq_state ||
-        current.rfq_manual_approved_at !== rfqManualApprovedAt ||
+        current.rfq_manual_approved_at !== nextRfqManualApprovedAt ||
         current.work_order_type !== r.work_order_type ||
         current.part_number !== r.part_number ||
         shouldDefaultAssigned ||
-        Boolean(autoCloseRfqActionPayload);
+        Boolean(autoCloseRfqActionPayload) ||
+        Boolean(autoReleaseRfqHoldPayload);
 
       return {
         ...r,

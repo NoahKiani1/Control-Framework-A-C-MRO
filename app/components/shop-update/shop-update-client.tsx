@@ -46,9 +46,12 @@ import {
 import {
   RFQ_AWAITING_APPROVAL_REASON,
   RFQ_MUST_BE_SENT_REASON,
+  buildCloseRfqActionPayload,
   buildOpenRfqActionPayload,
+  hasActiveRfqSendAction,
   isRfqSendAction,
   shouldRequestRfqAfterCompletedStep,
+  type RfqCloseMode,
 } from "@/lib/rfq-workflow";
 import { SearchableSelect } from "@/app/components/searchable-select";
 import { PageHeader } from "@/app/components/page-header";
@@ -211,6 +214,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const [extraActionCloseStatus, setExtraActionCloseStatus] = useState("");
   const [isClosingExtraAction, setIsClosingExtraAction] = useState(false);
   const [correctiveActionToClose, setCorrectiveActionToClose] = useState<WorkOrder | null>(null);
+  const [rfqCloseMode, setRfqCloseMode] =
+    useState<RfqCloseMode>("awaiting_approval");
   const [correctiveActionCloseStatus, setCorrectiveActionCloseStatus] = useState("");
   const [isClosingCorrectiveAction, setIsClosingCorrectiveAction] = useState(false);
   const [isUnblockingSelected, setIsUnblockingSelected] = useState(false);
@@ -342,7 +347,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     const correctiveActions = orders
       .filter((order) => {
         if (!hasActiveCorrectiveAction(order)) return false;
-        if (isRfqSendAction(order)) return false;
+        if (hasActiveRfqSendAction(order)) return true;
         const owner = getCorrectiveActionContext(order).owner;
         return owner ? engineerNames.has(owner) : false;
       })
@@ -437,6 +442,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setRequiredNextAction(order.required_next_action || "");
     setActionOwner(order.hold_reason?.trim() ? order.action_owner || "" : "");
     setIsBlockedUpdate(mode === "open" && hasBlocker);
+    setRfqCloseMode("awaiting_approval");
     setSaveStatus("");
     setIsUnblockingSelected(false);
     setSelectedUnblockConfirmationOpen(false);
@@ -472,12 +478,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   }
 
   function openCloseCorrectiveActionConfirmation(order: WorkOrder) {
-    if (isRfqSendAction(order)) {
-      setSaveStatus("RFQ actions cannot be completed from Shop Update.");
-      return;
-    }
-
     setCorrectiveActionToClose(order);
+    setRfqCloseMode("awaiting_approval");
     setCorrectiveActionCloseStatus("");
     setIsClosingCorrectiveAction(false);
   }
@@ -529,12 +531,6 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   async function confirmCloseCorrectiveAction() {
     if (!correctiveActionToClose) return;
 
-    if (isRfqSendAction(correctiveActionToClose)) {
-      setCorrectiveActionCloseStatus("RFQ actions cannot be completed from Shop Update.");
-      setIsClosingCorrectiveAction(false);
-      return;
-    }
-
     setIsClosingCorrectiveAction(true);
     setCorrectiveActionCloseStatus("Saving...");
 
@@ -550,7 +546,13 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
-    const closePayload = getCorrectiveActionCompletionPayload(closedAt);
+    const closePayload = isRfqSendAction(correctiveActionToClose)
+      ? buildCloseRfqActionPayload({
+          mode: rfqCloseMode,
+          timestamp: closedAt,
+          updateSource: "manual",
+        })
+      : getCorrectiveActionCompletionPayload(closedAt);
 
     const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
       correctiveActionToClose.work_order_id,
@@ -1465,6 +1467,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
             <div style={{ display: "grid", gap: isTablet ? "14px" : "10px" }}>
               {taskItems.map((item) => {
                 const isCorrectiveAction = item.kind === "corrective-action";
+                const isRfqAction =
+                  isCorrectiveAction && hasActiveRfqSendAction(item.order);
                 const workOrderLabel = isCorrectiveAction
                   ? item.order.work_order_id
                   : "-";
@@ -1481,9 +1485,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                       .filter(Boolean)
                       .join(" - ")
                   : "";
-                const responsible = isCorrectiveAction
-                  ? normalizeAssignedPersonTeam(getCorrectiveActionContext(item.order).owner)
-                  : normalizeAssignedPersonTeam(item.action.responsible_person_team);
+                const responsible = isRfqAction
+                  ? "-"
+                  : isCorrectiveAction
+                    ? normalizeAssignedPersonTeam(getCorrectiveActionContext(item.order).owner)
+                    : normalizeAssignedPersonTeam(item.action.responsible_person_team);
                 const dueDateLabel = isCorrectiveAction
                   ? formatDate(item.order.due_date)
                   : formatDate(item.action.due_date);
@@ -1643,7 +1649,6 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
 
               <StatusNote color="red" large={isTablet}>
                 Are you sure you want to do this? This action cannot be reversed.
-            
               </StatusNote>
             </div>
 
@@ -1850,9 +1855,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
               <div>
                 <div style={eyebrowStyle}>Responsible</div>
                 <div style={{ fontSize: isTablet ? "17px" : "var(--fs-body)", color: COLORS.text }}>
-                  {normalizeAssignedPersonTeam(
-                    getCorrectiveActionContext(correctiveActionToClose).owner,
-                  )}
+                  {isRfqSendAction(correctiveActionToClose)
+                    ? "-"
+                    : normalizeAssignedPersonTeam(
+                        getCorrectiveActionContext(correctiveActionToClose).owner,
+                      )}
                 </div>
               </div>
               <div>
@@ -1862,9 +1869,39 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                 </div>
               </div>
 
-              <StatusNote color="green" large={isTablet}>
-                Completing this action removes the block and puts the work order back on open.
-              </StatusNote>
+              {isRfqSendAction(correctiveActionToClose) ? (
+                <>
+                  <StatusNote color="neutral" large={isTablet}>
+                    Before completing this action, confirm with Rens or Alissa
+                    whether the shop may continue this work order.
+                  </StatusNote>
+                  <div>
+                    <div style={eyebrowStyle}>After completion</div>
+                    <div style={{ display: "flex", gap: isTablet ? "14px" : "8px" }}>
+                      <button
+                        type="button"
+                        onClick={() => setRfqCloseMode("awaiting_approval")}
+                        style={choiceBtn(rfqCloseMode === "awaiting_approval")}
+                        disabled={isClosingCorrectiveAction}
+                      >
+                        No, wait for RFQ payment
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRfqCloseMode("continue")}
+                        style={choiceBtn(rfqCloseMode === "continue")}
+                        disabled={isClosingCorrectiveAction}
+                      >
+                        Yes, continue
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <StatusNote color="green" large={isTablet}>
+                  Completing this action removes the block and puts the work order back on open.
+                </StatusNote>
+              )}
 
               {correctiveActionCloseStatus && (
                 <StatusNote
