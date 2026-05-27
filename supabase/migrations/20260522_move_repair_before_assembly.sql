@@ -23,7 +23,6 @@ reordered as (
   group by work_order.work_order_id
 )
 update public.work_orders work_order
-
 set included_process_steps = reordered.next_steps
 from reordered
 where work_order.work_order_id = reordered.work_order_id;

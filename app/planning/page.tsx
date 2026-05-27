@@ -7,9 +7,11 @@ import { RequireRole } from "@/app/components/require-role";
 import { PageHeader } from "@/app/components/page-header";
 import {
   FINAL_PROCESS_STEP,
+  getGroupedProcessStepsForOrder,
+  getProcessStepDisplayName,
+  NDT_PROCESS_STEP,
   READY_TO_CLOSE_STEP,
   getShortProcessStepLabel,
-  resolveStepsForOrder,
 } from "@/lib/process-steps";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
@@ -727,7 +729,7 @@ function BlockedWorkOrderCard({
         </div>
 
         <div className="pmc-mc-step">
-          {order.current_process_step || "-"}
+          {getProcessStepDisplayName(order.current_process_step) || "-"}
           <span className="pmc-mc-step-sep">·</span>
           <span className="pmc-mc-step-person">
             {normalizeAssignedPersonTeam(order.assigned_person_team)}
@@ -815,20 +817,24 @@ function getSharedPlanningLegendLabel(step: string): string {
 
 function buildTimelineSegments(order: WorkOrder): TimelineSegment[] {
   if (!order.work_order_type) return [];
-  const includedSteps = resolveStepsForOrder(
+  const groupedSteps = getGroupedProcessStepsForOrder(
     order.work_order_type,
     order.included_process_steps,
   );
-  if (includedSteps.length === 0) return [];
+  if (groupedSteps.length === 0) return [];
 
   const currentIdx = order.current_process_step
-    ? includedSteps.indexOf(order.current_process_step)
+    ? groupedSteps.findIndex(
+        (group) =>
+          group.name === order.current_process_step ||
+          group.steps.includes(order.current_process_step as string),
+      )
     : -1;
 
-  return includedSteps.map((step: string, idx: number) => ({
-    name: step,
-    displayName: getSharedPlanningTimelineLabel(step),
-    shortName: getSharedPlanningTimelineShortLabel(step),
+  return groupedSteps.map((group, idx: number) => ({
+    name: group.name,
+    displayName: getSharedPlanningTimelineLabel(group.name),
+    shortName: getSharedPlanningTimelineShortLabel(group.name),
     state:
       currentIdx === -1
         ? "upcoming"
@@ -853,9 +859,7 @@ const timelineLegendEntries = [
   "Cleaning",
   "Paint Stripping",
   "Inspection",
-  "Eddy Current",
-  "Penetrant Testing",
-  "Magnetic Test",
+  NDT_PROCESS_STEP,
   "Painting",
   "Repair",
   "Assembly",
@@ -2306,7 +2310,7 @@ function PlanningPageContent() {
                         <div style={planningCardValueStyle}>
                           <div style={planningCardLabelStyle}>Next step</div>
                           <span style={planningCardNextStepChipStyle}>
-                            {o.current_process_step || "–"}
+                            {getProcessStepDisplayName(o.current_process_step) || "–"}
                           </span>
                         </div>
 
@@ -2366,7 +2370,7 @@ function PlanningPageContent() {
                           {o.work_order_type ? ` · ${o.work_order_type}` : ""}
                         </div>
                         <div className="pmc-mc-step">
-                          {o.current_process_step || "–"}
+                          {getProcessStepDisplayName(o.current_process_step) || "–"}
                           <span className="pmc-mc-step-sep">·</span>
                           <span className="pmc-mc-step-person">
                             {normalizeAssignedPersonTeam(o.assigned_person_team)}
@@ -2531,7 +2535,9 @@ function PlanningPageContent() {
                             </button>
                           </span>
                         </td>
-                        <td style={cell}>{o.current_process_step || "–"}</td>
+                        <td style={cell}>
+                          {getProcessStepDisplayName(o.current_process_step) || "–"}
+                        </td>
                         <td style={holdCell}>
                           <div
                             style={{
@@ -2870,7 +2876,7 @@ function PlanningPageContent() {
                   <div>
                     <div style={modalEyebrowStyle}>Current Step</div>
                     <div style={{ fontSize: "14px", color: ui.text }}>
-                      {quickEditOrder.current_process_step || "â€”"}
+                      {getProcessStepDisplayName(quickEditOrder.current_process_step) || "â€”"}
                     </div>
                   </div>
                 )}

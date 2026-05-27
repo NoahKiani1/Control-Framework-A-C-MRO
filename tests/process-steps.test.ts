@@ -2,9 +2,15 @@ import assert from "node:assert/strict";
 import {
   addRepairAfterInspectionForOrder,
   canAddRepairAfterInspectionForOrder,
+  getActualCompletedStepsForGroupedCompletion,
   getDefaultCompletedStepForOrder,
+  getGroupedCompletableStepsForOrder,
+  getGroupedProcessStepsForOrder,
   getNextProcessStepAfterCompletedForOrder,
+  getNextProcessStepAfterGroupedCompletedForOrder,
   getOfficeConfigurableProcessStepsForType,
+  getProcessStepDisplayName,
+  NDT_PROCESS_STEP,
   resolveStepsForOrder,
 } from "../lib/process-steps";
 import {
@@ -197,6 +203,60 @@ function main() {
       "Assembly",
       "EASA-Form 1",
     ],
+  );
+  assert.deepEqual(
+    getGroupedProcessStepsForOrder("Wheel Overhaul", fullWheelOverhaulSteps).map(
+      (group) => group.name,
+    ),
+    [
+      "Intake",
+      "Disassembly",
+      "Paint Stripping",
+      "Inspection",
+      NDT_PROCESS_STEP,
+      "Painting",
+      "Assembly",
+      "EASA-Form 1",
+    ],
+  );
+  assert.deepEqual(
+    getGroupedCompletableStepsForOrder("Wheel Overhaul", fullWheelOverhaulSteps),
+    [
+      "Disassembly",
+      "Paint Stripping",
+      "Inspection",
+      NDT_PROCESS_STEP,
+      "Painting",
+      "Assembly",
+      "EASA-Form 1",
+    ],
+  );
+  assert.equal(getProcessStepDisplayName("Eddy Current"), NDT_PROCESS_STEP);
+  assert.deepEqual(
+    getActualCompletedStepsForGroupedCompletion(
+      "Wheel Overhaul",
+      NDT_PROCESS_STEP,
+      fullWheelOverhaulSteps,
+      "Eddy Current",
+    ),
+    ["Eddy Current", "Penetrant Testing", "Magnetic Test"],
+  );
+  assert.deepEqual(
+    getActualCompletedStepsForGroupedCompletion(
+      "Wheel Overhaul",
+      NDT_PROCESS_STEP,
+      fullWheelOverhaulSteps,
+      "Penetrant Testing",
+    ),
+    ["Penetrant Testing", "Magnetic Test"],
+  );
+  assert.equal(
+    getNextProcessStepAfterGroupedCompletedForOrder(
+      "Wheel Overhaul",
+      NDT_PROCESS_STEP,
+      fullWheelOverhaulSteps,
+    ),
+    "Painting",
   );
   assert.equal(
     getLastIncludedRfqInspectionStep("Wheel Overhaul", fullWheelOverhaulSteps),

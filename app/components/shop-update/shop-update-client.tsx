@@ -4,8 +4,14 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   addRepairAfterInspectionForOrder,
   canAddRepairAfterInspectionForOrder,
-  getCompletableStepsForOrder,
+  getActualCompletedStepsForGroupedCompletion,
+  getGroupedCompletableStepsForOrder,
+  getIncludedNdtStepsForOrder,
+  getLastIncludedNdtStepForOrder,
   getNextProcessStepAfterCompletedForOrder,
+  getNextProcessStepAfterGroupedCompletedForOrder,
+  getProcessStepDisplayName,
+  NDT_PROCESS_STEP,
   READY_TO_CLOSE_STEP,
 } from "@/lib/process-steps";
 import {
@@ -200,6 +206,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   const [selectedMode, setSelectedMode] = useState<"open" | "blocked" | null>(null);
   const [completedStep, setCompletedStep] = useState("");
   const [stepTouched, setStepTouched] = useState(false);
+  const [completedNdtSteps, setCompletedNdtSteps] = useState<string[]>([]);
+  const [ndtChecklistError, setNdtChecklistError] = useState(false);
   const [repairNecessary, setRepairNecessary] = useState<boolean | null>(null);
   const [repairDecisionError, setRepairDecisionError] = useState(false);
   const [holdReason, setHoldReason] = useState("");
@@ -333,7 +341,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     [shopStaff, todayAbsentEngineerIdSet],
   );
 
-  const completableSteps = getCompletableStepsForOrder(
+  const completableSteps = getGroupedCompletableStepsForOrder(
     selectedOrder?.work_order_type || null,
     selectedOrder?.included_process_steps ?? null,
   );
@@ -381,14 +389,33 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
         )
       : selectedOrder?.included_process_steps;
 
+  const includedNdtSteps = getIncludedNdtStepsForOrder(
+    selectedOrder?.work_order_type || null,
+    previewIncludedSteps ?? selectedOrder?.included_process_steps ?? null,
+  );
+  const isCompletingNdt = completedStep === NDT_PROCESS_STEP;
+  const completedNdtStepSet = new Set(completedNdtSteps);
+  const ndtChecklistComplete =
+    !isCompletingNdt ||
+    includedNdtSteps.length === 0 ||
+    includedNdtSteps.every((step) => completedNdtStepSet.has(step));
+
   const previewNextStep =
     selectedOrder && completedStep
-      ? getNextProcessStepAfterCompletedForOrder(
+      ? getNextProcessStepAfterGroupedCompletedForOrder(
           selectedOrder.work_order_type,
           completedStep,
           previewIncludedSteps,
         )
       : null;
+
+  const previewRfqCompletedStep =
+    selectedOrder && completedStep === NDT_PROCESS_STEP
+      ? getLastIncludedNdtStepForOrder(
+          selectedOrder.work_order_type,
+          previewIncludedSteps,
+        )
+      : completedStep;
 
   const previewWillRequestRfq = Boolean(
     selectedOrder &&
@@ -396,7 +423,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       shouldRequestRfqAfterCompletedStep({
         workOrderType: selectedOrder.work_order_type,
         includedSteps: previewIncludedSteps,
-        completedStep,
+        completedStep: previewRfqCompletedStep,
         rfqState: selectedOrder.rfq_state,
       }),
   );
@@ -408,6 +435,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   function resetSelectedWorkOrderState() {
     setCompletedStep("");
     setStepTouched(false);
+    setCompletedNdtSteps([]);
+    setNdtChecklistError(false);
     setRepairNecessary(null);
     setRepairDecisionError(false);
     setHoldReason("");
@@ -436,6 +465,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setSelectedMode(mode);
     setCompletedStep("");
     setStepTouched(false);
+    setCompletedNdtSteps([]);
+    setNdtChecklistError(false);
     setRepairNecessary(null);
     setRepairDecisionError(false);
     setHoldReason(order.hold_reason || "");
@@ -451,8 +482,20 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   function handleCompletedStepChange(value: string) {
     setCompletedStep(value);
     setStepTouched(true);
+    setCompletedNdtSteps([]);
+    setNdtChecklistError(false);
     setRepairNecessary(null);
     setRepairDecisionError(false);
+  }
+
+  function toggleCompletedNdtStep(step: string, checked: boolean) {
+    setCompletedNdtSteps((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(step);
+      else next.delete(step);
+      return Array.from(next);
+    });
+    setNdtChecklistError(false);
   }
 
   function setBlockedChoice(blocked: boolean) {
@@ -611,6 +654,12 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
+    if (hasCompletedStep && completedStep === NDT_PROCESS_STEP && !ndtChecklistComplete) {
+      setNdtChecklistError(true);
+      setSaveStatus("Please check all included NDT inspections.");
+      return;
+    }
+
     if (isBlockedUpdate && !holdReason.trim()) {
       setSaveStatus("Please enter a hold reason.");
       return;
@@ -625,6 +674,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     let nextProcessStep = selectedOrder.current_process_step;
     let assignedPersonTeam = selectedOrder.assigned_person_team;
     let shouldOpenRfqAction = false;
+    let actualCompletedSteps: string[] = [];
 
     if (hasCompletedStep) {
       shouldAddRepairStep =
@@ -639,8 +689,21 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
             selectedOrder.included_process_steps,
           )
         : selectedOrder.included_process_steps;
+      actualCompletedSteps = getActualCompletedStepsForGroupedCompletion(
+        selectedOrder.work_order_type,
+        completedStep,
+        includedProcessStepsForSave,
+        selectedOrder.current_process_step,
+      );
+      const rfqCompletedStep =
+        completedStep === NDT_PROCESS_STEP
+          ? getLastIncludedNdtStepForOrder(
+              selectedOrder.work_order_type,
+              includedProcessStepsForSave,
+            )
+          : completedStep;
       nextProcessStep =
-        getNextProcessStepAfterCompletedForOrder(
+        getNextProcessStepAfterGroupedCompletedForOrder(
           selectedOrder.work_order_type,
           completedStep,
           includedProcessStepsForSave,
@@ -650,13 +713,12 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
         shouldRequestRfqAfterCompletedStep({
           workOrderType: selectedOrder.work_order_type,
           includedSteps: includedProcessStepsForSave,
-          completedStep,
+          completedStep: rfqCompletedStep,
           rfqState: selectedOrder.rfq_state,
         });
 
-      const completedStepWasRestricted = hasActiveRestrictionForStep(
-        completedStep,
-        shopStaff,
+      const completedStepWasRestricted = actualCompletedSteps.some((step) =>
+        hasActiveRestrictionForStep(step, shopStaff),
       );
       const nextStepIsRestricted = hasActiveRestrictionForStep(
         nextProcessStep,
@@ -722,18 +784,30 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     }
 
     if (hasCompletedStep && selectedOrder.data_tracking_enabled) {
-      const trackingResult = await recordTrackedShopStepCompletion({
-        selectedOrder: {
-          ...selectedOrder,
-          included_process_steps: includedProcessStepsForSave,
-        },
-        completedStep,
-        nextProcessStep: nextProcessStep ?? completedStep,
-      });
-      if (trackingResult.error) {
-        console.error(
-          `Failed to record Work Order Data step for ${selectedOrder.work_order_id}: ${trackingResult.error.message}`,
-        );
+      let trackingCurrentProcessStep = selectedOrder.current_process_step;
+
+      for (const actualCompletedStep of actualCompletedSteps) {
+        const trackingNextProcessStep =
+          getNextProcessStepAfterCompletedForOrder(
+            selectedOrder.work_order_type,
+            actualCompletedStep,
+            includedProcessStepsForSave,
+          ) ?? actualCompletedStep;
+        const trackingResult = await recordTrackedShopStepCompletion({
+          selectedOrder: {
+            ...selectedOrder,
+            current_process_step: trackingCurrentProcessStep,
+            included_process_steps: includedProcessStepsForSave,
+          },
+          completedStep: actualCompletedStep,
+          nextProcessStep: trackingNextProcessStep,
+        });
+        if (trackingResult.error) {
+          console.error(
+            `Failed to record Work Order Data step for ${selectedOrder.work_order_id}: ${trackingResult.error.message}`,
+          );
+        }
+        trackingCurrentProcessStep = trackingNextProcessStep;
       }
     }
 
@@ -771,6 +845,8 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     setSelectedMode(null);
     setCompletedStep("");
     setStepTouched(false);
+    setCompletedNdtSteps([]);
+    setNdtChecklistError(false);
     setRepairNecessary(null);
     setRepairDecisionError(false);
     setHoldReason("");
@@ -1076,7 +1152,11 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                 <InfoBox label="Customer" value={selectedOrder.customer || "-"} large={isTablet} />
                 <InfoBox label="Part Number" value={selectedOrder.part_number || "-"} large={isTablet} />
                 <InfoBox label="Work Order Type" value={selectedOrder.work_order_type || "-"} large={isTablet} />
-                <InfoBox label="Current Step" value={selectedOrder.current_process_step || "-"} large={isTablet} />
+                <InfoBox
+                  label="Current Step"
+                  value={getProcessStepDisplayName(selectedOrder.current_process_step) || "-"}
+                  large={isTablet}
+                />
                 <InfoBox
                   label="Assigned"
                   value={normalizeAssignedPersonTeam(selectedOrder.assigned_person_team)}
@@ -1112,6 +1192,79 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                               </option>
                             ))}
                           </select>
+
+                          {isCompletingNdt && includedNdtSteps.length > 0 && (
+                            <div
+                              style={{
+                                display: "grid",
+                                gap: isTablet ? "12px" : "8px",
+                                marginTop: isTablet ? "18px" : "12px",
+                                padding: isTablet ? "18px" : "12px",
+                                backgroundColor: "#fffdfa",
+                                border: `1px solid ${
+                                  ndtChecklistError ? COLORS.red : COLORS.border
+                                }`,
+                                borderRadius: isTablet ? "18px" : "10px",
+                                boxShadow: ndtChecklistError
+                                  ? `0 0 0 3px ${COLORS.redSoft}`
+                                  : undefined,
+                              }}
+                            >
+                              <div>
+                                <div style={eyebrowStyle}>NDT</div>
+                                <h3
+                                  style={{
+                                    ...fieldTitleStyle,
+                                    fontSize: isTablet ? "22px" : "var(--fs-md)",
+                                    marginBottom: "0",
+                                  }}
+                                >
+                                  Completed inspections
+                                </h3>
+                              </div>
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: isTablet
+                                    ? "1fr"
+                                    : "repeat(auto-fit, minmax(180px, 1fr))",
+                                  gap: isTablet ? "10px" : "8px",
+                                }}
+                              >
+                                {includedNdtSteps.map((step) => (
+                                  <label
+                                    key={step}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "8px",
+                                      color: COLORS.text,
+                                      fontSize: isTablet ? "18px" : "var(--fs-sm)",
+                                      fontWeight: 650,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={completedNdtStepSet.has(step)}
+                                      onChange={(e) =>
+                                        toggleCompletedNdtStep(
+                                          step,
+                                          e.target.checked,
+                                        )
+                                      }
+                                    />
+                                    {step}
+                                  </label>
+                                ))}
+                              </div>
+                              {ndtChecklistError && (
+                                <StatusNote color="red" large={isTablet}>
+                                  Please fill this in.
+                                </StatusNote>
+                              )}
+                            </div>
+                          )}
 
                           {canAddRepairStep && (
                             <div
@@ -1188,7 +1341,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                             previewNextStep &&
                             previewNextStep !== READY_TO_CLOSE_STEP && (
                               <StatusNote color="blue" large={isTablet}>
-                                Next step: {previewNextStep}
+                                Next step: {getProcessStepDisplayName(previewNextStep)}
                               </StatusNote>
                             )}
 
@@ -1481,7 +1634,10 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                   ? getCorrectiveActionContext(item.order).action || "-"
                   : item.action.description;
                 const descriptionMeta = isCorrectiveAction
-                  ? [item.order.work_order_type, item.order.current_process_step]
+                  ? [
+                      item.order.work_order_type,
+                      getProcessStepDisplayName(item.order.current_process_step),
+                    ]
                       .filter(Boolean)
                       .join(" - ")
                   : "";

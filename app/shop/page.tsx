@@ -6,7 +6,11 @@ import { Public_Sans } from "next/font/google";
 import { Home } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { RequireRole } from "@/app/components/require-role";
-import { READY_TO_CLOSE_STEP, resolveStepsForOrder } from "@/lib/process-steps";
+import {
+  getGroupedProcessStepsForOrder,
+  getProcessStepDisplayName,
+  READY_TO_CLOSE_STEP,
+} from "@/lib/process-steps";
 import { applySuggestedAssignmentsForCurrentStep } from "@/lib/auto-assign";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
@@ -180,13 +184,17 @@ function buildTimelineSegments(
   includedSteps: string[] | null,
 ): TimelineSegment[] {
   if (!workOrderType) return [];
-  const resolvedSteps = resolveStepsForOrder(workOrderType, includedSteps);
-  if (resolvedSteps.length === 0) return [];
+  const groupedSteps = getGroupedProcessStepsForOrder(workOrderType, includedSteps);
+  if (groupedSteps.length === 0) return [];
 
-  const currentIdx = currentStep ? resolvedSteps.indexOf(currentStep) : -1;
+  const currentIdx = currentStep
+    ? groupedSteps.findIndex(
+        (group) => group.name === currentStep || group.steps.includes(currentStep),
+      )
+    : -1;
 
-  return resolvedSteps.map((step, idx) => ({
-    name: step,
+  return groupedSteps.map((group, idx) => ({
+    name: group.name,
     state:
       currentIdx === -1
         ? "upcoming"
@@ -1207,7 +1215,7 @@ function ShopPageContent() {
                   overflowWrap: "anywhere",
                 }}
               >
-                {order.current_process_step || "-"}
+                {getProcessStepDisplayName(order.current_process_step) || "-"}
               </div>
             </div>
           )}
@@ -1378,7 +1386,7 @@ function ShopPageContent() {
             >
               {isBlocked(order)
                 ? `Blocking reason: ${holdReasonDisplay(order)}`
-                : `Current step: ${order.current_process_step || "-"}`}
+                : `Current step: ${getProcessStepDisplayName(order.current_process_step) || "-"}`}
             </div>
           </div>
         </div>

@@ -26,6 +26,16 @@
 /** Steps that are skipped unless explicitly included per work order. */
 export const OPTIONAL_PROCESS_STEPS = ["Magnetic Test", "Repair"];
 
+/** UI group shown when one or more NDT inspection steps are included. */
+export const NDT_PROCESS_STEP = "NDT";
+
+/** Real process steps that are completed together through the NDT group. */
+export const NDT_PROCESS_STEPS = [
+  "Eddy Current",
+  "Penetrant Testing",
+  "Magnetic Test",
+];
+
 /** Optional steps that Office should not offer during intake / activation. */
 export const SHOP_ADDED_PROCESS_STEPS = ["Repair"];
 
@@ -130,6 +140,11 @@ export function isOptionalProcessStep(step: string | null): boolean {
   return OPTIONAL_PROCESS_STEPS.includes(step);
 }
 
+export function isNdtProcessStep(step: string | null | undefined): boolean {
+  if (!step) return false;
+  return NDT_PROCESS_STEPS.includes(step);
+}
+
 /** Whether a work-order type contains any optional steps. */
 export function hasOptionalSteps(workOrderType: string | null): boolean {
   return getProcessStepsForType(workOrderType).some(isOptionalProcessStep);
@@ -203,6 +218,55 @@ export function getCompletableStepsForOrder(
   );
 }
 
+export type GroupedProcessStep = {
+  name: string;
+  steps: string[];
+};
+
+/** Process steps for UI timelines, with consecutive NDT inspections collapsed. */
+export function getGroupedProcessStepsForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+): GroupedProcessStep[] {
+  const steps = resolveStepsForOrder(workOrderType, includedSteps);
+  const groups: GroupedProcessStep[] = [];
+
+  for (const step of steps) {
+    if (isNdtProcessStep(step)) {
+      const previous = groups[groups.length - 1];
+      if (previous?.name === NDT_PROCESS_STEP) {
+        previous.steps.push(step);
+      } else {
+        groups.push({ name: NDT_PROCESS_STEP, steps: [step] });
+      }
+      continue;
+    }
+
+    groups.push({ name: step, steps: [step] });
+  }
+
+  return groups;
+}
+
+/** Completable step labels for shop-facing forms, with NDT shown once. */
+export function getGroupedCompletableStepsForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+): string[] {
+  return getGroupedProcessStepsForOrder(workOrderType, includedSteps)
+    .filter((group) => !group.steps.includes(INTAKE_STEP))
+    .map((group) => group.name);
+}
+
+export function getIncludedNdtStepsForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+): string[] {
+  return resolveStepsForOrder(workOrderType, includedSteps).filter(
+    isNdtProcessStep,
+  );
+}
+
 /** The first completable step for an order (used on activation). */
 export function getInitialProcessStepForOrder(
   workOrderType: string | null,
@@ -230,6 +294,55 @@ export function getNextProcessStepAfterCompletedForOrder(
 
   if (completedIndex >= steps.length - 1) return READY_TO_CLOSE_STEP;
   return steps[completedIndex + 1];
+}
+
+export function getLastIncludedNdtStepForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+): string | null {
+  const ndtSteps = getIncludedNdtStepsForOrder(workOrderType, includedSteps);
+  return ndtSteps[ndtSteps.length - 1] ?? null;
+}
+
+export function getActualCompletedStepsForGroupedCompletion(
+  workOrderType: string | null,
+  completedStep: string | null,
+  includedSteps: string[] | null | undefined,
+  currentProcessStep: string | null | undefined,
+): string[] {
+  if (!completedStep) return [];
+  if (completedStep !== NDT_PROCESS_STEP) return [completedStep];
+
+  const ndtSteps = getIncludedNdtStepsForOrder(workOrderType, includedSteps);
+  const currentNdtIndex = currentProcessStep
+    ? ndtSteps.indexOf(currentProcessStep)
+    : -1;
+
+  return currentNdtIndex >= 0 ? ndtSteps.slice(currentNdtIndex) : ndtSteps;
+}
+
+export function getNextProcessStepAfterGroupedCompletedForOrder(
+  workOrderType: string | null,
+  completedStep: string | null,
+  includedSteps: string[] | null | undefined,
+): string | null {
+  const actualCompletedStep =
+    completedStep === NDT_PROCESS_STEP
+      ? getLastIncludedNdtStepForOrder(workOrderType, includedSteps)
+      : completedStep;
+
+  return getNextProcessStepAfterCompletedForOrder(
+    workOrderType,
+    actualCompletedStep,
+    includedSteps,
+  );
+}
+
+export function getProcessStepDisplayName(
+  step: string | null | undefined,
+): string {
+  if (!step) return "";
+  return isNdtProcessStep(step) ? NDT_PROCESS_STEP : step;
 }
 
 /** Whether the shop form may ask to insert Repair after completing Inspection. */
