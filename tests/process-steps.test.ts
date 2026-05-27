@@ -3,9 +3,11 @@ import {
   addRepairAfterInspectionForOrder,
   canAddRepairAfterInspectionForOrder,
   getActualCompletedStepsForGroupedCompletion,
+  getCompletedNdtChecklistForOrder,
   getDefaultCompletedStepForOrder,
   getGroupedCompletableStepsForOrder,
   getGroupedProcessStepsForOrder,
+  getNextProcessStepAfterNdtChecklistForOrder,
   getNextProcessStepAfterCompletedForOrder,
   getNextProcessStepAfterGroupedCompletedForOrder,
   getOfficeConfigurableProcessStepsForType,
@@ -249,6 +251,40 @@ function main() {
       "Penetrant Testing",
     ),
     ["Penetrant Testing", "Magnetic Test"],
+  );
+  assert.deepEqual(
+    getCompletedNdtChecklistForOrder(
+      "Wheel Overhaul",
+      fullWheelOverhaulSteps,
+      "Penetrant Testing",
+      null,
+    ),
+    ["Eddy Current"],
+  );
+  assert.deepEqual(
+    getCompletedNdtChecklistForOrder(
+      "Wheel Overhaul",
+      fullWheelOverhaulSteps,
+      "Eddy Current",
+      ["Magnetic Test"],
+    ),
+    ["Magnetic Test"],
+  );
+  assert.equal(
+    getNextProcessStepAfterNdtChecklistForOrder(
+      "Wheel Overhaul",
+      fullWheelOverhaulSteps,
+      ["Eddy Current"],
+    ),
+    "Penetrant Testing",
+  );
+  assert.equal(
+    getNextProcessStepAfterNdtChecklistForOrder(
+      "Wheel Overhaul",
+      fullWheelOverhaulSteps,
+      ["Magnetic Test"],
+    ),
+    "Eddy Current",
   );
   assert.equal(
     getNextProcessStepAfterGroupedCompletedForOrder(

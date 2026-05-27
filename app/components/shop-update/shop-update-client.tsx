@@ -5,12 +5,15 @@ import {
   addRepairAfterInspectionForOrder,
   canAddRepairAfterInspectionForOrder,
   getActualCompletedStepsForGroupedCompletion,
+  getCompletedNdtChecklistForOrder,
   getGroupedCompletableStepsForOrder,
   getIncludedNdtStepsForOrder,
   getLastIncludedNdtStepForOrder,
+  getNextProcessStepAfterNdtChecklistForOrder,
   getNextProcessStepAfterCompletedForOrder,
   getNextProcessStepAfterGroupedCompletedForOrder,
   getProcessStepDisplayName,
+  normalizeCompletedNdtStepsForOrder,
   NDT_PROCESS_STEP,
   READY_TO_CLOSE_STEP,
 } from "@/lib/process-steps";
@@ -87,11 +90,12 @@ type WorkOrder = {
   priority: string | null;
   assigned_person_team: string | null;
   included_process_steps: string[] | null;
+  completed_ndt_steps: string[] | null;
   data_tracking_enabled: boolean | null;
 };
 
 const SHOP_UPDATE_WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, due_date, current_process_step, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, priority, assigned_person_team, included_process_steps, data_tracking_enabled";
+  "work_order_id, customer, part_number, work_order_type, due_date, current_process_step, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, priority, assigned_person_team, included_process_steps, completed_ndt_steps, data_tracking_enabled";
 
 type CorrectiveActionTaskItem = {
   kind: "corrective-action";
@@ -393,24 +397,46 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     selectedOrder?.work_order_type || null,
     previewIncludedSteps ?? selectedOrder?.included_process_steps ?? null,
   );
+  const savedCompletedNdtSteps = selectedOrder
+    ? getCompletedNdtChecklistForOrder(
+        selectedOrder.work_order_type,
+        previewIncludedSteps ?? selectedOrder.included_process_steps,
+        selectedOrder.current_process_step,
+        selectedOrder.completed_ndt_steps,
+      )
+    : [];
+  const savedCompletedNdtStepSet = new Set(savedCompletedNdtSteps);
   const isCompletingNdt = completedStep === NDT_PROCESS_STEP;
   const completedNdtStepSet = new Set(completedNdtSteps);
-  const ndtChecklistComplete =
-    !isCompletingNdt ||
-    includedNdtSteps.length === 0 ||
+  const newlyCompletedNdtSteps = completedNdtSteps.filter(
+    (step) => !savedCompletedNdtStepSet.has(step),
+  );
+  const ndtChecklistHasProgress =
+    !isCompletingNdt || newlyCompletedNdtSteps.length > 0;
+  const ndtChecklistFullyComplete =
+    isCompletingNdt &&
+    includedNdtSteps.length > 0 &&
     includedNdtSteps.every((step) => completedNdtStepSet.has(step));
 
   const previewNextStep =
     selectedOrder && completedStep
-      ? getNextProcessStepAfterGroupedCompletedForOrder(
-          selectedOrder.work_order_type,
-          completedStep,
-          previewIncludedSteps,
-        )
+      ? completedStep === NDT_PROCESS_STEP
+        ? getNextProcessStepAfterNdtChecklistForOrder(
+            selectedOrder.work_order_type,
+            previewIncludedSteps,
+            completedNdtSteps,
+          )
+        : getNextProcessStepAfterGroupedCompletedForOrder(
+            selectedOrder.work_order_type,
+            completedStep,
+            previewIncludedSteps,
+          )
       : null;
 
   const previewRfqCompletedStep =
-    selectedOrder && completedStep === NDT_PROCESS_STEP
+    selectedOrder &&
+    completedStep === NDT_PROCESS_STEP &&
+    ndtChecklistFullyComplete
       ? getLastIncludedNdtStepForOrder(
           selectedOrder.work_order_type,
           previewIncludedSteps,
@@ -482,7 +508,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
   function handleCompletedStepChange(value: string) {
     setCompletedStep(value);
     setStepTouched(true);
-    setCompletedNdtSteps([]);
+    setCompletedNdtSteps(value === NDT_PROCESS_STEP ? savedCompletedNdtSteps : []);
     setNdtChecklistError(false);
     setRepairNecessary(null);
     setRepairDecisionError(false);
@@ -654,9 +680,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       return;
     }
 
-    if (hasCompletedStep && completedStep === NDT_PROCESS_STEP && !ndtChecklistComplete) {
+    if (hasCompletedStep && completedStep === NDT_PROCESS_STEP && !ndtChecklistHasProgress) {
       setNdtChecklistError(true);
-      setSaveStatus("Please check all included NDT inspections.");
+      setSaveStatus("Please check at least one new NDT inspection.");
       return;
     }
 
@@ -675,6 +701,7 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
     let assignedPersonTeam = selectedOrder.assigned_person_team;
     let shouldOpenRfqAction = false;
     let actualCompletedSteps: string[] = [];
+    let completedNdtStepsForSave = selectedOrder.completed_ndt_steps;
 
     if (hasCompletedStep) {
       shouldAddRepairStep =
@@ -689,27 +716,60 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
             selectedOrder.included_process_steps,
           )
         : selectedOrder.included_process_steps;
-      actualCompletedSteps = getActualCompletedStepsForGroupedCompletion(
-        selectedOrder.work_order_type,
-        completedStep,
-        includedProcessStepsForSave,
-        selectedOrder.current_process_step,
-      );
-      const rfqCompletedStep =
-        completedStep === NDT_PROCESS_STEP
-          ? getLastIncludedNdtStepForOrder(
-              selectedOrder.work_order_type,
-              includedProcessStepsForSave,
-            )
-          : completedStep;
-      nextProcessStep =
-        getNextProcessStepAfterGroupedCompletedForOrder(
+      if (completedStep === NDT_PROCESS_STEP) {
+        const savedNdtSteps = getCompletedNdtChecklistForOrder(
+          selectedOrder.work_order_type,
+          includedProcessStepsForSave,
+          selectedOrder.current_process_step,
+          selectedOrder.completed_ndt_steps,
+        );
+        const savedNdtStepSet = new Set(savedNdtSteps);
+        completedNdtStepsForSave = normalizeCompletedNdtStepsForOrder(
+          selectedOrder.work_order_type,
+          includedProcessStepsForSave,
+          completedNdtSteps,
+        );
+        actualCompletedSteps = completedNdtStepsForSave.filter(
+          (step) => !savedNdtStepSet.has(step),
+        );
+      } else {
+        actualCompletedSteps = getActualCompletedStepsForGroupedCompletion(
           selectedOrder.work_order_type,
           completedStep,
           includedProcessStepsForSave,
-        ) ?? completedStep;
+          selectedOrder.current_process_step,
+        );
+      }
+      const ndtFullyCompleteForSave =
+        completedStep === NDT_PROCESS_STEP &&
+        includedNdtSteps.length > 0 &&
+        includedNdtSteps.every((step) =>
+          (completedNdtStepsForSave ?? []).includes(step),
+        );
+      const rfqCompletedStep =
+        completedStep === NDT_PROCESS_STEP
+          ? ndtFullyCompleteForSave
+            ? getLastIncludedNdtStepForOrder(
+                selectedOrder.work_order_type,
+                includedProcessStepsForSave,
+              )
+            : null
+          : completedStep;
+      nextProcessStep =
+        completedStep === NDT_PROCESS_STEP
+          ? getNextProcessStepAfterNdtChecklistForOrder(
+              selectedOrder.work_order_type,
+              includedProcessStepsForSave,
+              completedNdtStepsForSave,
+            ) ?? selectedOrder.current_process_step
+          : getNextProcessStepAfterGroupedCompletedForOrder(
+              selectedOrder.work_order_type,
+              completedStep,
+              includedProcessStepsForSave,
+            ) ?? completedStep;
       shouldOpenRfqAction =
         !isBlockedUpdate &&
+        Boolean(rfqCompletedStep) &&
         shouldRequestRfqAfterCompletedStep({
           workOrderType: selectedOrder.work_order_type,
           includedSteps: includedProcessStepsForSave,
@@ -774,6 +834,9 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       ...(shouldAddRepairStep
         ? { included_process_steps: includedProcessStepsForSave }
         : {}),
+      ...(completedStep === NDT_PROCESS_STEP
+        ? { completed_ndt_steps: completedNdtStepsForSave }
+        : {}),
     };
 
     const { error } = await updateWorkOrder(selectedId, payload);
@@ -820,6 +883,10 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
       included_process_steps: hasCompletedStep
         ? includedProcessStepsForSave
         : selectedOrder.included_process_steps,
+      completed_ndt_steps:
+        completedStep === NDT_PROCESS_STEP
+          ? completedNdtStepsForSave
+          : selectedOrder.completed_ndt_steps,
     };
     const blockResult = await syncWorkOrderDataBlockState(nextOrder);
     if (blockResult.error) {
@@ -1238,15 +1305,20 @@ export function ShopUpdateClient({ variant }: ShopUpdateClientProps) {
                                       display: "flex",
                                       alignItems: "center",
                                       gap: "8px",
-                                      color: COLORS.text,
+                                      color: savedCompletedNdtStepSet.has(step)
+                                        ? COLORS.textMuted
+                                        : COLORS.text,
                                       fontSize: isTablet ? "18px" : "var(--fs-sm)",
                                       fontWeight: 650,
-                                      cursor: "pointer",
+                                      cursor: savedCompletedNdtStepSet.has(step)
+                                        ? "default"
+                                        : "pointer",
                                     }}
                                   >
                                     <input
                                       type="checkbox"
                                       checked={completedNdtStepSet.has(step)}
+                                      disabled={savedCompletedNdtStepSet.has(step)}
                                       onChange={(e) =>
                                         toggleCompletedNdtStep(
                                           step,

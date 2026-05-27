@@ -267,6 +267,54 @@ export function getIncludedNdtStepsForOrder(
   );
 }
 
+export function normalizeCompletedNdtStepsForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+  completedNdtSteps: string[] | null | undefined,
+): string[] {
+  if (!completedNdtSteps || completedNdtSteps.length === 0) return [];
+
+  const completedSet = new Set(completedNdtSteps);
+  return getIncludedNdtStepsForOrder(workOrderType, includedSteps).filter(
+    (step) => completedSet.has(step),
+  );
+}
+
+export function getImplicitCompletedNdtStepsForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+  currentProcessStep: string | null | undefined,
+): string[] {
+  if (!currentProcessStep) return [];
+
+  const resolvedSteps = resolveStepsForOrder(workOrderType, includedSteps);
+  const currentIndex = resolvedSteps.indexOf(currentProcessStep);
+  if (currentIndex === -1) return [];
+
+  return getIncludedNdtStepsForOrder(workOrderType, includedSteps).filter(
+    (step) => {
+      const stepIndex = resolvedSteps.indexOf(step);
+      return stepIndex !== -1 && stepIndex < currentIndex;
+    },
+  );
+}
+
+export function getCompletedNdtChecklistForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+  currentProcessStep: string | null | undefined,
+  completedNdtSteps: string[] | null | undefined,
+): string[] {
+  return normalizeCompletedNdtStepsForOrder(workOrderType, includedSteps, [
+    ...getImplicitCompletedNdtStepsForOrder(
+      workOrderType,
+      includedSteps,
+      currentProcessStep,
+    ),
+    ...(completedNdtSteps ?? []),
+  ]);
+}
+
 /** The first completable step for an order (used on activation). */
 export function getInitialProcessStepForOrder(
   workOrderType: string | null,
@@ -334,6 +382,31 @@ export function getNextProcessStepAfterGroupedCompletedForOrder(
   return getNextProcessStepAfterCompletedForOrder(
     workOrderType,
     actualCompletedStep,
+    includedSteps,
+  );
+}
+
+export function getNextProcessStepAfterNdtChecklistForOrder(
+  workOrderType: string | null,
+  includedSteps: string[] | null | undefined,
+  completedNdtSteps: string[] | null | undefined,
+): string | null {
+  const ndtSteps = getIncludedNdtStepsForOrder(workOrderType, includedSteps);
+  if (ndtSteps.length === 0) return null;
+
+  const completedSet = new Set(
+    normalizeCompletedNdtStepsForOrder(
+      workOrderType,
+      includedSteps,
+      completedNdtSteps,
+    ),
+  );
+  const nextOpenNdtStep = ndtSteps.find((step) => !completedSet.has(step));
+  if (nextOpenNdtStep) return nextOpenNdtStep;
+
+  return getNextProcessStepAfterCompletedForOrder(
+    workOrderType,
+    ndtSteps[ndtSteps.length - 1],
     includedSteps,
   );
 }
