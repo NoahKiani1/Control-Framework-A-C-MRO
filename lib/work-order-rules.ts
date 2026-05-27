@@ -1,4 +1,9 @@
 import { canPerformStep } from "@/lib/restrictions";
+import {
+  getCompletedNdtChecklistForOrder,
+  getIncludedNdtStepsForOrder,
+  isNdtProcessStep,
+} from "@/lib/process-steps";
 import { RFQ_AWAITING_APPROVAL_REASON } from "@/lib/rfq-workflow";
 
 type BlockableOrder = {
@@ -24,6 +29,9 @@ type CorrectiveActionOrder = {
 
 type QualifiableOrder = BlockableOrder & {
   current_process_step: string | null;
+  work_order_type?: string | null;
+  included_process_steps?: string[] | null;
+  completed_ndt_steps?: string[] | null;
 };
 
 type QualifiableEngineer = {
@@ -250,8 +258,9 @@ export function applyTodayQualificationBlocks<T extends QualifiableOrder>(
   return orders.map((order) => {
     if (isBlocked(order) || !order.current_process_step) return order;
 
-    const hasQualifiedEngineer = presentEngineers.some((e) =>
-      canPerformStep(e.restrictions, order.current_process_step!),
+    const qualificationSteps = getOpenQualificationStepsForOrder(order);
+    const hasQualifiedEngineer = qualificationSteps.some((step) =>
+      presentEngineers.some((e) => canPerformStep(e.restrictions, step)),
     );
 
     if (hasQualifiedEngineer) return order;
@@ -261,6 +270,33 @@ export function applyTodayQualificationBlocks<T extends QualifiableOrder>(
       hold_reason: NO_QUALIFIED_ENGINEER_REASON,
     };
   });
+}
+
+function getOpenQualificationStepsForOrder(order: QualifiableOrder): string[] {
+  const currentStep = order.current_process_step;
+  if (!currentStep) return [];
+
+  if (!isNdtProcessStep(currentStep)) return [currentStep];
+
+  const includedNdtSteps = getIncludedNdtStepsForOrder(
+    order.work_order_type ?? null,
+    order.included_process_steps ?? null,
+  );
+  if (includedNdtSteps.length === 0) return [currentStep];
+
+  const completedSteps = new Set(
+    getCompletedNdtChecklistForOrder(
+      order.work_order_type ?? null,
+      order.included_process_steps ?? null,
+      currentStep,
+      order.completed_ndt_steps ?? null,
+    ),
+  );
+  const openNdtSteps = includedNdtSteps.filter(
+    (step) => !completedSteps.has(step),
+  );
+
+  return openNdtSteps.length > 0 ? openNdtSteps : [currentStep];
 }
 
 export function blockReason(

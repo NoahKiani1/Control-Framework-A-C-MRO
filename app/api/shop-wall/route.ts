@@ -29,6 +29,7 @@ type ShopWallWorkOrder = {
   last_manual_update: string | null;
   last_system_update: string | null;
   included_process_steps: string[] | null;
+  completed_ndt_steps: string[] | null;
   shared_planning_rank: number | null;
 };
 
@@ -54,8 +55,36 @@ type ShopWallExtraAction = {
   created_at?: string | null;
 };
 
+const SHOP_WALL_WORK_ORDER_SELECT =
+  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps, completed_ndt_steps, shared_planning_rank";
+
 function isDateKey(value: string | null): value is string {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function isMissingCompletedNdtStepsColumnError(error: {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+}): boolean {
+  const errorText = [
+    error.code,
+    error.message,
+    error.details,
+    error.hint,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    errorText.includes("completed_ndt_steps") &&
+    (errorText.includes("could not find") ||
+      errorText.includes("schema cache") ||
+      errorText.includes("column") ||
+      error.code === "42703")
+  );
 }
 
 function isEngineerStartedOnDateKey(
@@ -136,17 +165,42 @@ export async function GET(request: Request) {
     );
   }
 
-  const ordersResult = await supabase
-    .from("work_orders")
-    .select(
-      "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, last_manual_update, last_system_update, included_process_steps, shared_planning_rank",
-    )
-    .eq("is_open", true)
-    .eq("is_active", true);
+  const loadOrders = (select: string) =>
+    supabase
+      .from("work_orders")
+      .select(select)
+      .eq("is_open", true)
+      .eq("is_active", true);
 
-  if (ordersResult.error) {
+  const ordersResult = await loadOrders(SHOP_WALL_WORK_ORDER_SELECT);
+  let ordersData = ordersResult.data as unknown as ShopWallWorkOrder[] | null;
+  let ordersError = ordersResult.error;
+
+  if (
+    ordersError &&
+    isMissingCompletedNdtStepsColumnError(ordersError)
+  ) {
+    const fallbackResult = await loadOrders(
+      SHOP_WALL_WORK_ORDER_SELECT.replace(", completed_ndt_steps", ""),
+    );
+
+    if (!fallbackResult.error) {
+      console.warn(
+        "work_orders.completed_ndt_steps is not available yet; shop wall loads without partial NDT progress.",
+      );
+      ordersData = (
+        (fallbackResult.data || []) as unknown as Record<string, unknown>[]
+      ).map((row) => ({
+        ...row,
+        completed_ndt_steps: null,
+      })) as ShopWallWorkOrder[];
+      ordersError = null;
+    }
+  }
+
+  if (ordersError) {
     return noStoreJson(
-      { error: { message: `work_orders: ${ordersResult.error.message}` } },
+      { error: { message: `work_orders: ${ordersError.message}` } },
       { status: 500 },
     );
   }
@@ -162,9 +216,7 @@ export async function GET(request: Request) {
 
   return noStoreJson({
     today,
-    orders: sortSharedPlanningOrders(
-      (ordersResult.data || []) as ShopWallWorkOrder[],
-    ),
+    orders: sortSharedPlanningOrders(ordersData || []),
     engineers,
     assigneeStaff: [...engineers, ...rensOfficeStaff],
     absences: (absencesResult.data || []) as ShopWallAbsence[],

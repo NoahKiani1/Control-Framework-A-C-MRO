@@ -91,6 +91,7 @@ type WorkOrder = {
   last_manual_update: string | null;
   last_system_update: string | null;
   included_process_steps: string[] | null;
+  completed_ndt_steps: string[] | null;
   data_tracking_enabled: boolean | null;
   shared_planning_rank: number | null;
   is_active: boolean;
@@ -125,7 +126,7 @@ type Absence = {
 };
 
 const WORK_ORDER_SELECT =
-  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, last_manual_update, last_system_update, included_process_steps, data_tracking_enabled, shared_planning_rank, is_active, inactive_note, inactive_absent_engineer_id, inactive_absent_engineer_name, inactive_absence_date";
+  "work_order_id, customer, part_number, work_order_type, due_date, priority, assigned_person_team, current_process_step, hold_reason, rfq_state, rfq_manual_approved_at, required_next_action, action_owner, action_status, action_closed, action_created_at, action_closed_at, last_manual_update, last_system_update, included_process_steps, completed_ndt_steps, data_tracking_enabled, shared_planning_rank, is_active, inactive_note, inactive_absent_engineer_id, inactive_absent_engineer_name, inactive_absence_date";
 
 const ui = {
   pageBg: "#f2efe9",

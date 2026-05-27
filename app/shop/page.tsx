@@ -50,6 +50,7 @@ type WorkOrder = {
   last_manual_update: string | null;
   last_system_update: string | null;
   included_process_steps: string[] | null;
+  completed_ndt_steps: string[] | null;
   shared_planning_rank: number | null;
 };
 

@@ -27,6 +27,51 @@ type OrderableQuery = {
   order: (column: string, options: { ascending: boolean }) => unknown;
 };
 
+type SupabaseErrorLike = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+};
+
+function selectIncludesColumn(select: string, column: string): boolean {
+  return select
+    .split(",")
+    .map((part) => part.trim())
+    .includes(column);
+}
+
+function selectWithoutColumn(select: string, column: string): string {
+  return select
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part && part !== column)
+    .join(", ");
+}
+
+function isMissingWorkOrderColumnError(
+  error: SupabaseErrorLike,
+  column: string,
+): boolean {
+  const errorText = [
+    error.code,
+    error.message,
+    error.details,
+    error.hint,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    errorText.includes(column.toLowerCase()) &&
+    (errorText.includes("could not find") ||
+      errorText.includes("schema cache") ||
+      errorText.includes("column") ||
+      error.code === "42703")
+  );
+}
+
 function applyOrderBy<T>(query: T, orderBy?: OrderBy | OrderBy[]): T {
   const orders = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
 
@@ -51,25 +96,45 @@ export async function getWorkOrders<T = unknown>({
 }: GetWorkOrdersOptions = {}): Promise<T[]> {
   if (workOrderIds && workOrderIds.length === 0) return [];
 
-  let query = client.from("work_orders").select(select);
+  const buildQuery = (selectText: string) => {
+    let query = client.from("work_orders").select(selectText);
 
-  if (typeof isOpen === "boolean") {
-    query = query.eq("is_open", isOpen);
-  }
+    if (typeof isOpen === "boolean") {
+      query = query.eq("is_open", isOpen);
+    }
 
-  if (typeof isActive === "boolean") {
-    query = query.eq("is_active", isActive);
-  }
+    if (typeof isActive === "boolean") {
+      query = query.eq("is_active", isActive);
+    }
 
-  if (workOrderIds?.length) {
-    query = query.in("work_order_id", workOrderIds);
-  }
+    if (workOrderIds?.length) {
+      query = query.in("work_order_id", workOrderIds);
+    }
 
-  query = applyOrderBy(query, orderBy);
+    return applyOrderBy(query, orderBy);
+  };
 
+  let query = buildQuery(select);
   const { data, error } = await query;
 
   if (error) {
+    if (
+      selectIncludesColumn(select, "completed_ndt_steps") &&
+      isMissingWorkOrderColumnError(error, "completed_ndt_steps")
+    ) {
+      const fallbackSelect = selectWithoutColumn(select, "completed_ndt_steps");
+      query = buildQuery(fallbackSelect);
+      const { data: fallbackData, error: fallbackError } = await query;
+
+      if (!fallbackError) {
+        console.warn(
+          "work_orders.completed_ndt_steps is not available yet; load continues without partial NDT progress.",
+        );
+        return ((fallbackData || []) as unknown as Record<string, unknown>[])
+          .map((row) => ({ ...row, completed_ndt_steps: null }) as T);
+      }
+    }
+
     console.error("Failed to load work orders", error);
     return [];
   }

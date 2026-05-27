@@ -5,7 +5,11 @@ import {
   hasActiveRestrictionForStep,
   type AssignableEngineer,
 } from "../lib/auto-assign";
-import { DEFAULT_ASSIGNED_PERSON_TEAM } from "../lib/work-order-rules";
+import {
+  applyTodayQualificationBlocks,
+  DEFAULT_ASSIGNED_PERSON_TEAM,
+  NO_QUALIFIED_ENGINEER_REASON,
+} from "../lib/work-order-rules";
 
 const unrestrictedEngineers: AssignableEngineer[] = [
   { name: "Alex", restrictions: null },
@@ -127,6 +131,64 @@ assert.equal(
     { name: "Bo", restrictions: [] },
   ]),
   true,
+);
+
+const fullNdtOrder = {
+  work_order_id: "WO-NDT-1",
+  work_order_type: "Wheel Overhaul",
+  current_process_step: "Eddy Current",
+  included_process_steps: [
+    "Intake",
+    "Disassembly",
+    "Paint Stripping",
+    "Inspection",
+    "Eddy Current",
+    "Penetrant Testing",
+    "Magnetic Test",
+    "Painting",
+    "Assembly",
+    "EASA-Form 1",
+  ],
+  completed_ndt_steps: null,
+  hold_reason: null,
+  rfq_state: null,
+  rfq_manual_approved_at: null,
+};
+
+const [openWhenAnyNdtStepIsPossible] = applyTodayQualificationBlocks(
+  [fullNdtOrder],
+  [
+    {
+      id: 1,
+      restrictions: ["eddy_current", "magnetic_test"],
+    },
+  ],
+  [],
+  "2026-05-27",
+);
+
+assert.equal(openWhenAnyNdtStepIsPossible.hold_reason, null);
+
+const [blockedWhenOnlyCompletedNdtStepIsPossible] = applyTodayQualificationBlocks(
+  [
+    {
+      ...fullNdtOrder,
+      completed_ndt_steps: ["Penetrant Testing"],
+    },
+  ],
+  [
+    {
+      id: 1,
+      restrictions: ["eddy_current", "magnetic_test"],
+    },
+  ],
+  [],
+  "2026-05-27",
+);
+
+assert.equal(
+  blockedWhenOnlyCompletedNdtStepIsPossible.hold_reason,
+  NO_QUALIFIED_ENGINEER_REASON,
 );
 
 console.log("Auto-assign tests passed.");
