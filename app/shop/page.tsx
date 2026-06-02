@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Public_Sans } from "next/font/google";
 import { Home } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RequireRole } from "@/app/components/require-role";
 import {
   getGroupedProcessStepsForOrder,
@@ -74,7 +74,31 @@ type ShopWallPayload = {
   assigneeStaff?: Engineer[];
   absences: Absence[];
   extraActions: ExtraAction[];
+  wallSettings?: ShopWallSettings;
 };
+
+type ShopWallSettings = {
+  aviationNewsEnabled: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
+};
+
+type AviationNewsItem = {
+  title: string;
+  url: string;
+  summary: string | null;
+  imageUrl: string | null;
+  publishedAt: string | null;
+};
+
+type AviationNewsPayload = {
+  sourceName: string;
+  sourceUrl: string;
+  updatedAt: string;
+  items: AviationNewsItem[];
+};
+
+type WallScreen = "planning" | "news";
 
 const shopFont = Public_Sans({
   subsets: ["latin"],
@@ -91,6 +115,11 @@ const AUTO_SCROLL_SECTION_PAUSE_MS = 5000;
 const AUTO_SCROLL_BOTTOM_PAUSE_MS = 9000;
 const AUTO_SCROLL_SECTION_TOP_OFFSET_PX = 18;
 const AUTO_SCROLL_BOTTOM_SPACER_PX = 12;
+const AVIATION_NEWS_REFRESH_MS = 5 * 60 * 1000;
+const AVIATION_NEWS_ARTICLE_MS = 30000;
+const AVIATION_NEWS_ARTICLE_CYCLES = 2;
+const SHOP_WALL_PLANNING_CYCLES_BEFORE_NEWS = 3;
+const WALL_SCREEN_TRANSITION_MS = 700;
 const AMSTERDAM_TIME_ZONE = "Europe/Amsterdam";
 const AMSTERDAM_CLOCK_FORMATTER = new Intl.DateTimeFormat("nl-NL", {
   timeZone: AMSTERDAM_TIME_ZONE,
@@ -531,12 +560,43 @@ function ShopPageContent() {
   const [loadIssue, setLoadIssue] = useState<string | null>(null);
   const [now, setNow] = useState<Date>(() => new Date());
   const [currentRole, setCurrentRole] = useState<AppRole | null>(null);
+  const [aviationNewsItems, setAviationNewsItems] = useState<AviationNewsItem[]>([]);
+  const [aviationNewsIndex, setAviationNewsIndex] = useState(0);
+  const [aviationNewsIssue, setAviationNewsIssue] = useState<string | null>(null);
+  const [aviationNewsEnabled, setAviationNewsEnabled] = useState(false);
+  const [wallScreenOverride, setWallScreenOverride] = useState<WallScreen | null>(
+    null,
+  );
+  const [wallScreen, setWallScreen] = useState<WallScreen>("planning");
+  const [wallTransition, setWallTransition] = useState<WallScreen | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const openSectionRef = useRef<HTMLElement | null>(null);
   const blockedSectionRef = useRef<HTMLElement | null>(null);
   const actionsSectionRef = useRef<HTMLElement | null>(null);
   const bottomSpacerRef = useRef<HTMLDivElement | null>(null);
+  const wallTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const planningCycleCountRef = useRef(0);
+  const aviationNewsCycleCountRef = useRef(0);
+  const automatedAviationNewsEnabled =
+    aviationNewsEnabled && wallScreenOverride === null;
+
+  const transitionToWallScreen = useCallback((nextScreen: WallScreen) => {
+    if (wallScreen === nextScreen) return;
+
+    if (wallTransitionTimeoutRef.current) {
+      clearTimeout(wallTransitionTimeoutRef.current);
+    }
+
+    setWallTransition(nextScreen);
+    wallTransitionTimeoutRef.current = setTimeout(() => {
+      setWallScreen(nextScreen);
+      setWallTransition(null);
+      wallTransitionTimeoutRef.current = null;
+    }, WALL_SCREEN_TRANSITION_MS);
+  }, [wallScreen]);
 
   useEffect(() => {
     let active = true;
@@ -554,6 +614,41 @@ function ShopPageContent() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const requestedScreen =
+      searchParams.get("screen") ?? searchParams.get("view");
+
+    if (requestedScreen === "news" || requestedScreen === "planning") {
+      setWallScreenOverride(requestedScreen);
+      setWallScreen(requestedScreen);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (wallTransitionTimeoutRef.current) {
+        clearTimeout(wallTransitionTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (wallScreenOverride) {
+      setWallScreen(wallScreenOverride);
+      planningCycleCountRef.current = 0;
+      aviationNewsCycleCountRef.current = 0;
+      return;
+    }
+
+    if (!aviationNewsEnabled) {
+      transitionToWallScreen("planning");
+      planningCycleCountRef.current = 0;
+      aviationNewsCycleCountRef.current = 0;
+      setAviationNewsIndex(0);
+    }
+  }, [aviationNewsEnabled, transitionToWallScreen, wallScreenOverride]);
 
   useEffect(() => {
     async function load() {
@@ -597,9 +692,11 @@ function ShopPageContent() {
           assigneeStaff: assigneeStaffData,
           absences: absenceData,
           extraActions: extrasData,
+          wallSettings,
         } = payload as ShopWallPayload;
 
         setExtraActions(extrasData);
+        setAviationNewsEnabled(wallSettings?.aviationNewsEnabled === true);
 
         const filtered = data.filter(
           (o) => o.current_process_step !== READY_TO_CLOSE_STEP,
@@ -656,6 +753,108 @@ function ShopPageContent() {
   }, []);
 
   useEffect(() => {
+    if (wallScreen !== "news" && !automatedAviationNewsEnabled) return;
+
+    let active = true;
+
+    async function loadAviationNews() {
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          throw new Error(sessionError.message);
+        }
+
+        if (!session?.access_token) {
+          throw new Error("No active session for aviation news.");
+        }
+
+        const response = await fetch("/api/aviation-news", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          cache: "no-store",
+        });
+
+        const payload = (await response.json()) as
+          | AviationNewsPayload
+          | { error?: { message?: string } };
+
+        if (!response.ok) {
+          throw new Error(
+            "error" in payload && payload.error?.message
+              ? payload.error.message
+              : "Aviation news request failed.",
+          );
+        }
+
+        if (!active) return;
+
+        const newsPayload = payload as AviationNewsPayload;
+        setAviationNewsItems(newsPayload.items);
+        setAviationNewsIndex((currentIndex) =>
+          newsPayload.items.length === 0
+            ? 0
+            : Math.min(currentIndex, newsPayload.items.length - 1),
+        );
+        setAviationNewsIssue(null);
+      } catch (error) {
+        if (!active) return;
+        const message =
+          error instanceof Error ? error.message : "Aviation news failed to load.";
+        console.error("Failed to load aviation news", error);
+        setAviationNewsIssue(message);
+      }
+    }
+
+    void loadAviationNews();
+
+    const interval = setInterval(
+      () => void loadAviationNews(),
+      AVIATION_NEWS_REFRESH_MS,
+    );
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [automatedAviationNewsEnabled, wallScreen]);
+
+  useEffect(() => {
+    if (wallScreen !== "news" || aviationNewsItems.length === 0) return;
+
+    const interval = setInterval(() => {
+      setAviationNewsIndex((currentIndex) => {
+        const nextIndex = (currentIndex + 1) % aviationNewsItems.length;
+
+        if (automatedAviationNewsEnabled && nextIndex === 0) {
+          aviationNewsCycleCountRef.current += 1;
+
+          if (
+            aviationNewsCycleCountRef.current >= AVIATION_NEWS_ARTICLE_CYCLES
+          ) {
+            aviationNewsCycleCountRef.current = 0;
+            planningCycleCountRef.current = 0;
+            transitionToWallScreen("planning");
+          }
+        }
+
+        return nextIndex;
+      });
+    }, AVIATION_NEWS_ARTICLE_MS);
+
+    return () => clearInterval(interval);
+  }, [
+    automatedAviationNewsEnabled,
+    aviationNewsItems.length,
+    transitionToWallScreen,
+    wallScreen,
+  ]);
+
+  useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
 
     function scheduleNextMinuteTick() {
@@ -674,7 +873,7 @@ function ShopPageContent() {
   }, []);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || wallScreen !== "planning") return;
 
     const viewport = scrollerRef.current;
     const content = contentRef.current;
@@ -763,6 +962,23 @@ function ShopPageContent() {
         shouldResetToTop = false;
         pauseUntil = timestamp + AUTO_SCROLL_TOP_PAUSE_MS;
         lastTimestamp = timestamp;
+        if (
+          automatedAviationNewsEnabled &&
+          aviationNewsItems.length > 0 &&
+          wallTransition === null
+        ) {
+          planningCycleCountRef.current += 1;
+
+          if (
+            planningCycleCountRef.current >=
+            SHOP_WALL_PLANNING_CYCLES_BEFORE_NEWS
+          ) {
+            planningCycleCountRef.current = 0;
+            aviationNewsCycleCountRef.current = 0;
+            setAviationNewsIndex(0);
+            transitionToWallScreen("news");
+          }
+        }
         frame = requestAnimationFrame(tick);
         return;
       }
@@ -812,7 +1028,15 @@ function ShopPageContent() {
       cancelAnimationFrame(frame);
       scrollContent.style.transform = "translate3d(0, 0, 0)";
     };
-  }, [loading, orders.length]);
+  }, [
+    automatedAviationNewsEnabled,
+    aviationNewsItems.length,
+    loading,
+    orders.length,
+    transitionToWallScreen,
+    wallScreen,
+    wallTransition,
+  ]);
 
   if (loading) {
     return (
@@ -1723,14 +1947,304 @@ function ShopPageContent() {
     );
   }
 
+  function renderAviationNewsScreen() {
+    const currentItem =
+      aviationNewsItems.length > 0
+        ? aviationNewsItems[aviationNewsIndex % aviationNewsItems.length]
+        : null;
+    const activeNewsNumber =
+      aviationNewsItems.length > 0
+        ? (aviationNewsIndex % aviationNewsItems.length) + 1
+        : 0;
+    const publishedAt = currentItem?.publishedAt
+      ? new Date(currentItem.publishedAt)
+      : null;
+    const publishedLabel =
+      publishedAt && !Number.isNaN(publishedAt.getTime())
+        ? publishedAt.toLocaleDateString("nl-NL", {
+            timeZone: AMSTERDAM_TIME_ZONE,
+            day: "2-digit",
+            month: "long",
+            year: "numeric",
+          })
+        : null;
+    const showImage = Boolean(currentItem?.imageUrl);
+    const titleLength = currentItem?.title.length ?? 0;
+    const summaryLength = currentItem?.summary?.length ?? 0;
+    const titleFontSize = currentItem?.summary
+      ? titleLength > 105
+        ? "34px"
+        : titleLength > 78
+          ? "38px"
+          : "42px"
+      : titleLength > 105
+        ? "42px"
+        : "50px";
+    const summaryFontSize =
+      summaryLength > 360 ? "20px" : summaryLength > 260 ? "22px" : "24px";
+
+    return (
+      <section
+        aria-label="Luchtvaartnieuws headlines"
+        style={{
+          flex: "1 1 auto",
+          display: "grid",
+          gridTemplateRows: "minmax(0, 1fr) auto",
+          gap: "12px",
+          minHeight: 0,
+          padding: "18px 24px 14px",
+          backgroundColor: "#eef1f6",
+        }}
+      >
+        {currentItem ? (
+          <div
+            key={currentItem.url}
+            style={{
+              display: "grid",
+              gridTemplateRows: "58px minmax(0, 1fr)",
+              minHeight: 0,
+              borderRadius: "8px",
+              border: "1px solid #d7dce6",
+              backgroundColor: "#ffffff",
+              color: "#0b1220",
+              boxShadow: "0 16px 38px rgba(15, 20, 30, 0.18)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "18px",
+                minWidth: 0,
+                padding: "0 22px",
+                backgroundColor: "#1350a3",
+                color: "#ffffff",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "25px",
+                  fontWeight: 800,
+                  letterSpacing: "0",
+                  lineHeight: 1,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Luchtvaartnieuws.nl
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "16px",
+                  minWidth: 0,
+                  color: "rgba(255, 255, 255, 0.86)",
+                  fontSize: "16px",
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {publishedLabel && <span>{publishedLabel}</span>}
+                <span>{`${activeNewsNumber} / ${aviationNewsItems.length}`}</span>
+              </div>
+            </div>
+            <div
+              style={{
+              display: "grid",
+              gridTemplateColumns: showImage
+                  ? "minmax(0, 0.84fr) minmax(580px, 1fr)"
+                  : "1fr",
+                minHeight: 0,
+              }}
+            >
+              {showImage && (
+                <div
+                  style={{
+                    position: "relative",
+                    minHeight: 0,
+                    overflow: "hidden",
+                    backgroundColor: "#14233a",
+                  }}
+                >
+                  <Image
+                    src={currentItem.imageUrl || ""}
+                    alt=""
+                    fill
+                    loading="eager"
+                    sizes="760px"
+                    aria-hidden
+                    style={{
+                      objectFit: "cover",
+                      objectPosition: "center",
+                      filter: "blur(24px) brightness(0.72) saturate(1.08)",
+                      transform: "scale(1.08)",
+                    }}
+                  />
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      backgroundColor: "rgba(15, 25, 42, 0.18)",
+                    }}
+                  />
+                  <Image
+                    src={currentItem.imageUrl || ""}
+                    alt=""
+                    fill
+                    loading="eager"
+                    sizes="760px"
+                    style={{
+                      objectFit: "contain",
+                      objectPosition: "center",
+                    }}
+                  />
+                </div>
+              )}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateRows: "auto minmax(0, 1fr) auto",
+                  gap: "18px",
+                  minHeight: 0,
+                  padding: showImage ? "30px 36px 24px" : "44px 68px 34px",
+                  borderLeft: showImage ? "1px solid #d7dce6" : undefined,
+                  backgroundColor: "#ffffff",
+                }}
+              >
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    justifySelf: "start",
+                    padding: "5px 11px",
+                    borderRadius: "3px",
+                    backgroundColor: "#1350a3",
+                    color: "#ffffff",
+                    fontSize: "15px",
+                    fontWeight: 800,
+                    letterSpacing: "0.12em",
+                    lineHeight: 1,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Nieuws
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    alignContent: "center",
+                    gap: "18px",
+                    minHeight: 0,
+                  }}
+                >
+                  <h3
+                    style={{
+                      margin: 0,
+                      color: "#0b1220",
+                      fontSize: titleFontSize,
+                      fontWeight: 800,
+                      lineHeight: 1.08,
+                      letterSpacing: "-0.01em",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {currentItem.title}
+                  </h3>
+                  {currentItem.summary && (
+                    <p
+                      style={{
+                        margin: 0,
+                        color: "#27364c",
+                        fontSize: summaryFontSize,
+                        fontWeight: 520,
+                        lineHeight: 1.32,
+                        letterSpacing: "0",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {currentItem.summary}
+                    </p>
+                  )}
+                </div>
+                <div
+                  aria-hidden
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: `repeat(${aviationNewsItems.length}, minmax(0, 1fr))`,
+                    gap: "6px",
+                    minHeight: "8px",
+                  }}
+                >
+                  {aviationNewsItems.map((item, index) => (
+                    <span
+                      key={item.url}
+                      style={{
+                        height: "8px",
+                        borderRadius: "999px",
+                        backgroundColor:
+                          index === activeNewsNumber - 1 ? "#1350a3" : "#d8dee9",
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div
+            role="status"
+            style={{
+              display: "grid",
+              placeItems: "center",
+              minHeight: 0,
+              borderRadius: "8px",
+              border: `1px dashed ${COLORS.borderStrong}`,
+              backgroundColor: COLORS.panel,
+              color: aviationNewsIssue ? COLORS.red : COLORS.muted,
+              fontSize: "28px",
+              fontWeight: 700,
+              textAlign: "center",
+              padding: "32px",
+            }}
+          >
+            {aviationNewsIssue
+              ? `News load issue: ${aviationNewsIssue}`
+              : "Loading latest aviation headlines..."}
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "18px",
+            color: aviationNewsIssue ? COLORS.amber : COLORS.muted,
+            fontSize: "15px",
+            fontWeight: 650,
+          }}
+        >
+          <span>Powered by Luchtvaartnieuws.nl</span>
+          {aviationNewsIssue && <span>{aviationNewsIssue}</span>}
+        </div>
+      </section>
+    );
+  }
+
   const stats = [
     { label: "Open", value: nonBlockedOrders.length, tone: "#7fd1a4" },
     { label: "Blocked", value: blockedOrders.length, tone: "#f0a39b" },
     { label: "Tasks", value: additionalTasks.length, tone: "#aebfd9" },
     { label: "AOG", value: aogCount, tone: aogCount > 0 ? "#ff7a6d" : HEADER_INK },
   ];
-  const showOfficeHomeButton = currentRole === "office";
   const amsterdamTime = AMSTERDAM_CLOCK_FORMATTER.format(now);
+  const showAviationNews = wallScreen === "news";
+  const showOfficeHomeButton = currentRole === "office" && !showAviationNews;
 
   return (
     <div
@@ -1774,6 +2288,7 @@ function ShopPageContent() {
       )}
       <main
         style={{
+          position: "relative",
           width: `${DESIGN_WIDTH}px`,
           height: `${DESIGN_HEIGHT}px`,
           display: "flex",
@@ -1786,6 +2301,7 @@ function ShopPageContent() {
           transformOrigin: "top left",
         }}
       >
+      {!showAviationNews && (
       <header
         style={{
           flex: "0 0 auto",
@@ -1811,7 +2327,7 @@ function ShopPageContent() {
                 textTransform: "uppercase",
               }}
             >
-              Aircraft & Component MRO · Workshop
+              Aircraft & Component MRO - Workshop
             </div>
             <h1
               style={{
@@ -1930,77 +2446,131 @@ function ShopPageContent() {
           ))}
         </div>
       </header>
+      )}
 
-      <div
-        ref={scrollerRef}
-        style={{
-          flex: "1 1 auto",
-          overflowY: "hidden",
-          padding: "20px 24px",
-          minHeight: 0,
-        }}
-      >
+      {showAviationNews ? (
+        renderAviationNewsScreen()
+      ) : (
         <div
+          ref={scrollerRef}
           style={{
-            height: "100%",
+            flex: "1 1 auto",
+            overflowY: "hidden",
+            padding: "20px 24px",
+            minHeight: 0,
           }}
         >
           <div
-            ref={contentRef}
             style={{
-              display: "grid",
-              gap: "16px",
-              willChange: "transform",
+              height: "100%",
             }}
           >
-            {loadIssue && (
-              <div
-                role="status"
-                style={{
-                  padding: "14px 18px",
-                  borderRadius: "8px",
-                  border: `1px solid ${COLORS.red}`,
-                  backgroundColor: COLORS.redSoft,
-                  color: COLORS.red,
-                  fontSize: "18px",
-                  fontWeight: 650,
-                }}
-              >
-                Data load issue: {loadIssue}
-              </div>
-            )}
-            {renderOrderSection(
-              "Open",
-              "Work orders that can be worked on",
-              nonBlockedOrders,
-              {
-                accent: COLORS.green,
-                emptyLabel: "No open work orders right now.",
-                sectionRef: openSectionRef,
-              },
-            )}
-            {renderAdditionalTasksSection()}
-            {renderOrderSection(
-              "Blocked",
-              "Work orders that cannot be worked on",
-              blockedOrders,
-              {
-                blocked: true,
-                accent: COLORS.red,
-                emptyLabel: "No blocked work orders right now.",
-                sectionRef: blockedSectionRef,
-              },
-            )}
             <div
-              ref={bottomSpacerRef}
-              aria-hidden
+              ref={contentRef}
               style={{
-                height: `${AUTO_SCROLL_BOTTOM_SPACER_PX}px`,
+                display: "grid",
+                gap: "16px",
+                willChange: "transform",
               }}
-            />
+            >
+              {loadIssue && (
+                <div
+                  role="status"
+                  style={{
+                    padding: "14px 18px",
+                    borderRadius: "8px",
+                    border: `1px solid ${COLORS.red}`,
+                    backgroundColor: COLORS.redSoft,
+                    color: COLORS.red,
+                    fontSize: "18px",
+                    fontWeight: 650,
+                  }}
+                >
+                  Data load issue: {loadIssue}
+                </div>
+              )}
+              {renderOrderSection(
+                "Open",
+                "Work orders that can be worked on",
+                nonBlockedOrders,
+                {
+                  accent: COLORS.green,
+                  emptyLabel: "No open work orders right now.",
+                  sectionRef: openSectionRef,
+                },
+              )}
+              {renderAdditionalTasksSection()}
+              {renderOrderSection(
+                "Blocked",
+                "Work orders that cannot be worked on",
+                blockedOrders,
+                {
+                  blocked: true,
+                  accent: COLORS.red,
+                  emptyLabel: "No blocked work orders right now.",
+                  sectionRef: blockedSectionRef,
+                },
+              )}
+              <div
+                ref={bottomSpacerRef}
+                aria-hidden
+                style={{
+                  height: `${AUTO_SCROLL_BOTTOM_SPACER_PX}px`,
+                }}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      )}
+      {wallTransition && (
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 40,
+            display: "grid",
+            placeItems: "center",
+            backgroundColor: "rgba(15, 23, 42, 0.72)",
+            color: "#ffffff",
+            animation: `wall-screen-transition ${WALL_SCREEN_TRANSITION_MS}ms ease-in-out both`,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gap: "10px",
+              justifyItems: "center",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "12px",
+                fontWeight: 750,
+                letterSpacing: "0.2em",
+                lineHeight: 1,
+                textTransform: "uppercase",
+                color: "rgba(255, 255, 255, 0.72)",
+              }}
+            >
+              Switching display
+            </div>
+            <div
+              style={{
+                fontSize: "48px",
+                fontWeight: 780,
+                lineHeight: 1,
+                letterSpacing: "-0.01em",
+              }}
+            >
+              {wallTransition === "news"
+                ? "Luchtvaartnieuws"
+                : "Workshop Operations"}
+            </div>
+          </div>
+        </div>
+      )}
       </main>
     </div>
   );

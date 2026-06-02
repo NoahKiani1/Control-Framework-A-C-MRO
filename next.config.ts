@@ -33,6 +33,11 @@ const nextConfig: NextConfig = {
         hostname: "**.supabase.co",
         pathname: "/storage/v1/object/public/staff-photos/**",
       },
+      {
+        protocol: "https",
+        hostname: "www.luchtvaartnieuws.nl",
+        pathname: "/sites/default/files/**",
+      },
     ],
   },
 };

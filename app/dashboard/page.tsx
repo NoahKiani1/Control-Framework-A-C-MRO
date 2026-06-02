@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { RefreshCw } from "lucide-react";
+import { Newspaper, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dispatchAcmpPendingReviewRefresh } from "@/app/components/acmp-pending-events";
 import { RequireRole } from "@/app/components/require-role";
@@ -165,6 +165,12 @@ type DropboxStatusTone = "info" | "success" | "error";
 type DashboardActionConfirmation = {
   kind: "close_action" | "rfq_sent";
   order: WorkOrder;
+};
+
+type ShopWallSettings = {
+  aviationNewsEnabled: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
 };
 
 // Refined palette — modern, clean, professional
@@ -598,6 +604,10 @@ function DashboardPageContent() {
   const [dropboxCandidates, setDropboxCandidates] = useState<DropboxCandidate[]>(
     [],
   );
+  const [shopWallSettings, setShopWallSettings] =
+    useState<ShopWallSettings | null>(null);
+  const [shopWallSettingsBusy, setShopWallSettingsBusy] = useState(false);
+  const [shopWallSettingsStatus, setShopWallSettingsStatus] = useState("");
   const [actionConfirmation, setActionConfirmation] =
     useState<DashboardActionConfirmation | null>(null);
   const [rfqCloseMode, setRfqCloseMode] =
@@ -668,19 +678,19 @@ function DashboardPageContent() {
     setLoading(false);
   }, []);
 
-  async function authHeaders(): Promise<Record<string, string>> {
+  const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const {
       data: { session },
     } = await supabase.auth.getSession();
     return session?.access_token
       ? { Authorization: `Bearer ${session.access_token}` }
       : {};
-  }
+  }, []);
 
-  async function fetchJson<T>(
+  const fetchJson = useCallback(async <T,>(
     url: string,
     init: RequestInit = {},
-  ): Promise<T> {
+  ): Promise<T> => {
     const headers = {
       ...(await authHeaders()),
       ...(init.headers ?? {}),
@@ -691,6 +701,56 @@ function DashboardPageContent() {
       throw new Error(payload?.error?.message || "Request failed.");
     }
     return payload as T;
+  }, [authHeaders]);
+
+  const loadShopWallSettings = useCallback(async () => {
+    try {
+      const payload = await fetchJson<{ settings: ShopWallSettings }>(
+        "/api/shop-wall-settings",
+      );
+      setShopWallSettings(payload.settings);
+      setShopWallSettingsStatus("");
+    } catch (error) {
+      setShopWallSettingsStatus(
+        error instanceof Error
+          ? `Wall setting error: ${error.message}`
+          : "Wall setting error.",
+      );
+    }
+  }, [fetchJson]);
+
+  async function toggleAviationNewsForWall() {
+    const nextEnabled = !(shopWallSettings?.aviationNewsEnabled ?? false);
+    setShopWallSettingsBusy(true);
+    setShopWallSettingsStatus(
+      nextEnabled ? "Turning news on..." : "Turning news off...",
+    );
+
+    try {
+      const payload = await fetchJson<{ settings: ShopWallSettings }>(
+        "/api/shop-wall-settings",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ aviationNewsEnabled: nextEnabled }),
+        },
+      );
+
+      setShopWallSettings(payload.settings);
+      setShopWallSettingsStatus(
+        payload.settings.aviationNewsEnabled
+          ? "Luchtvaartnieuws enabled for wall."
+          : "Luchtvaartnieuws disabled for wall.",
+      );
+    } catch (error) {
+      setShopWallSettingsStatus(
+        error instanceof Error
+          ? `Wall setting error: ${error.message}`
+          : "Wall setting error.",
+      );
+    } finally {
+      setShopWallSettingsBusy(false);
+    }
   }
 
   async function checkDropboxNow() {
@@ -749,6 +809,10 @@ function DashboardPageContent() {
   useEffect(() => {
     void loadDashboardData(true);
   }, [loadDashboardData]);
+
+  useEffect(() => {
+    void loadShopWallSettings();
+  }, [loadShopWallSettings]);
 
   if (loading) {
     return (
@@ -1011,6 +1075,7 @@ function DashboardPageContent() {
   }
 
   const health = getHealthStatus();
+  const aviationNewsEnabled = shopWallSettings?.aviationNewsEnabled ?? false;
 
   function openActionConfirmation(
     order: WorkOrder,
@@ -1752,124 +1817,229 @@ function DashboardPageContent() {
           title="Planning & Monitoring Tool"
           description="Live control of work order flow, blockers, readiness, and capacity."
           actions={
-            <>
-              <button
-                type="button"
-                aria-label="Check Dropbox for new AcMP export"
-                title="Check Dropbox for new AcMP export"
-                disabled={dropboxBusy}
-                onClick={() => void checkDropboxNow()}
+            <div
+              style={{
+                display: "grid",
+                gap: "6px",
+                justifyItems: "end",
+              }}
+            >
+              <div
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "8px 12px",
-                  borderRadius: "8px",
-                  backgroundColor: COLORS.surface,
-                  color: COLORS.blue,
-                  border: `1px solid ${COLORS.borderStrong}`,
-                  fontSize: "13px",
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
-                  cursor: dropboxBusy ? "wait" : "pointer",
-                  fontFamily: FONT_STACK,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "flex-end",
+                  gap: "var(--gap-tight)",
+                  flexWrap: "wrap",
                 }}
               >
-                <RefreshCw size={15} strokeWidth={2.2} />
-                Check AcMP export
-              </button>
-
-              {dropboxStatus && (
-                <span
-                  role="status"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    minHeight: "34px",
-                    maxWidth: "360px",
-                    padding: "7px 10px",
-                    borderRadius: "8px",
-                    backgroundColor: dropboxStatusPalette.backgroundColor,
-                    color: dropboxStatusPalette.color,
-                    border: `1px solid ${dropboxStatusPalette.borderColor}`,
-                    fontSize: "13px",
-                    fontWeight: 700,
-                    lineHeight: 1.25,
-                    whiteSpace: "normal",
-                    overflowWrap: "anywhere",
-                    fontFamily: FONT_STACK,
-                  }}
-                >
-                  {dropboxStatus}
-                </span>
-              )}
-
-              {dropboxCandidates.length > 0 && (
                 <button
                   type="button"
+                  aria-label="Check Dropbox for new AcMP export"
+                  title="Check Dropbox for new AcMP export"
                   disabled={dropboxBusy}
-                  onClick={() => void importDropboxNow()}
+                  onClick={() => void checkDropboxNow()}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
+                    gap: "8px",
                     minHeight: "34px",
                     padding: "8px 12px",
                     borderRadius: "8px",
-                    border: "none",
-                    backgroundColor: COLORS.blue,
-                    color: "white",
-                    fontWeight: 700,
-                    cursor: dropboxBusy ? "wait" : "pointer",
+                    backgroundColor: COLORS.surface,
+                    color: COLORS.blue,
+                    border: `1px solid ${COLORS.borderStrong}`,
                     fontSize: "13px",
-                    fontFamily: FONT_STACK,
+                    fontWeight: 700,
                     whiteSpace: "nowrap",
+                    cursor: dropboxBusy ? "wait" : "pointer",
+                    fontFamily: FONT_STACK,
                   }}
                 >
-                  Import now
+                  <RefreshCw size={15} strokeWidth={2.2} />
+                  Check AcMP export
                 </button>
-              )}
 
-              <button
-                type="button"
-                aria-label={`${health.label}: ${health.reason}`}
-                onClick={() => {
-                  if (health.panel) {
-                    setActivePanel(health.panel);
-                  }
-                }}
-                style={{
-                  position: "relative",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "8px 14px",
-                  borderRadius: "8px",
-                  backgroundColor: health.bg,
-                  color: health.color,
-                  border: `1px solid ${health.color}33`,
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
-                  cursor: health.panel ? "pointer" : "help",
-                  fontFamily: FONT_STACK,
-                }}
-                className="health-status"
-              >
-                <span
-                  style={{
-                    width: "8px",
-                    height: "8px",
-                    borderRadius: "50%",
-                    backgroundColor: health.color,
-                    display: "inline-block",
+                {dropboxStatus && (
+                  <span
+                    role="status"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      minHeight: "34px",
+                      maxWidth: "360px",
+                      padding: "7px 10px",
+                      borderRadius: "8px",
+                      backgroundColor: dropboxStatusPalette.backgroundColor,
+                      color: dropboxStatusPalette.color,
+                      border: `1px solid ${dropboxStatusPalette.borderColor}`,
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      lineHeight: 1.25,
+                      whiteSpace: "normal",
+                      overflowWrap: "anywhere",
+                      fontFamily: FONT_STACK,
+                    }}
+                  >
+                    {dropboxStatus}
+                  </span>
+                )}
+
+                {dropboxCandidates.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={dropboxBusy}
+                    onClick={() => void importDropboxNow()}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      minHeight: "34px",
+                      padding: "8px 12px",
+                      borderRadius: "8px",
+                      border: "none",
+                      backgroundColor: COLORS.blue,
+                      color: "white",
+                      fontWeight: 700,
+                      cursor: dropboxBusy ? "wait" : "pointer",
+                      fontSize: "13px",
+                      fontFamily: FONT_STACK,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Import now
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  aria-label={`${health.label}: ${health.reason}`}
+                  onClick={() => {
+                    if (health.panel) {
+                      setActivePanel(health.panel);
+                    }
                   }}
-                />
-                {health.label}
-                <span className="health-status-tooltip">
-                  {health.reason}
-                </span>
-              </button>
-            </>
+                  style={{
+                    position: "relative",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    minHeight: "34px",
+                    padding: "8px 14px",
+                    borderRadius: "8px",
+                    backgroundColor: health.bg,
+                    color: health.color,
+                    border: `1px solid ${health.color}33`,
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    cursor: health.panel ? "pointer" : "help",
+                    fontFamily: FONT_STACK,
+                  }}
+                  className="health-status"
+                >
+                  <span
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      backgroundColor: health.color,
+                      display: "inline-block",
+                    }}
+                  />
+                  {health.label}
+                  <span className="health-status-tooltip">
+                    {health.reason}
+                  </span>
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: "5px",
+                  justifyItems: "end",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => void toggleAviationNewsForWall()}
+                  disabled={shopWallSettingsBusy}
+                  aria-pressed={aviationNewsEnabled}
+                  title={
+                    aviationNewsEnabled
+                      ? "Turn Luchtvaartnieuws off on the wall"
+                      : "Turn Luchtvaartnieuws on on the wall"
+                  }
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    minHeight: "34px",
+                    padding: "7px 11px",
+                    borderRadius: "8px",
+                    border: `1px solid ${
+                      aviationNewsEnabled ? "#1350a3" : COLORS.border
+                    }`,
+                    backgroundColor: aviationNewsEnabled
+                      ? "#eff6ff"
+                      : COLORS.surface,
+                    color: aviationNewsEnabled ? "#1350a3" : COLORS.textSoft,
+                    boxShadow: aviationNewsEnabled
+                      ? "0 8px 18px rgba(19, 80, 163, 0.10)"
+                      : "0 1px 2px rgba(15, 23, 42, 0.04)",
+                    cursor: shopWallSettingsBusy ? "wait" : "pointer",
+                    fontSize: "12px",
+                    fontWeight: 750,
+                    whiteSpace: "nowrap",
+                    fontFamily: FONT_STACK,
+                  }}
+                >
+                  <Newspaper size={15} strokeWidth={2.2} />
+                  Luchtvaartnieuws
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      minWidth: "34px",
+                      padding: "2px 7px",
+                      borderRadius: "999px",
+                      backgroundColor: aviationNewsEnabled
+                        ? "#1350a3"
+                        : COLORS.surfaceSubtle,
+                      color: aviationNewsEnabled ? "#ffffff" : COLORS.textMuted,
+                      border: aviationNewsEnabled
+                        ? "1px solid #1350a3"
+                        : `1px solid ${COLORS.border}`,
+                      fontSize: "10px",
+                      fontWeight: 850,
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    {aviationNewsEnabled ? "ON" : "OFF"}
+                  </span>
+                </button>
+
+                {shopWallSettingsStatus && (
+                  <div
+                    style={{
+                      maxWidth: "230px",
+                      color: shopWallSettingsStatus.startsWith(
+                        "Wall setting error",
+                      )
+                        ? COLORS.red
+                        : COLORS.textMuted,
+                      fontSize: "11px",
+                      fontWeight: 650,
+                      lineHeight: 1.25,
+                      textAlign: "right",
+                    }}
+                  >
+                    {shopWallSettingsStatus}
+                  </div>
+                )}
+              </div>
+            </div>
           }
         />
 

@@ -188,6 +188,24 @@ td {
   }
 }
 
+@keyframes wall-screen-transition {
+  0% {
+    opacity: 0;
+  }
+
+  28% {
+    opacity: 1;
+  }
+
+  72% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
 .planning-timeline-row {
   animation: planning-row-fade-in 280ms ease-out both;
 }

@@ -6,6 +6,7 @@ import {
   getRensOfficeStaff,
 } from "@/lib/manual-office-assignees";
 import { reactivateReturnedAbsentAssigneeWorkOrders } from "@/lib/absent-assignment";
+import { getShopWallSettings } from "@/lib/shop-wall-settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -113,7 +114,13 @@ export async function GET(request: Request) {
 
   const supabase = getSupabaseServiceClient();
 
-  const [engineersResult, rensOfficeResult, absencesResult, extrasResult] =
+  const [
+    engineersResult,
+    rensOfficeResult,
+    absencesResult,
+    extrasResult,
+    wallSettings,
+  ] =
     await Promise.all([
       supabase
         .from("engineers")
@@ -137,6 +144,7 @@ export async function GET(request: Request) {
       supabase
         .from("extra_actions")
         .select("id, description, responsible_person_team, due_date, created_at"),
+      getShopWallSettings(supabase),
     ]);
 
   const errors = [
@@ -221,5 +229,6 @@ export async function GET(request: Request) {
     assigneeStaff: [...engineers, ...rensOfficeStaff],
     absences: (absencesResult.data || []) as ShopWallAbsence[],
     extraActions: (extrasResult.data || []) as ShopWallExtraAction[],
+    wallSettings,
   });
 }
