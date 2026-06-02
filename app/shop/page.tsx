@@ -1956,18 +1956,12 @@ function ShopPageContent() {
       aviationNewsItems.length > 0
         ? (aviationNewsIndex % aviationNewsItems.length) + 1
         : 0;
-    const publishedAt = currentItem?.publishedAt
-      ? new Date(currentItem.publishedAt)
-      : null;
-    const publishedLabel =
-      publishedAt && !Number.isNaN(publishedAt.getTime())
-        ? publishedAt.toLocaleDateString("nl-NL", {
-            timeZone: AMSTERDAM_TIME_ZONE,
-            day: "2-digit",
-            month: "long",
-            year: "numeric",
-          })
-        : null;
+    const wallDateLabel = now.toLocaleDateString("nl-NL", {
+      timeZone: AMSTERDAM_TIME_ZONE,
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
     const showImage = Boolean(currentItem?.imageUrl);
     const titleLength = currentItem?.title.length ?? 0;
     const summaryLength = currentItem?.summary?.length ?? 0;
@@ -2043,7 +2037,7 @@ function ShopPageContent() {
                   whiteSpace: "nowrap",
                 }}
               >
-                {publishedLabel && <span>{publishedLabel}</span>}
+                <span>{wallDateLabel}</span>
                 <span>{`${activeNewsNumber} / ${aviationNewsItems.length}`}</span>
               </div>
             </div>
