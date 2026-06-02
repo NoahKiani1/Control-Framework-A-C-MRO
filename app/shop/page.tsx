@@ -1981,7 +1981,7 @@ function ShopPageContent() {
         ? "42px"
         : "50px";
     const summaryFontSize =
-      summaryLength > 360 ? "20px" : summaryLength > 260 ? "22px" : "24px";
+      summaryLength > 360 ? "27px" : summaryLength > 260 ? "30px" : "33px";
 
     return (
       <section
@@ -1989,11 +1989,10 @@ function ShopPageContent() {
         style={{
           flex: "1 1 auto",
           display: "grid",
-          gridTemplateRows: "minmax(0, 1fr) auto",
-          gap: "12px",
+          gridTemplateRows: "minmax(0, 1fr)",
           minHeight: 0,
-          padding: "18px 24px 14px",
-          backgroundColor: "#eef1f6",
+          padding: 0,
+          backgroundColor: "#ffffff",
         }}
       >
         {currentItem ? (
@@ -2003,11 +2002,8 @@ function ShopPageContent() {
               display: "grid",
               gridTemplateRows: "58px minmax(0, 1fr)",
               minHeight: 0,
-              borderRadius: "8px",
-              border: "1px solid #d7dce6",
               backgroundColor: "#ffffff",
               color: "#0b1220",
-              boxShadow: "0 16px 38px rgba(15, 20, 30, 0.18)",
               overflow: "hidden",
             }}
           >
@@ -2053,9 +2049,9 @@ function ShopPageContent() {
             </div>
             <div
               style={{
-              display: "grid",
-              gridTemplateColumns: showImage
-                  ? "minmax(0, 0.84fr) minmax(580px, 1fr)"
+                display: "grid",
+                gridTemplateColumns: showImage
+                  ? "minmax(0, 0.86fr) minmax(620px, 1fr)"
                   : "1fr",
                 minHeight: 0,
               }}
@@ -2108,9 +2104,9 @@ function ShopPageContent() {
                 style={{
                   display: "grid",
                   gridTemplateRows: "auto minmax(0, 1fr) auto",
-                  gap: "18px",
+                  gap: "22px",
                   minHeight: 0,
-                  padding: showImage ? "30px 36px 24px" : "44px 68px 34px",
+                  padding: showImage ? "34px 52px 30px" : "52px 82px 38px",
                   borderLeft: showImage ? "1px solid #d7dce6" : undefined,
                   backgroundColor: "#ffffff",
                 }}
@@ -2161,8 +2157,8 @@ function ShopPageContent() {
                         margin: 0,
                         color: "#27364c",
                         fontSize: summaryFontSize,
-                        fontWeight: 520,
-                        lineHeight: 1.32,
+                        fontWeight: 540,
+                        lineHeight: 1.24,
                         letterSpacing: "0",
                         overflowWrap: "anywhere",
                       }}
@@ -2217,21 +2213,6 @@ function ShopPageContent() {
               : "Loading latest aviation headlines..."}
           </div>
         )}
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "18px",
-            color: aviationNewsIssue ? COLORS.amber : COLORS.muted,
-            fontSize: "15px",
-            fontWeight: 650,
-          }}
-        >
-          <span>Powered by Luchtvaartnieuws.nl</span>
-          {aviationNewsIssue && <span>{aviationNewsIssue}</span>}
-        </div>
       </section>
     );
   }
