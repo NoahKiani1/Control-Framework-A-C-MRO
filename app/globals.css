@@ -64,6 +64,27 @@
   --page-header-actions-flex: 0 0 auto;
 }
 
+.office-mode-grid {
+  grid-template-areas:
+    "active inactive"
+    "flow flow";
+}
+
+.office-active-mode-card {
+  grid-area: active;
+}
+
+.office-inactive-mode-card {
+  grid-area: inactive;
+}
+
+.office-mode-flow,
+.office-active-mode-flow,
+.office-inactive-mode-flow {
+  grid-area: flow;
+  min-width: 0;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -362,6 +383,22 @@ td {
 
     --page-header-title-size: 26px;
     --page-header-actions-flex: 1 1 100%;
+  }
+
+  .office-mode-grid {
+    grid-template-areas:
+      "active"
+      "active-flow"
+      "inactive"
+      "inactive-flow";
+  }
+
+  .office-active-mode-flow {
+    grid-area: active-flow;
+  }
+
+  .office-inactive-mode-flow {
+    grid-area: inactive-flow;
   }
 
   button,

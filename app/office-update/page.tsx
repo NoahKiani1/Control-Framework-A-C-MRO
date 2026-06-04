@@ -832,14 +832,6 @@ function OfficeUpdatePageContent() {
           style={{
             ...sectionCard,
             marginTop: "14px",
-            ...(mode
-              ? {
-                  borderBottomLeftRadius: 0,
-                  borderBottomRightRadius: 0,
-                  borderBottomWidth: 0,
-                  boxShadow: "none",
-                }
-              : null),
           }}
         >
           <h2 style={{ ...fieldTitleStyle, marginBottom: "4px" }}>
@@ -856,13 +848,14 @@ function OfficeUpdatePageContent() {
             Choose whether you want to work with active or inactive work orders.
           </div>
           <div
+            className="office-mode-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "var(--office-choice-grid)",
               gap: "12px",
             }}
           >
-            <div style={innerCard}>
+            <div className="office-active-mode-card" style={innerCard}>
               <h2 style={{ ...fieldTitleStyle, marginBottom: "4px" }}>
                 Active work orders
               </h2>
@@ -885,7 +878,7 @@ function OfficeUpdatePageContent() {
               </button>
             </div>
 
-            <div style={innerCard}>
+            <div className="office-inactive-mode-card" style={innerCard}>
               <h2 style={{ ...fieldTitleStyle, marginBottom: "4px" }}>
                 Inactive work orders
               </h2>
@@ -907,27 +900,29 @@ function OfficeUpdatePageContent() {
                 Inactive ({inactiveOrders.length})
               </button>
             </div>
-          </div>
-        </section>
 
-        {mode && (
-          <section
-            style={{
-              ...sectionCard,
-              marginTop: 0,
-              borderTopWidth: 0,
-              borderTopLeftRadius: 0,
-              borderTopRightRadius: 0,
-              ...(selectedOrder
-                ? {
-                    borderBottomLeftRadius: 0,
-                    borderBottomRightRadius: 0,
-                    borderBottomWidth: 0,
-                    boxShadow: "none",
-                  }
-                : null),
-            }}
-          >
+            {mode && (
+              <div
+                className={`office-mode-flow ${
+                  mode === "active"
+                    ? "office-active-mode-flow"
+                    : "office-inactive-mode-flow"
+                }`}
+              >
+                <section
+                  style={{
+                    ...sectionCard,
+                    marginTop: 0,
+                    ...(selectedOrder
+                      ? {
+                          borderBottomLeftRadius: 0,
+                          borderBottomRightRadius: 0,
+                          borderBottomWidth: 0,
+                          boxShadow: "none",
+                        }
+                      : null),
+                  }}
+                >
             <div
               style={{
                 height: "1px",
@@ -981,11 +976,10 @@ function OfficeUpdatePageContent() {
                 </select>
               </div>
             </div>
-          </section>
-        )}
+                </section>
 
-        {selectedOrder && (
-          <>
+                {selectedOrder && (
+                  <>
             <section
               style={{
                 ...sectionCard,
@@ -1694,6 +1688,10 @@ function OfficeUpdatePageContent() {
             )}
           </>
         )}
+              </div>
+            )}
+          </div>
+        </section>
 
         <section style={{ ...sectionCard, marginTop: MAJOR_SECTION_GAP }}>
           <h2 style={{ ...fieldTitleStyle, marginBottom: "4px" }}>
