@@ -15,10 +15,12 @@ import {
 } from "@/lib/auto-assign";
 import {
   INTAKE_STEP,
+  READY_TO_CLOSE_STEP,
   getActiveStepsForType,
   getCompletableStepsForOrder,
   getInitialProcessStepForOrder,
   getOfficeConfigurableProcessStepsForType,
+  getProcessStepsForType,
 } from "@/lib/process-steps";
 import {
   DEFAULT_ASSIGNED_PERSON_TEAM,
@@ -29,6 +31,7 @@ import { SearchableSelect } from "@/app/components/searchable-select";
 import { PageHeader } from "@/app/components/page-header";
 import {
   stopWorkOrderDataTracking,
+  syncWorkOrderDataSnapshot,
   syncWorkOrderDataBlockState,
 } from "@/lib/work-order-data";
 import {
@@ -131,6 +134,80 @@ function normalizeIncludedSteps(
   );
 }
 
+function normalizeIncludedTaskSelection(
+  workOrderType: string | null,
+  selected: string[],
+): string[] {
+  const template = getProcessStepsForType(workOrderType);
+  if (template.length === 0) return [];
+  const selectedSet = new Set(selected);
+  return template.filter(
+    (step) => selectedSet.has(step) || step === INTAKE_STEP,
+  );
+}
+
+function getIncludedStepsForOrder(order: WorkOrder): string[] {
+  return order.included_process_steps && order.included_process_steps.length > 0
+    ? order.included_process_steps
+    : defaultIncludedStepsForType(order.work_order_type);
+}
+
+function getCurrentStepAfterIncludedTaskUpdate(
+  order: WorkOrder,
+  includedSteps: string[],
+): string | null {
+  const currentStep = order.current_process_step?.trim() || null;
+  if (!order.is_active || !currentStep || currentStep === READY_TO_CLOSE_STEP) {
+    return currentStep;
+  }
+
+  const completableSteps = getCompletableStepsForOrder(
+    order.work_order_type,
+    includedSteps,
+  );
+  if (completableSteps.includes(currentStep)) return currentStep;
+
+  const template = getProcessStepsForType(order.work_order_type);
+  const currentIndex = template.indexOf(currentStep);
+  if (currentIndex >= 0) {
+    const nextStep = completableSteps.find((step) => {
+      const stepIndex = template.indexOf(step);
+      return stepIndex >= currentIndex;
+    });
+    if (nextStep) return nextStep;
+    return completableSteps[completableSteps.length - 1] ?? currentStep;
+  }
+
+  return getInitialProcessStepForOrder(order.work_order_type, includedSteps);
+}
+
+function getIncludedTaskCurrentStepOptions(
+  order: WorkOrder,
+  includedSteps: string[],
+): string[] {
+  const options = getCompletableStepsForOrder(
+    order.work_order_type,
+    includedSteps,
+  );
+  return order.current_process_step === READY_TO_CLOSE_STEP
+    ? [...options, READY_TO_CLOSE_STEP]
+    : options;
+}
+
+function normalizeIncludedTaskCurrentStep(
+  order: WorkOrder,
+  includedSteps: string[],
+  requestedStep: string,
+): string {
+  if (!order.is_active) return "";
+
+  const options = getIncludedTaskCurrentStepOptions(order, includedSteps);
+  if (requestedStep && options.includes(requestedStep)) return requestedStep;
+
+  const nextStep = getCurrentStepAfterIncludedTaskUpdate(order, includedSteps);
+  return nextStep && options.includes(nextStep) ? nextStep : options[0] || "";
+}
+
 function inferVariantFromSteps(
   workOrderType: string | null,
   includedSteps: string[] | null,
@@ -212,6 +289,12 @@ function OfficeUpdatePageContent() {
   const [isBlockedUpdate, setIsBlockedUpdate] = useState(false);
   const [showInactiveActivationForm, setShowInactiveActivationForm] = useState(false);
   const [showDeactivateWarning, setShowDeactivateWarning] = useState(false);
+  const [showIncludedTasksDialog, setShowIncludedTasksDialog] = useState(false);
+  const [includedTaskDraft, setIncludedTaskDraft] = useState<string[]>([]);
+  const [includedTaskCurrentStepDraft, setIncludedTaskCurrentStepDraft] =
+    useState("");
+  const [includedTaskStatus, setIncludedTaskStatus] = useState("");
+  const [savingIncludedTasks, setSavingIncludedTasks] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState("");
   const [extraActionStatus, setExtraActionStatus] = useState("");
@@ -257,6 +340,10 @@ function OfficeUpdatePageContent() {
       setIsBlockedUpdate(Boolean(order.hold_reason?.trim()));
       setShowInactiveActivationForm(false);
       setShowDeactivateWarning(false);
+      setShowIncludedTasksDialog(false);
+      setIncludedTaskDraft([]);
+      setIncludedTaskCurrentStepDraft("");
+      setIncludedTaskStatus("");
       setSaveStatus("");
     },
     [buildFormFromOrder],
@@ -391,6 +478,22 @@ function OfficeUpdatePageContent() {
     })
     ? getRensOfficeStaff(officeStaff)
     : [];
+  const includedTaskOptions = useMemo(
+    () =>
+      selectedOrder
+        ? getProcessStepsForType(selectedOrder.work_order_type)
+        : [],
+    [selectedOrder],
+  );
+  const includedTaskCount = selectedOrder
+    ? getIncludedStepsForOrder(selectedOrder).filter(
+        (step) => step !== INTAKE_STEP,
+      ).length
+    : 0;
+  const includedTaskCurrentStepOptions = selectedOrder
+    ? getIncludedTaskCurrentStepOptions(selectedOrder, includedTaskDraft)
+    : [];
+  const canUpdateIncludedTasks = includedTaskOptions.length > 0;
 
   function displayDate(value: string | null): string {
     if (!value) return "—";
@@ -411,6 +514,10 @@ function OfficeUpdatePageContent() {
     setIsBlockedUpdate(false);
     setShowInactiveActivationForm(false);
     setShowDeactivateWarning(false);
+    setShowIncludedTasksDialog(false);
+    setIncludedTaskDraft([]);
+    setIncludedTaskCurrentStepDraft("");
+    setIncludedTaskStatus("");
   }
 
   function selectOrder(id: string) {
@@ -426,6 +533,10 @@ function OfficeUpdatePageContent() {
     setIsBlockedUpdate(false);
     setShowInactiveActivationForm(false);
     setShowDeactivateWarning(false);
+    setShowIncludedTasksDialog(false);
+    setIncludedTaskDraft([]);
+    setIncludedTaskCurrentStepDraft("");
+    setIncludedTaskStatus("");
     setSaveStatus("");
   }
 
@@ -476,6 +587,145 @@ function OfficeUpdatePageContent() {
         action_owner: "",
       }));
     }
+  }
+
+  function openIncludedTasksDialog() {
+    if (!selectedOrder) return;
+    const includedSteps = normalizeIncludedTaskSelection(
+      selectedOrder.work_order_type,
+      getIncludedStepsForOrder(selectedOrder),
+    );
+    setIncludedTaskDraft(includedSteps);
+    setIncludedTaskCurrentStepDraft(
+      normalizeIncludedTaskCurrentStep(
+        selectedOrder,
+        includedSteps,
+        selectedOrder.current_process_step || "",
+      ),
+    );
+    setIncludedTaskStatus("");
+    setShowIncludedTasksDialog(true);
+  }
+
+  function closeIncludedTasksDialog() {
+    if (savingIncludedTasks) return;
+    setShowIncludedTasksDialog(false);
+    setIncludedTaskCurrentStepDraft("");
+    setIncludedTaskStatus("");
+  }
+
+  function toggleIncludedTask(step: string, checked: boolean) {
+    if (!selectedOrder || step === INTAKE_STEP) return;
+
+    const next = new Set(includedTaskDraft);
+    if (checked) next.add(step);
+    else next.delete(step);
+    const normalized = normalizeIncludedTaskSelection(
+      selectedOrder.work_order_type,
+      Array.from(next),
+    );
+    setIncludedTaskDraft(normalized);
+    setIncludedTaskCurrentStepDraft((currentStep) =>
+      normalizeIncludedTaskCurrentStep(
+        selectedOrder,
+        normalized,
+        currentStep,
+      ),
+    );
+    setIncludedTaskStatus("");
+  }
+
+  async function saveIncludedTasks() {
+    if (!selectedId || !selectedOrder || savingIncludedTasks) return;
+
+    const normalizedIncludedSteps = normalizeIncludedTaskSelection(
+      selectedOrder.work_order_type,
+      includedTaskDraft,
+    );
+    const completableSteps = getCompletableStepsForOrder(
+      selectedOrder.work_order_type,
+      normalizedIncludedSteps,
+    );
+
+    if (completableSteps.length === 0) {
+      setIncludedTaskStatus("Select at least one task.");
+      return;
+    }
+
+    const nextProcessStep = selectedOrder.is_active
+      ? normalizeIncludedTaskCurrentStep(
+          selectedOrder,
+          normalizedIncludedSteps,
+          includedTaskCurrentStepDraft,
+        )
+      : getCurrentStepAfterIncludedTaskUpdate(
+          selectedOrder,
+          normalizedIncludedSteps,
+        );
+    const currentStepChanged =
+      (selectedOrder.current_process_step ?? null) !== nextProcessStep;
+    const nowIso = new Date().toISOString();
+
+    setSavingIncludedTasks(true);
+    setIncludedTaskStatus("Saving...");
+
+    const { data: savedOrder, error } = await updateWorkOrderAndFetch<WorkOrder>(
+      selectedId,
+      {
+        included_process_steps: normalizedIncludedSteps,
+        current_process_step: nextProcessStep,
+        last_manual_update: nowIso,
+      },
+      WORK_ORDER_SELECT,
+    );
+
+    if (error) {
+      setSavingIncludedTasks(false);
+      setIncludedTaskStatus(`Error: ${error.message}`);
+      return;
+    }
+
+    if (savedOrder) {
+      const trackingResult = await syncWorkOrderDataSnapshot(savedOrder, nowIso);
+      if (trackingResult.error) {
+        console.error(
+          `Failed to sync Work Order Data included tasks for ${savedOrder.work_order_id}: ${trackingResult.error.message}`,
+        );
+      }
+
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.work_order_id === selectedId ? savedOrder : o,
+        ),
+      );
+    }
+
+    setForm((prev) => {
+      const activationStepStillValid = normalizedIncludedSteps.includes(
+        prev.activation_process_step,
+      );
+      return {
+        ...prev,
+        included_steps: normalizedIncludedSteps,
+        step_variant: inferVariantFromSteps(
+          selectedOrder.work_order_type,
+          normalizedIncludedSteps,
+        ),
+        activation_process_step: activationStepStillValid
+          ? prev.activation_process_step
+          : completableSteps[0] || "",
+      };
+    });
+    setIncludedTaskDraft(normalizedIncludedSteps);
+    setIncludedTaskCurrentStepDraft("");
+    setShowIncludedTasksDialog(false);
+    setSavingIncludedTasks(false);
+    setIncludedTaskStatus("");
+    setSaveStatus(
+      currentStepChanged && nextProcessStep
+        ? `Included tasks updated. Current step is now ${nextProcessStep}.`
+        : "Included tasks updated.",
+    );
   }
 
   async function saveWorkOrder() {
@@ -832,6 +1082,14 @@ function OfficeUpdatePageContent() {
           style={{
             ...sectionCard,
             marginTop: "14px",
+            ...(mode
+              ? {
+                  borderBottomLeftRadius: 0,
+                  borderBottomRightRadius: 0,
+                  borderBottomWidth: 0,
+                  boxShadow: "none",
+                }
+              : null),
           }}
         >
           <h2 style={{ ...fieldTitleStyle, marginBottom: "4px" }}>
@@ -848,7 +1106,9 @@ function OfficeUpdatePageContent() {
             Choose whether you want to work with active or inactive work orders.
           </div>
           <div
-            className="office-mode-grid"
+            className={`office-mode-choice-grid${
+              mode ? ` office-mode-choice-grid--${mode}` : ""
+            }`}
             style={{
               display: "grid",
               gridTemplateColumns: "var(--office-choice-grid)",
@@ -900,29 +1160,27 @@ function OfficeUpdatePageContent() {
                 Inactive ({inactiveOrders.length})
               </button>
             </div>
+          </div>
+        </section>
 
-            {mode && (
-              <div
-                className={`office-mode-flow ${
-                  mode === "active"
-                    ? "office-active-mode-flow"
-                    : "office-inactive-mode-flow"
-                }`}
-              >
-                <section
-                  style={{
-                    ...sectionCard,
-                    marginTop: 0,
-                    ...(selectedOrder
-                      ? {
-                          borderBottomLeftRadius: 0,
-                          borderBottomRightRadius: 0,
-                          borderBottomWidth: 0,
-                          boxShadow: "none",
-                        }
-                      : null),
-                  }}
-                >
+        {mode && (
+          <section
+            style={{
+              ...sectionCard,
+              marginTop: 0,
+              borderTopWidth: 0,
+              borderTopLeftRadius: 0,
+              borderTopRightRadius: 0,
+              ...(selectedOrder
+                ? {
+                    borderBottomLeftRadius: 0,
+                    borderBottomRightRadius: 0,
+                    borderBottomWidth: 0,
+                    boxShadow: "none",
+                  }
+                : null),
+            }}
+          >
             <div
               style={{
                 height: "1px",
@@ -976,10 +1234,11 @@ function OfficeUpdatePageContent() {
                 </select>
               </div>
             </div>
-                </section>
+          </section>
+        )}
 
-                {selectedOrder && (
-                  <>
+        {selectedOrder && (
+          <>
             <section
               style={{
                 ...sectionCard,
@@ -1330,6 +1589,46 @@ function OfficeUpdatePageContent() {
                       >
                         Work Order details
                       </h2>
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: "8px",
+                          padding: "10px 12px",
+                          borderRadius: "10px",
+                          backgroundColor: COLORS.blueSoft,
+                          border: "1px solid #d7e3ff",
+                          marginBottom: "10px",
+                        }}
+                      >
+                        <div style={eyebrowStyle}>Included tasks</div>
+                        <div
+                          style={{
+                            color: COLORS.blue,
+                            fontWeight: 700,
+                            fontSize: "var(--fs-body)",
+                          }}
+                        >
+                          {includedTaskCount} selected
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openIncludedTasksDialog}
+                          disabled={!canUpdateIncludedTasks}
+                          style={{
+                            ...secondaryBtn,
+                            width: "100%",
+                            justifyContent: "center",
+                            borderColor: "#c7d8ff",
+                            color: COLORS.blue,
+                            cursor: canUpdateIncludedTasks
+                              ? "pointer"
+                              : "not-allowed",
+                            opacity: canUpdateIncludedTasks ? 1 : 0.65,
+                          }}
+                        >
+                          Update included tasks
+                        </button>
+                      </div>
                       {selectedOrder.is_active && (
                         <div style={{ display: "grid", gap: "10px", marginBottom: "10px" }}>
                           {form.is_active ? (
@@ -1688,10 +1987,6 @@ function OfficeUpdatePageContent() {
             )}
           </>
         )}
-              </div>
-            )}
-          </div>
-        </section>
 
         <section style={{ ...sectionCard, marginTop: MAJOR_SECTION_GAP }}>
           <h2 style={{ ...fieldTitleStyle, marginBottom: "4px" }}>
@@ -1765,6 +2060,216 @@ function OfficeUpdatePageContent() {
             </button>
           </div>
         </section>
+
+        {selectedOrder && showIncludedTasksDialog && (
+          <div
+            role="presentation"
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 50,
+              display: "grid",
+              placeItems: "start center",
+              padding: "min(7vh, 54px) 18px 24px",
+              backgroundColor: "rgba(31, 41, 55, 0.36)",
+              overflowY: "auto",
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="included-tasks-dialog-title"
+              style={{
+                width: "min(628px, 100%)",
+                backgroundColor: COLORS.panelBg,
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: "18px",
+                boxShadow:
+                  "0 22px 60px rgba(31, 41, 55, 0.24), 0 4px 14px rgba(31, 41, 55, 0.12)",
+                padding: "18px",
+              }}
+            >
+              <div style={{ ...eyebrowStyle, marginBottom: "6px" }}>
+                Update included tasks
+              </div>
+              <h2
+                id="included-tasks-dialog-title"
+                style={{
+                  ...fieldTitleStyle,
+                  marginBottom: "16px",
+                }}
+              >
+                {selectedOrder.work_order_id}
+              </h2>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: "12px",
+                  padding: "14px 16px",
+                  border: `1px solid ${COLORS.border}`,
+                  borderRadius: "16px",
+                  backgroundColor: "#fffdfa",
+                }}
+              >
+                <div>
+                  <div style={eyebrowStyle}>Process steps</div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "6px",
+                    }}
+                  >
+                    {includedTaskOptions.map((step) => {
+                      const checked = includedTaskDraft.includes(step);
+                      const locked = step === INTAKE_STEP;
+                      return (
+                        <label
+                          key={step}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            padding: "8px 10px",
+                            borderRadius: "8px",
+                            border: `1px solid ${
+                              checked ? "#d7e3ff" : COLORS.border
+                            }`,
+                            backgroundColor: checked
+                              ? COLORS.blueSoft
+                              : COLORS.panelBg,
+                            color: checked ? COLORS.blue : COLORS.text,
+                            fontSize: "var(--fs-body)",
+                            fontWeight: checked ? 700 : 600,
+                            cursor: locked ? "default" : "pointer",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={locked}
+                            onChange={(e) =>
+                              toggleIncludedTask(step, e.target.checked)
+                            }
+                          />
+                          <span style={{ flex: 1 }}>{step}</span>
+                          {locked && (
+                            <span
+                              style={{
+                                fontSize: "var(--fs-xs)",
+                                color: COLORS.textMuted,
+                                fontWeight: 700,
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Required
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    backgroundColor: COLORS.redSoft,
+                    border: "1px solid #f4b4ad",
+                    color: COLORS.red,
+                    fontSize: "var(--fs-body)",
+                    fontWeight: 700,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  This updates the shop process immediately.
+                </div>
+
+                {selectedOrder.is_active &&
+                  includedTaskCurrentStepOptions.length > 0 && (
+                    <div>
+                      <div style={eyebrowStyle}>
+                        Current process step after save
+                      </div>
+                      <select
+                        value={includedTaskCurrentStepDraft}
+                        onChange={(e) =>
+                          setIncludedTaskCurrentStepDraft(e.target.value)
+                        }
+                        style={inputStyle}
+                      >
+                        {includedTaskCurrentStepOptions.map((step) => (
+                          <option key={step} value={step}>
+                            {step}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                {includedTaskStatus && (
+                  <div
+                    style={{
+                      padding: "9px 11px",
+                      borderRadius: "10px",
+                      backgroundColor: includedTaskStatus.startsWith("Error")
+                        ? COLORS.redSoft
+                        : COLORS.cardBg,
+                      border: `1px solid ${
+                        includedTaskStatus.startsWith("Error")
+                          ? "#f4b4ad"
+                          : COLORS.border
+                      }`,
+                      color: includedTaskStatus.startsWith("Error")
+                        ? COLORS.red
+                        : COLORS.textSoft,
+                      fontSize: "var(--fs-body)",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {includedTaskStatus}
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                  flexWrap: "wrap",
+                  marginTop: "18px",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={closeIncludedTasksDialog}
+                  disabled={savingIncludedTasks}
+                  style={{
+                    ...secondaryBtn,
+                    cursor: savingIncludedTasks ? "not-allowed" : "pointer",
+                    opacity: savingIncludedTasks ? 0.7 : 1,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveIncludedTasks()}
+                  disabled={savingIncludedTasks}
+                  style={{
+                    ...primaryBtn,
+                    cursor: savingIncludedTasks ? "not-allowed" : "pointer",
+                    opacity: savingIncludedTasks ? 0.7 : 1,
+                  }}
+                >
+                  Save tasks
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {saveStatus && (
           <div

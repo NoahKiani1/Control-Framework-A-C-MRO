@@ -749,6 +749,43 @@ export async function syncWorkOrderDataBlockState(
   return { data: null, error: null };
 }
 
+export async function syncWorkOrderDataSnapshot(
+  order: TrackedWorkOrder,
+  occurredAt = new Date().toISOString(),
+  client: SupabaseClient = supabase,
+): Promise<HelperResult> {
+  if (!order.data_tracking_enabled) {
+    return { data: null, error: null };
+  }
+
+  const trackingResult = await ensureWorkOrderTracking(
+    order,
+    order.data_tracking_started_at ?? occurredAt,
+    client,
+  );
+  if (trackingResult.error) {
+    return { data: null, error: trackingResult.error };
+  }
+
+  const { error } = await client
+    .from("work_order_tracking")
+    .update({
+      work_order_type: order.work_order_type,
+      part_number: order.part_number,
+      customer: order.customer,
+      included_process_steps: order.included_process_steps ?? null,
+      updated_at: occurredAt,
+    })
+    .eq("work_order_id", order.work_order_id);
+
+  if (error) {
+    console.error("Failed to sync Work Order Data snapshot", error);
+    return { data: null, error: { message: error.message } };
+  }
+
+  return { data: null, error: null };
+}
+
 export async function recordTrackedShopStepCompletion({
   selectedOrder,
   completedStep,
