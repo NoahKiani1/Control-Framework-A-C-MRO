@@ -171,6 +171,34 @@ function main() {
       "EASA-Form 1",
     ],
   );
+  assert.deepEqual(
+    resolveStepsForOrder("Wheel Overhaul", [
+      "Intake",
+      "Disassembly",
+      "Paint Stripping",
+      "Inspection",
+      "Eddy Current",
+      "Penetrant Testing",
+      "Magnetic Test",
+      "Painting",
+      "Repair",
+      "Assembly",
+      "EASA-Form 1",
+    ]),
+    [
+      "Intake",
+      "Disassembly",
+      "Paint Stripping",
+      "Inspection",
+      "Eddy Current",
+      "Penetrant Testing",
+      "Magnetic Test",
+      "Repair",
+      "Painting",
+      "Assembly",
+      "EASA-Form 1",
+    ],
+  );
   assert.equal(ABSOLUTE_STEP_HOURS.Repair, 1.5);
   assert.equal(getExpectedHoursForStep("Wheel Repair", "Repair", "PN-1"), 1.5);
   assert.equal(
@@ -200,11 +228,40 @@ function main() {
       "Eddy Current",
       "Penetrant Testing",
       "Magnetic Test",
-      "Painting",
       "Repair",
+      "Painting",
       "Assembly",
       "EASA-Form 1",
     ],
+  );
+  const wheelOverhaulWithRepair = addRepairAfterInspectionForOrder(
+    "Wheel Overhaul",
+    fullWheelOverhaulSteps,
+  );
+  assert.deepEqual(
+    getGroupedProcessStepsForOrder(
+      "Wheel Overhaul",
+      wheelOverhaulWithRepair,
+    ).map((group) => group.name),
+    [
+      "Intake",
+      "Disassembly",
+      "Paint Stripping",
+      "Inspection",
+      NDT_PROCESS_STEP,
+      "Repair",
+      "Painting",
+      "Assembly",
+      "EASA-Form 1",
+    ],
+  );
+  assert.equal(
+    getNextProcessStepAfterGroupedCompletedForOrder(
+      "Wheel Overhaul",
+      NDT_PROCESS_STEP,
+      wheelOverhaulWithRepair,
+    ),
+    "Repair",
   );
   assert.deepEqual(
     getGroupedProcessStepsForOrder("Wheel Overhaul", fullWheelOverhaulSteps).map(

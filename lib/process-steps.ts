@@ -42,7 +42,7 @@ export const SHOP_ADDED_PROCESS_STEPS = ["Repair"];
 /** The inspection gate where a shop engineer can add the dynamic repair step. */
 export const INSPECTION_PROCESS_STEP = "Inspection";
 
-/** Dynamic step selected after inspection and executed before assembly. */
+/** Dynamic step selected after inspection and executed after NDT. */
 export const REPAIR_PROCESS_STEP = "Repair";
 
 /** The last tracked step in every flow. */
@@ -75,8 +75,8 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Eddy Current",
     "Penetrant Testing",
     "Magnetic Test",
-    "Painting",
     "Repair",
+    "Painting",
     "Assembly",
     "EASA-Form 1",
   ],
@@ -99,8 +99,8 @@ export const PROCESS_STEPS: Record<string, string[]> = {
     "Eddy Current",
     "Penetrant Testing",
     "Magnetic Test",
-    "Painting",
     "Repair",
+    "Painting",
     "Assembly",
     "EASA-Form 1",
   ],

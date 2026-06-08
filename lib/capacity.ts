@@ -18,8 +18,9 @@ import { getTotalHoursForPart, FALLBACK_HOURS } from "@/lib/part-number-hours";
 //                           Inspection 20 + Eddy Current 60 + Penetrant 120 +
 //                           Magnetic Test 45 + Painting 60 + Assembly 60 + EASA 30)
 // Magnetic Test is optioneel en telt alleen mee als het in `included_process_steps` staat.
-// Repair wordt door shop na Inspection gekozen wanneer nodig, voor Assembly ingepland,
-// en telt vast 1.5 uur.
+// Repair wordt door shop na Inspection gekozen wanneer nodig en na NDT ingepland.
+// Bij Repair-types komt Repair voor Assembly; bij Overhaul-types voor Painting.
+// De stap telt vast 1.5 uur.
 
 export const ABSOLUTE_STEP_HOURS: Record<string, number> = {
   [REPAIR_PROCESS_STEP]: 1.5,
