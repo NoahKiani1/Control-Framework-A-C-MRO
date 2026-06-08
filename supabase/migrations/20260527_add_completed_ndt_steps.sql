@@ -7,3 +7,4 @@
 
 alter table public.work_orders
   add column if not exists completed_ndt_steps text[] null;
+-- noah was hier

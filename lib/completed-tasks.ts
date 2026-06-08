@@ -136,3 +136,4 @@ export async function completeExtraAction(action: ExtraAction, closedAt = new Da
 
   return supabase.from("extra_actions").delete().eq("id", action.id);
 }
+// noah was hier

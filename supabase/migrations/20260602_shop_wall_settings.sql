@@ -11,3 +11,4 @@ values ('default', false)
 on conflict (id) do nothing;
 
 alter table public.shop_wall_settings enable row level security;
+-- noah was hier

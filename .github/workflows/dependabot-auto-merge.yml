@@ -48,3 +48,4 @@ jobs:
           fi
 
           gh pr merge "$PR_NUMBER" --squash --delete-branch
+# noah was hier

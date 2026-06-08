@@ -141,3 +141,4 @@ update public.closed_work_order_reports report
 set included_process_steps = reordered.next_steps
 from reordered
 where report.work_order_id = reordered.work_order_id;
+-- noah was hier

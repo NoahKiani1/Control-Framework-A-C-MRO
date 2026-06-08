@@ -8,3 +8,4 @@ export default function ShopUpdatePage() {
     </RequireRole>
   );
 }
+// noah was hier

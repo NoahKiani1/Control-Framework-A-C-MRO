@@ -25,3 +25,4 @@ export const supabase = new Proxy({} as SupabaseClient, {
     return typeof value === "function" ? value.bind(client) : value;
   },
 });
+// noah was hier

@@ -28,3 +28,4 @@ on public.extra_actions
 for delete
 to anon, authenticated
 using (true);
+-- noah was hier

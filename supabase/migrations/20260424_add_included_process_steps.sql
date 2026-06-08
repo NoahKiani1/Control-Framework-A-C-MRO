@@ -44,3 +44,4 @@ set included_process_steps = case work_order_type
     else null
   end
 where included_process_steps is null;
+-- noah was hier

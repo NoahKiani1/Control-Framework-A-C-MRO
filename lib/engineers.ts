@@ -235,3 +235,4 @@ export async function deleteEngineerAbsencesByIds(ids: number[]) {
 
   return supabase.from("engineer_absences").delete().in("id", ids);
 }
+// noah was hier

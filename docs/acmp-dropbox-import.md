@@ -118,3 +118,4 @@ Optional local-only fallback:
 The production default is refresh-token auth. Do not use `DROPBOX_ACCESS_TOKEN` as the GitHub Actions or hosting default.
 
 Do not use `NEXT_PUBLIC_` variables for Dropbox or the Supabase service role key.
+<!-- noah was hier -->

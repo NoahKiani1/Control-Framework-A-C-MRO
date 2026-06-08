@@ -107,3 +107,4 @@ export async function updateShopWallAviationNewsEnabled({
 
   return mapShopWallSettingsRow(data as ShopWallSettingsRow);
 }
+// noah was hier

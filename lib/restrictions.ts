@@ -130,3 +130,4 @@ export function canPerformStep(
   if (!needed) return true;
   return !hasRestriction(restrictions, needed);
 }
+// noah was hier

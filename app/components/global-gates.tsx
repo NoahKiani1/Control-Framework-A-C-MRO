@@ -20,3 +20,4 @@ export function GlobalGates() {
     </>
   );
 }
+// noah was hier

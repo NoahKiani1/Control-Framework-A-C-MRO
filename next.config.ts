@@ -43,3 +43,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+// noah was hier

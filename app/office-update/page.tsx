@@ -2351,3 +2351,4 @@ function InfoBox({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+// noah was hier

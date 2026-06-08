@@ -232,3 +232,4 @@ export async function GET(request: Request) {
     wallSettings,
   });
 }
+// noah was hier

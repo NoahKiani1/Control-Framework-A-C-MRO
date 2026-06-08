@@ -21,3 +21,4 @@ where report.work_order_id = work_order.work_order_id
   and work_order.is_active = false;
 
 notify pgrst, 'reload schema';
+-- noah was hier

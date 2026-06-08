@@ -252,3 +252,4 @@ export function getTotalHoursForPart(
 
   return fallback;
 }
+// noah was hier

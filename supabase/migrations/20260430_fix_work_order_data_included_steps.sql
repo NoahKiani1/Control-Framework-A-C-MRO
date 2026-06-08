@@ -10,3 +10,4 @@ alter table public.closed_work_order_reports
   add column if not exists total_days_to_certification numeric null;
 
 notify pgrst, 'reload schema';
+-- noah was hier

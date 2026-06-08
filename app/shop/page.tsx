@@ -2558,3 +2558,4 @@ export default function ShopPage() {
     </RequireRole>
   );
 }
+// noah was hier
