@@ -42,7 +42,13 @@ export async function POST(request: Request) {
   if (error) {
     return jsonError(error.message, 500);
   }
-
+  
   return Response.json({ ok: true });
+  
 }
 // noah was hier
+
+
+
+
+
