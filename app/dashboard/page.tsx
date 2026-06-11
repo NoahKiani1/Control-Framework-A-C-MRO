@@ -295,6 +295,7 @@ function isOverdue(dateStr: string | null): boolean {
 
 function hasOpenAction(o: WorkOrder): boolean {
   if (isRfqRejectedState(o.rfq_state)) return false;
+  if (isBlocked(o) && !o.required_next_action?.trim()) return false;
   if (isRfqManualApprovalBlocked(o)) return true;
   if (hasActiveCorrectiveAction(o)) return true;
   return Boolean(o.hold_reason?.trim()) && o.action_status !== "Done" && !o.action_closed;
