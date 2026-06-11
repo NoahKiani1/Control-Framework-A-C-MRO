@@ -35,7 +35,7 @@
 
   --dashboard-summary-grid: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
   --dashboard-kpi-grid: repeat(3, minmax(0, 1fr));
-  --dashboard-main-grid: minmax(0, 2.2fr) minmax(0, 1fr);
+  --dashboard-main-grid: repeat(3, minmax(0, 1fr));
   --dashboard-detail-table-min-width: 0px;
 
   --office-choice-grid: repeat(2, minmax(0, 1fr));
@@ -268,6 +268,12 @@ td {
   flex-shrink: 0;
 }
 
+/* Detail panel spans 2 of the 3 columns so its right edge lines up with
+   the boundary between the 2nd and 3rd KPI cards above it. */
+.dashboard-detail-card {
+  grid-column: span 2;
+}
+
 .dashboard-capacity-detail {
   font-size: var(--fs-sm);
   line-height: 1.3;
@@ -384,6 +390,10 @@ td {
   .office-mode-choice-grid--active .office-inactive-mode-card,
   .office-mode-choice-grid--inactive .office-active-mode-card {
     display: none;
+  }
+
+  .dashboard-detail-card {
+    grid-column: auto;
   }
 
   .dashboard-kpi-card {

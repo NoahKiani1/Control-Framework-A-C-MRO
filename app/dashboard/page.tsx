@@ -2384,11 +2384,14 @@ function DashboardPageContent() {
             display: "grid",
             gridTemplateColumns: "var(--dashboard-main-grid)",
             gap: "var(--gap-default)",
-            alignItems: "start",
+            // In the default (empty) state both cards stretch to equal height so
+            // their bottoms line up; once a panel is open the detail card grows
+            // with its table, so align to the top instead.
+            alignItems: activePanel ? "start" : "stretch",
           }}
         >
           {/* LEFT: Detail panel */}
-          <div style={sectionCard}>
+          <div className="dashboard-detail-card" style={sectionCard}>
             {activePanel && panelConfig[activePanel] && (
               <>
                 <div
