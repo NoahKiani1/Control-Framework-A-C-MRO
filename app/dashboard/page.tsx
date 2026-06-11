@@ -208,6 +208,42 @@ const COLORS = {
 const FONT_STACK =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
+const STATUS_AUTO_DISMISS_DELAY_MS = 3500;
+const STATUS_DISMISS_DURATION_MS = 800;
+const NO_NEW_ACMP_EXPORT_STATUS = "No new AcMP export found.";
+const AVIATION_NEWS_ENABLED_STATUS = "Luchtvaartnieuws enabled for the shop.";
+const AVIATION_NEWS_DISABLED_STATUS = "Luchtvaartnieuws disabled for the shop.";
+
+function isAutoDismissDropboxStatus(
+  status: string,
+  tone: DropboxStatusTone,
+  busy: boolean,
+): boolean {
+  return !busy && tone !== "error" && status === NO_NEW_ACMP_EXPORT_STATUS;
+}
+
+function isAutoDismissShopWallStatus(
+  status: string,
+  busy: boolean,
+): boolean {
+  return (
+    !busy &&
+    (status === AVIATION_NEWS_ENABLED_STATUS ||
+      status === AVIATION_NEWS_DISABLED_STATUS)
+  );
+}
+
+function collapsibleStatusStyle(isVisible: boolean): React.CSSProperties {
+  return {
+    opacity: isVisible ? 1 : 0,
+    maxHeight: isVisible ? "72px" : "0px",
+    transform: isVisible ? "translateY(0)" : "translateY(-4px)",
+    overflow: "hidden",
+    boxSizing: "border-box",
+    transition: `opacity ${STATUS_DISMISS_DURATION_MS}ms ease, max-height ${STATUS_DISMISS_DURATION_MS}ms ease, min-height ${STATUS_DISMISS_DURATION_MS}ms ease, padding ${STATUS_DISMISS_DURATION_MS}ms ease, border-width ${STATUS_DISMISS_DURATION_MS}ms ease, transform ${STATUS_DISMISS_DURATION_MS}ms ease`,
+  };
+}
+
 function formatDropboxImportStatus(summary: DropboxImportSummary): string {
   if (summary.failedFiles > 0 && summary.processedFiles === 0) {
     return "AcMP import failed.";
@@ -230,7 +266,7 @@ function formatDropboxImportStatus(summary: DropboxImportSummary): string {
       ? `AcMP import successful: ${parts.join(", ")}.`
       : "AcMP import successful.";
   }
-  return "No new AcMP export found.";
+  return NO_NEW_ACMP_EXPORT_STATUS;
 }
 
 function isDueThisWeek(dateStr: string | null): boolean {
@@ -599,6 +635,7 @@ function DashboardPageContent() {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [dropboxBusy, setDropboxBusy] = useState(false);
   const [dropboxStatus, setDropboxStatus] = useState("");
+  const [dropboxStatusVisible, setDropboxStatusVisible] = useState(false);
   const [dropboxStatusTone, setDropboxStatusTone] =
     useState<DropboxStatusTone>("info");
   const [dropboxCandidates, setDropboxCandidates] = useState<DropboxCandidate[]>(
@@ -608,6 +645,8 @@ function DashboardPageContent() {
     useState<ShopWallSettings | null>(null);
   const [shopWallSettingsBusy, setShopWallSettingsBusy] = useState(false);
   const [shopWallSettingsStatus, setShopWallSettingsStatus] = useState("");
+  const [shopWallSettingsStatusVisible, setShopWallSettingsStatusVisible] =
+    useState(false);
   const [actionConfirmation, setActionConfirmation] =
     useState<DashboardActionConfirmation | null>(null);
   const [rfqCloseMode, setRfqCloseMode] =
@@ -739,8 +778,8 @@ function DashboardPageContent() {
       setShopWallSettings(payload.settings);
       setShopWallSettingsStatus(
         payload.settings.aviationNewsEnabled
-          ? "Luchtvaartnieuws enabled for the shop."
-          : "Luchtvaartnieuws disabled for the shop.",
+          ? AVIATION_NEWS_ENABLED_STATUS
+          : AVIATION_NEWS_DISABLED_STATUS,
       );
     } catch (error) {
       setShopWallSettingsStatus(
@@ -764,7 +803,7 @@ function DashboardPageContent() {
       setDropboxCandidates(payload.candidates);
       const newestCandidate = payload.candidates[0];
       if (!newestCandidate) {
-        setDropboxStatus("No new AcMP export found.");
+        setDropboxStatus(NO_NEW_ACMP_EXPORT_STATUS);
       } else if (payload.candidates.length === 1) {
         setDropboxStatus(`AcMP export ready: ${newestCandidate.filename}.`);
       } else {
@@ -813,6 +852,69 @@ function DashboardPageContent() {
   useEffect(() => {
     void loadShopWallSettings();
   }, [loadShopWallSettings]);
+
+  useEffect(() => {
+    if (!dropboxStatus) {
+      setDropboxStatusVisible(false);
+      return;
+    }
+
+    setDropboxStatusVisible(true);
+
+    if (
+      !isAutoDismissDropboxStatus(
+        dropboxStatus,
+        dropboxStatusTone,
+        dropboxBusy,
+      )
+    ) {
+      return;
+    }
+
+    const hideTimer = window.setTimeout(() => {
+      setDropboxStatusVisible(false);
+    }, STATUS_AUTO_DISMISS_DELAY_MS);
+
+    const clearTimer = window.setTimeout(() => {
+      setDropboxStatus("");
+    }, STATUS_AUTO_DISMISS_DELAY_MS + STATUS_DISMISS_DURATION_MS);
+
+    return () => {
+      window.clearTimeout(hideTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [dropboxBusy, dropboxStatus, dropboxStatusTone]);
+
+  useEffect(() => {
+    if (!shopWallSettingsStatus) {
+      setShopWallSettingsStatusVisible(false);
+      return;
+    }
+
+    setShopWallSettingsStatusVisible(true);
+
+    if (
+      !isAutoDismissShopWallStatus(
+        shopWallSettingsStatus,
+        shopWallSettingsBusy,
+      )
+    ) {
+      return;
+    }
+
+    const hideTimer = window.setTimeout(() => {
+      setShopWallSettingsStatusVisible(false);
+    }, STATUS_AUTO_DISMISS_DELAY_MS);
+
+    const clearTimer = window.setTimeout(() => {
+      setShopWallSettingsStatus("");
+    }, STATUS_AUTO_DISMISS_DELAY_MS + STATUS_DISMISS_DURATION_MS);
+
+    return () => {
+      window.clearTimeout(hideTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [shopWallSettingsBusy, shopWallSettingsStatus]);
 
   if (loading) {
     return (
@@ -2022,15 +2124,19 @@ function DashboardPageContent() {
               {dropboxStatus && (
                 <span
                   role="status"
+                  aria-hidden={!dropboxStatusVisible}
                   style={{
+                    ...collapsibleStatusStyle(dropboxStatusVisible),
                     display: "inline-flex",
                     alignItems: "center",
-                    minHeight: "34px",
-                    padding: "7px 10px",
+                    minHeight: dropboxStatusVisible ? "34px" : "0px",
+                    padding: dropboxStatusVisible ? "7px 10px" : "0 10px",
                     borderRadius: "8px",
                     backgroundColor: dropboxStatusPalette.backgroundColor,
                     color: dropboxStatusPalette.color,
-                    border: `1px solid ${dropboxStatusPalette.borderColor}`,
+                    border: `${
+                      dropboxStatusVisible ? 1 : 0
+                    }px solid ${dropboxStatusPalette.borderColor}`,
                     fontSize: "12px",
                     fontWeight: 700,
                     lineHeight: 1.25,
@@ -2045,7 +2151,10 @@ function DashboardPageContent() {
 
               {shopWallSettingsStatus && (
                 <div
+                  aria-hidden={!shopWallSettingsStatusVisible}
                   style={{
+                    ...collapsibleStatusStyle(shopWallSettingsStatusVisible),
+                    maxHeight: shopWallSettingsStatusVisible ? "32px" : "0px",
                     color: shopWallSettingsStatus.startsWith(
                       "Wall setting error",
                     )
