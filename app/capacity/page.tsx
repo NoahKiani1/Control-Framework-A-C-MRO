@@ -36,6 +36,7 @@ type Absence = {
   absence_group_id: string | null;
 };
 
+
 type WorkOrder = {
   work_order_id: string;
   customer: string | null;
