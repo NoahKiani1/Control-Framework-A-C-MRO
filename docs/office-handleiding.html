@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8" />
+<title>Applicatie Handleiding — Planning &amp; Monitoring Tool</title>
+<style>
+  @page {
+    size: A4;
+    margin: 14mm 14mm 16mm 14mm;
+  }
+  @page :first {
+    margin: 0;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    color: #20262f;
+    font-size: 10.5px;
+    line-height: 1.45;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ---------- COVER ---------- */
+  .cover {
+    height: 297mm;
+    width: 210mm;
+    background: #201c18;
+    color: #ece6da;
+    padding: 38mm 24mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    page-break-after: always;
+  }
+  .cover-top .kicker {
+    font-size: 11px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: #b9ad97;
+    font-weight: 700;
+  }
+  .cover h1 {
+    font-size: 46px;
+    line-height: 1.04;
+    margin: 14px 0 0;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+  }
+  .cover h1 .accent { color: #e0563f; }
+  .cover .sub {
+    margin-top: 18px;
+    font-size: 14px;
+    color: #c9bfae;
+    max-width: 122mm;
+    line-height: 1.55;
+  }
+  .cover-bottom {
+    border-top: 1px solid #3a342c;
+    padding-top: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font-size: 11px;
+    color: #9b917f;
+  }
+  .cover-bottom strong { color: #ece6da; }
+
+  /* ---------- GENERIC ---------- */
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+
+  h2.section-title {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 2px;
+    color: #1b212a;
+  }
+  .section-intro {
+    color: #5f6b7c;
+    font-size: 11px;
+    margin: 0 0 14px;
+    max-width: 165mm;
+  }
+  .rule {
+    height: 3px;
+    width: 46px;
+    border-radius: 3px;
+    margin: 0 0 12px;
+    background: #e0563f;
+  }
+
+  /* ---------- LEGEND (overview) ---------- */
+  .legend-group {
+    margin-bottom: 13px;
+    border: 1px solid #e4ded2;
+    border-radius: 11px;
+    overflow: hidden;
+    page-break-inside: avoid;
+  }
+  .legend-head {
+    padding: 7px 13px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #fff;
+  }
+  .legend-row {
+    display: flex;
+    gap: 12px;
+    padding: 8px 13px;
+    border-top: 1px solid #efeadf;
+    align-items: baseline;
+  }
+  .legend-row:first-of-type { border-top: none; }
+  .legend-name {
+    flex: 0 0 46mm;
+    font-weight: 700;
+    color: #1b212a;
+    font-size: 11px;
+  }
+  .legend-name .route {
+    display: block;
+    font-weight: 600;
+    color: #97907f;
+    font-size: 9px;
+    font-family: "Consolas", monospace;
+    margin-top: 1px;
+  }
+  .legend-desc { color: #4d5563; font-size: 10.5px; }
+
+  /* ---------- PAGE CARDS ---------- */
+  .card {
+    --accent: #2555c7;
+    border: 1px solid #e2ddd1;
+    border-radius: 13px;
+    margin-bottom: 13px;
+    overflow: hidden;
+    page-break-inside: avoid;
+    background: #fff;
+  }
+  .card-head {
+    padding: 11px 15px 10px;
+    border-bottom: 1px solid #ece6da;
+    background: #faf8f3;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+  }
+  .num {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 800;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card-head .titles { flex: 1 1 auto; min-width: 0; }
+  .card-head h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: #1b212a;
+  }
+  .card-head .meta {
+    font-size: 9px;
+    color: #97907f;
+    font-weight: 600;
+    margin-top: 1px;
+  }
+  .card-head .route {
+    font-family: "Consolas", monospace;
+    color: #6b7280;
+  }
+  .group-pill {
+    flex: 0 0 auto;
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+  }
+  .card-body { padding: 11px 15px 12px; }
+  .block + .block {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #f0ebe0;
+  }
+  .block-label {
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin: 0 0 7px;
+  }
+  .block-label.see { color: #6b7480; }
+  .block-label.fn { color: var(--accent); }
+
+  ul.see, ul.func {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  ul.see li, ul.func li {
+    position: relative;
+    padding-left: 15px;
+    margin-bottom: 5px;
+    color: #3a4250;
+    line-height: 1.5;
+  }
+  ul.see li:last-child, ul.func li:last-child { margin-bottom: 0; }
+  ul.see li::before, ul.func li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 6px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+  }
+  ul.see li::before { background: #c2cad4; }
+  ul.func li::before { background: var(--accent); }
+  ul.see li b, ul.func li b { color: #1b212a; font-weight: 700; }
+
+  .key {
+    display: inline-block;
+    font-size: 9.5px;
+    font-weight: 700;
+    background: #eef2fb;
+    border: 1px solid #cdd8ef;
+    color: #274a9b;
+    border-radius: 5px;
+    padding: 1px 7px;
+    line-height: 1.35;
+    white-space: nowrap;
+  }
+  .muted-note { color: #8a8473; font-style: italic; }
+
+  .footer-note {
+    margin-top: 4px;
+    font-size: 9px;
+    color: #97907f;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="cover-top">
+    <div class="kicker">Aircraft &amp; Component · Wheels &amp; Brake Shop</div>
+    <h1>Applicatie<br><span class="accent">Handleiding</span></h1>
+    <div class="sub">
+      Alle functies van de applicatie, per scherm uitgelegd. Bij elk scherm staat eerst wat je ziet,
+      daaronder de functies met telkens de bijbehorende knop.
+    </div>
+  </div>
+  <div class="cover-bottom">
+    <div>Control Board · <strong>Planning &amp; Monitoring Tool</strong></div>
+    <div>Versie juni 2026</div>
+  </div>
+</div>
+
+<!-- ============ OVERVIEW ============ -->
+<div class="page">
+  <h2 class="section-title">Overzicht &amp; navigatie</h2>
+  <div class="rule"></div>
+  <p class="section-intro">
+    Links in beeld staat het menu met vier groepen. Hieronder zie je in één blik alle schermen
+    van de applicatie. Op de volgende pagina's staat per scherm wat je ziet en welke functies er zijn.
+    Het bedrijfslogo linksboven brengt je altijd terug naar het <b>Dashboard</b>; onderin het menu
+    log je uit met het <b>uitlog-icoon</b>.
+  </p>
+
+  <div class="legend-group">
+    <div class="legend-head" style="background:#2555c7;">Planning</div>
+    <div class="legend-row">
+      <div class="legend-name">Dashboard <span class="route">/dashboard</span></div>
+      <div class="legend-desc">Startscherm. Live overzicht van capaciteit, KPI's, openstaande acties en afwezigheid.</div>
+    </div>
+    <div class="legend-row">
+      <div class="legend-name">Capacity Management <span class="route">/capacity</span></div>
+      <div class="legend-desc">Shop-belasting per week en waarschuwingen die aandacht vragen.</div>
+    </div>
+    <div class="legend-row">
+      <div class="legend-name">Shared Planning <span class="route">/planning</span></div>
+      <div class="legend-desc">Volgorde, volgende stap en toewijzing van actieve werkorders + losse taken.</div>
+    </div>
+  </div>
+
+  <div class="legend-group">
+    <div class="legend-head" style="background:#b45309;">Updates</div>
+    <div class="legend-row">
+      <div class="legend-name">Office Update <span class="route">/office-update</span></div>
+      <div class="legend-desc">Werkorders plannen, blokkeren/deblokkeren en actief of inactief maken.</div>
+    </div>
+    <div class="legend-row">
+      <div class="legend-name">Shop Update <span class="route">/shop-update</span></div>
+      <div class="legend-desc">Een voltooide processtap melden of een order deblokkeren.</div>
+    </div>
+  </div>
+
+  <div class="legend-group">
+    <div class="legend-head" style="background:#6d4aa7;">Admin</div>
+    <div class="legend-row">
+      <div class="legend-name">AcMP Import <span class="route">/import</span></div>
+      <div class="legend-desc">AcMP Excel-export importeren uit Dropbox of handmatig.</div>
+    </div>
+    <div class="legend-row">
+      <div class="legend-name">Staff Management <span class="route">/staff</span></div>
+      <div class="legend-desc">Teamleden, restricties en afwezigheden van shop-engineers beheren.</div>
+    </div>
+    <div class="legend-row">
+      <div class="legend-name">Inactive Work Orders <span class="route">/backlog</span></div>
+      <div class="legend-desc">Backlog van open maar niet-actieve werkorders; snelknop om te activeren.</div>
+    </div>
+    <div class="legend-row">
+      <div class="legend-name">Work Order Data <span class="route">/work-order-data</span></div>
+      <div class="legend-desc">Doorlooptijd-data van gesloten orders bekijken, exporteren en opschonen.</div>
+    </div>
+    <div class="legend-row">
+      <div class="legend-name">Completed Tasks <span class="route">/completed-tasks</span></div>
+      <div class="legend-desc">Log van afgeronde acties en taken van de laatste 30 dagen.</div>
+    </div>
+  </div>
+
+  <div class="legend-group">
+    <div class="legend-head" style="background:#334155;">Screens</div>
+    <div class="legend-row">
+      <div class="legend-name">Shop Wall Screen <span class="route">/shop</span></div>
+      <div class="legend-desc">Volledig-scherm planning + nieuws voor op de wand van de werkplaats.</div>
+    </div>
+  </div>
+
+  <div class="legend-group">
+    <div class="legend-head" style="background:#a13a2b;">Pop-up (verschijnt vanzelf)</div>
+    <div class="legend-row">
+      <div class="legend-name">AcMP Review <span class="route">/acmp-review</span></div>
+      <div class="legend-desc">Verschijnt na een import: nieuwe en RFQ-goedgekeurde orders instellen vóór je verdergaat.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PLANNING ============ -->
+<div class="page">
+  <h2 class="section-title">Planning</h2>
+  <div class="rule"></div>
+  <p class="section-intro">De schermen om de werkstroom en de belasting van de werkplaats te bewaken.</p>
+
+  <!-- DASHBOARD -->
+  <div class="card" style="--accent:#2555c7;">
+    <div class="card-head">
+      <div class="num">1</div>
+      <div class="titles">
+        <h3>Dashboard</h3>
+        <div class="meta">Planning · <span class="route">/dashboard</span> · startscherm</div>
+      </div>
+      <div class="group-pill">Planning</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Bovenaan de weekcapaciteit (% + uren), het aantal actieve werkorders en de aanwezige engineers van vandaag.</li>
+          <li>Een statusknop (groen/oranje/rood) die de algemene situatie samenvat.</li>
+          <li>Zes KPI-kaarten: Due this week, Overdue, Open actions, Ready to close / send RFQ, AOG / Priority en No update in 2+ weeks.</li>
+          <li>Links een detailpaneel met de werkorders achter de gekozen KPI; rechts de afwezigheden van deze week.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Klik een KPI-kaart aan om de werkorders eronder te zien, en sluit het paneel weer met <span class="key">Hide</span>.</li>
+          <li>Spring vanuit de algemene status direct naar het probleem dat aandacht nodig heeft met <span class="key">Attention needed</span>.</li>
+          <li>Controleer Dropbox handmatig op een nieuwe AcMP-export met <span class="key">Check AcMP export</span>.</li>
+          <li>Importeer een gevonden Dropbox-export meteen met <span class="key">Import now</span>.</li>
+          <li>Zet het luchtvaartnieuws aan of uit op het wandscherm met <span class="key">Luchtvaartnieuws</span>.</li>
+          <li>Open deze handleiding in een nieuw tabblad met <span class="key">Download manual</span>.</li>
+          <li>Rond een openstaande corrective action of RFQ af via de bevestigings-pop-up met <span class="key">Confirm action</span>.</li>
+          <li>Klik op een afwezigheid om te zien welke werkorders en stappen risico lopen.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAPACITY -->
+  <div class="card" style="--accent:#2555c7;">
+    <div class="card-head">
+      <div class="num">2</div>
+      <div class="titles">
+        <h3>Capacity Management</h3>
+        <div class="meta">Planning · <span class="route">/capacity</span></div>
+      </div>
+      <div class="group-pill">Planning</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Per week een kaart met de benutting (%), geplande en beschikbare uren, engineers (aanwezig/gepland) en het aantal orders.</li>
+          <li>Een waarschuwingen-blok met overdue orders (High) en restrictie-waarschuwingen (Medium).</li>
+          <li>De orders die meetellen in de berekening, met hun resterende uren.</li>
+          <li>De uitgesloten orders: zonder due date, geblokkeerd of ready-to-close.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Klap de waarschuwingen open met <span class="key">Warnings</span> om de overdue orders en de onbeschikbare datums te zien.</li>
+          <li>Klap de orders open die meetellen in de berekening met <span class="key">Orders included in calculation</span>.</li>
+          <li>Klap de uitgesloten orders open met <span class="key">Excluded orders</span> en lees de reden van uitsluiting.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- SHARED PLANNING -->
+  <div class="card" style="--accent:#2555c7;">
+    <div class="card-head">
+      <div class="num">3</div>
+      <div class="titles">
+        <h3>Shared Planning</h3>
+        <div class="meta">Planning · <span class="route">/planning</span></div>
+      </div>
+      <div class="group-pill">Planning</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Twee tabs: een lijstweergave en een tijdlijnweergave.</li>
+          <li>Open work orders met WO, klant, part/type, volgende stap, due date en toewijzing (met AOG/PRIO-badges).</li>
+          <li>Blocked work orders met hold reason, corrective action en owner.</li>
+          <li>Additional tasks met verantwoordelijke en due date.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Wissel tussen de lijstweergave en de procestijdlijn met <span class="key">List</span> en <span class="key">Timeline</span>.</li>
+          <li>Bepaal de volgorde op de shopvloer door open werkorders te verslepen aan het grip-icoon.</li>
+          <li>Pas snel de due date of de toewijzing van een order aan met het potlood-icoon.</li>
+          <li>Deblokkeer een geblokkeerde order die verder mag met <span class="key">Unblock</span>.</li>
+          <li>Rond een losse taak af met <span class="key">Close task</span>; hij verhuist naar Completed Tasks.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ UPDATES ============ -->
+<div class="page">
+  <h2 class="section-title">Updates</h2>
+  <div class="rule" style="background:#b45309;"></div>
+  <p class="section-intro">De schermen waarmee je werkorders bijwerkt — plannen vanuit kantoor of een stap afmelden zoals de shop dat doet.</p>
+
+  <!-- OFFICE UPDATE -->
+  <div class="card" style="--accent:#b45309;">
+    <div class="card-head">
+      <div class="num">4</div>
+      <div class="titles">
+        <h3>Office Update</h3>
+        <div class="meta">Updates · <span class="route">/office-update</span></div>
+      </div>
+      <div class="group-pill">Updates</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Een keuze tussen actieve en inactieve work orders (met aantallen).</li>
+          <li>Een zoek/kies-veld en een details-blok van de gekozen werkorder.</li>
+          <li>Een editor met planning, blokkade en processtappen.</li>
+          <li>Onderaan een blok om een losse taak toe te voegen.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Kies of je met actieve of inactieve work orders werkt met <span class="key">Active</span> of <span class="key">Inactive</span>.</li>
+          <li>Stel de due date, de prioriteit (No / PRIO / AOG) en de toegewezen persoon/team in. <span class="muted-note">(due date verplicht bij PRIO of AOG)</span></li>
+          <li>Geef met <span class="key">Yes</span> of <span class="key">No</span> aan of de order geblokkeerd is en vul de hold reason, de vereiste actie en de eigenaar in.</li>
+          <li>Kies welke processtappen voor deze order meelopen met <span class="key">Update included tasks</span>.</li>
+          <li>Maak een inactieve work order actief met <span class="key">Activate Work Order</span>, inclusief de stappen en de startstap.</li>
+          <li>Maak een actieve work order inactief met <span class="key">Make this work order inactive</span> als er even niet aan wordt gewerkt.</li>
+          <li>Sla de wijzigingen op met <span class="key">Save Work Order</span>.</li>
+          <li>Voeg een losse taak toe (omschrijving, verantwoordelijke, due date) via <span class="key">Add action</span>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- SHOP UPDATE -->
+  <div class="card" style="--accent:#b45309;">
+    <div class="card-head">
+      <div class="num">5</div>
+      <div class="titles">
+        <h3>Shop Update</h3>
+        <div class="meta">Updates · <span class="route">/shop-update</span></div>
+      </div>
+      <div class="group-pill">Updates</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Een zoekveld met het aantal open werkorders.</li>
+          <li>Per gekozen order een blok om de voltooide stap te melden en de toewijzing.</li>
+          <li>Bij een geblokkeerde order een aparte deblokkeer-sectie.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Zoek en selecteer een open werkorder.</li>
+          <li>Kies de voltooide processtap (bij NDT via de checklist) en sla op met <span class="key">Save Update</span>; de order schuift naar de volgende stap.</li>
+          <li>Wijs een eigenaar toe of rond een lopende corrective action af.</li>
+          <li>Deblokkeer een geblokkeerde order die verder mag.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ADMIN (1) ============ -->
+<div class="page">
+  <h2 class="section-title">Admin</h2>
+  <div class="rule" style="background:#6d4aa7;"></div>
+  <p class="section-intro">Import, teambeheer en de gegevens achter de schermen.</p>
+
+  <!-- ACMP IMPORT -->
+  <div class="card" style="--accent:#6d4aa7;">
+    <div class="card-head">
+      <div class="num">6</div>
+      <div class="titles">
+        <h3>AcMP Import</h3>
+        <div class="meta">Admin · <span class="route">/import</span></div>
+      </div>
+      <div class="group-pill">Admin</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Een Dropbox-importblok en een handmatige upload.</li>
+          <li>Een analyse-overzicht (nieuwe orders, RFQ-approved, te sluiten, te oud).</li>
+          <li>Na afloop een resultaattabel met aantallen.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Controleer Dropbox op de nieuwste AcMP-export met <span class="key">Check Dropbox now</span>.</li>
+          <li>Importeer de gevonden Dropbox-export met <span class="key">Import now</span>.</li>
+          <li>Upload handmatig een Excel-bestand met <span class="key">Choose file</span> als Dropbox niet beschikbaar is.</li>
+          <li>Bekijk de analyse en bevestig de import met <span class="key">Import now</span>.</li>
+          <li>Begin een nieuwe import opnieuw met <span class="key">Start new import</span>.</li>
+          <li><span class="muted-note">Nieuwe en RFQ-goedgekeurde orders gaan naar AcMP Review; Dropbox synct ook automatisch elke 5 minuten.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAFF -->
+  <div class="card" style="--accent:#6d4aa7;">
+    <div class="card-head">
+      <div class="num">7</div>
+      <div class="titles">
+        <h3>Staff Management</h3>
+        <div class="meta">Admin · <span class="route">/staff</span></div>
+      </div>
+      <div class="group-pill">Admin</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Shop-engineers (tellen mee in capaciteit), office-medewerkers en eventueel personen zonder rol.</li>
+          <li>Per persoon de naam, rol, foto en restricties.</li>
+          <li>De geplande afwezigheden van engineers (komende 3 weken + later).</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Voeg een nieuwe engineer toe met <span class="key">+ Add engineer</span>.</li>
+          <li>Voeg een nieuwe office-medewerker toe met <span class="key">+ Add office member</span>.</li>
+          <li>Bewerk de naam, rol, foto en restricties van iemand, of verwijder een persoon.</li>
+          <li>Bekijk naast de eerste 3 weken ook de latere afwezigheden met <span class="key">View later</span>.</li>
+          <li>Leg een afwezigheid vast (engineer, van/tot, reden) met <span class="key">Add absence</span>.</li>
+          <li><span class="muted-note">Alleen shop-engineers en hun afwezigheden tellen mee in de capaciteitsberekening.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- BACKLOG -->
+  <div class="card" style="--accent:#6d4aa7;">
+    <div class="card-head">
+      <div class="num">8</div>
+      <div class="titles">
+        <h3>Inactive Work Orders</h3>
+        <div class="meta">Admin · <span class="route">/backlog</span></div>
+      </div>
+      <div class="group-pill">Admin</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Een tabel met WO, klant, PN, type, RFQ, notitie en laatste update.</li>
+          <li>Een teller met het aantal inactieve open orders.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Scan de backlog op orders die klaar zijn om weer opgepakt te worden.</li>
+          <li>Activeer een order met <span class="key">Make active</span>; dit opent Office Update voor die werkorder.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ADMIN (2) ============ -->
+<div class="page">
+  <h2 class="section-title">Admin <span style="font-size:11px;font-weight:600;color:#97907f;">(vervolg)</span></h2>
+  <div class="rule" style="background:#6d4aa7;"></div>
+
+  <!-- WORK ORDER DATA -->
+  <div class="card" style="--accent:#6d4aa7;">
+    <div class="card-head">
+      <div class="num">9</div>
+      <div class="titles">
+        <h3>Work Order Data</h3>
+        <div class="meta">Admin · <span class="route">/work-order-data</span></div>
+      </div>
+      <div class="group-pill">Admin</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Vier samenvattingen: gevolgde gesloten orders, valide en invalide sequences en de gemiddelde tijd tot certificatie/sluiting.</li>
+          <li>Filters voor work order type en sequence-status.</li>
+          <li>Een tabel per gesloten order met activatie- en sluitingsmoment, totale tijd en status.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Filter de tabel op work order type en op sequence-status (Valid / Invalid).</li>
+          <li>Download de data van dit jaar als Excel-bestand met <span class="key">Download this year's data</span>.</li>
+          <li>Schoon de data van dit jaar op na de export met <span class="key">Clean this year after export</span> — verschijnt in december.</li>
+          <li><span class="muted-note">Opschonen verwijdert de data definitief; download eerst het Excel-bestand.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPLETED TASKS -->
+  <div class="card" style="--accent:#6d4aa7;">
+    <div class="card-head">
+      <div class="num">10</div>
+      <div class="titles">
+        <h3>Completed Tasks</h3>
+        <div class="meta">Admin · <span class="route">/completed-tasks</span></div>
+      </div>
+      <div class="group-pill">Admin</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Een tabel met type (Work Order Related of Additional Task), aanmaakdatum, omschrijving, verantwoordelijke en sluitingsdatum.</li>
+          <li>Bij werkorder-gerelateerde taken het bijbehorende WO ID.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Zie welke corrective actions en losse taken in de laatste 30 dagen zijn afgerond, met wie ze sloot en wanneer.</li>
+          <li>Gebruik het scherm als naslag en controle. <span class="muted-note">(alleen-lezen)</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREENS + POP-UP ============ -->
+<div class="page">
+  <h2 class="section-title">Screens &amp; pop-up</h2>
+  <div class="rule" style="background:#334155;"></div>
+  <p class="section-intro">Het wandscherm voor de werkplaats en de review-pop-up die na een import verschijnt.</p>
+
+  <!-- SHOP WALL -->
+  <div class="card" style="--accent:#334155;">
+    <div class="card-head">
+      <div class="num">11</div>
+      <div class="titles">
+        <h3>Shop Wall Screen</h3>
+        <div class="meta">Screens · <span class="route">/shop</span> · geen menu</div>
+      </div>
+      <div class="group-pill">Screens</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>De roterende planning van actieve werkorders en de aanwezige engineers.</li>
+          <li>Optioneel luchtvaartnieuws, afgewisseld met de planning.</li>
+          <li>Geen menubalk; het scherm vult de hele wand.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Open het scherm op een wandscherm en laat de planning en engineers automatisch roteren — geen interactie nodig.</li>
+          <li>Het luchtvaartnieuws zet je aan of uit via het Dashboard met <span class="key">Luchtvaartnieuws</span>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACMP REVIEW -->
+  <div class="card" style="--accent:#a13a2b;">
+    <div class="card-head">
+      <div class="num">12</div>
+      <div class="titles">
+        <h3>AcMP Review</h3>
+        <div class="meta">Pop-up · <span class="route">/acmp-review</span> · verschijnt vanzelf</div>
+      </div>
+      <div class="group-pill">Pop-up</div>
+    </div>
+    <div class="card-body">
+      <div class="block">
+        <div class="block-label see">Wat je ziet</div>
+        <ul class="see">
+          <li>Een melding hoeveel items op review wachten.</li>
+          <li>Per nieuwe werkorder een instel-kaart.</li>
+          <li>Een sectie met inactieve orders waarvan de RFQ is goedgekeurd.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <div class="block-label fn">Functies</div>
+        <ul class="func">
+          <li>Stel per nieuwe order in: actief/inactief, prioriteit, due date, toewijzing en welke stappen meelopen (Standard / Custom).</li>
+          <li>Zet alle nieuwe orders in één keer op actief met <span class="key">Mark all active</span>.</li>
+          <li>Zet alle nieuwe orders in één keer op inactief met <span class="key">Mark all inactive</span>.</li>
+          <li>Beslis per RFQ-order om hem inactief te houden of te activeren met <span class="key">Keep inactive</span>.</li>
+          <li>Verwerk alles en ga verder met de app via <span class="key">Save and continue</span>.</li>
+          <li><span class="muted-note">Deze pop-up blokkeert de rest van de app tot hij is afgehandeld.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer-note">Applicatie Handleiding — Planning &amp; Monitoring Tool · Aircraft &amp; Component Wheels &amp; Brake Shop</p>
+</div>
+
+</body>
+</html>

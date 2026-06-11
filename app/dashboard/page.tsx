@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Newspaper, RefreshCw } from "lucide-react";
+import { FileText, Newspaper, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dispatchAcmpPendingReviewRefresh } from "@/app/components/acmp-pending-events";
 import { RequireRole } from "@/app/components/require-role";
@@ -739,8 +739,8 @@ function DashboardPageContent() {
       setShopWallSettings(payload.settings);
       setShopWallSettingsStatus(
         payload.settings.aviationNewsEnabled
-          ? "Luchtvaartnieuws enabled for wall."
-          : "Luchtvaartnieuws disabled for wall.",
+          ? "Luchtvaartnieuws enabled for the shop."
+          : "Luchtvaartnieuws disabled for the shop.",
       );
     } catch (error) {
       setShopWallSettingsStatus(
@@ -1821,16 +1821,16 @@ function DashboardPageContent() {
               style={{
                 display: "grid",
                 gap: "6px",
-                justifyItems: "end",
+                width: "100%",
+                maxWidth: "420px",
+                marginLeft: "auto",
               }}
             >
               <div
                 style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "flex-end",
-                  gap: "var(--gap-tight)",
-                  flexWrap: "wrap",
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "8px",
                 }}
               >
                 <button
@@ -1842,14 +1842,15 @@ function DashboardPageContent() {
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
+                    justifyContent: "center",
                     gap: "8px",
-                    minHeight: "34px",
+                    minHeight: "38px",
                     padding: "8px 12px",
                     borderRadius: "8px",
                     backgroundColor: COLORS.surface,
                     color: COLORS.blue,
                     border: `1px solid ${COLORS.borderStrong}`,
-                    fontSize: "13px",
+                    fontSize: "12px",
                     fontWeight: 700,
                     whiteSpace: "nowrap",
                     cursor: dropboxBusy ? "wait" : "pointer",
@@ -1859,56 +1860,6 @@ function DashboardPageContent() {
                   <RefreshCw size={15} strokeWidth={2.2} />
                   Check AcMP export
                 </button>
-
-                {dropboxStatus && (
-                  <span
-                    role="status"
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      minHeight: "34px",
-                      maxWidth: "360px",
-                      padding: "7px 10px",
-                      borderRadius: "8px",
-                      backgroundColor: dropboxStatusPalette.backgroundColor,
-                      color: dropboxStatusPalette.color,
-                      border: `1px solid ${dropboxStatusPalette.borderColor}`,
-                      fontSize: "13px",
-                      fontWeight: 700,
-                      lineHeight: 1.25,
-                      whiteSpace: "normal",
-                      overflowWrap: "anywhere",
-                      fontFamily: FONT_STACK,
-                    }}
-                  >
-                    {dropboxStatus}
-                  </span>
-                )}
-
-                {dropboxCandidates.length > 0 && (
-                  <button
-                    type="button"
-                    disabled={dropboxBusy}
-                    onClick={() => void importDropboxNow()}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      minHeight: "34px",
-                      padding: "8px 12px",
-                      borderRadius: "8px",
-                      border: "none",
-                      backgroundColor: COLORS.blue,
-                      color: "white",
-                      fontWeight: 700,
-                      cursor: dropboxBusy ? "wait" : "pointer",
-                      fontSize: "13px",
-                      fontFamily: FONT_STACK,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Import now
-                  </button>
-                )}
 
                 <button
                   type="button"
@@ -1922,14 +1873,15 @@ function DashboardPageContent() {
                     position: "relative",
                     display: "inline-flex",
                     alignItems: "center",
+                    justifyContent: "center",
                     gap: "8px",
-                    minHeight: "34px",
+                    minHeight: "38px",
                     padding: "8px 14px",
                     borderRadius: "8px",
                     backgroundColor: health.bg,
                     color: health.color,
                     border: `1px solid ${health.color}33`,
-                    fontSize: "13px",
+                    fontSize: "12px",
                     fontWeight: 600,
                     whiteSpace: "nowrap",
                     cursor: health.panel ? "pointer" : "help",
@@ -1951,15 +1903,34 @@ function DashboardPageContent() {
                     {health.reason}
                   </span>
                 </button>
-              </div>
+                <a
+                  href="/Office-Handleiding.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open de Office handleiding (PDF)"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    minHeight: "38px",
+                    padding: "8px 12px",
+                    borderRadius: "8px",
+                    border: `1px solid ${COLORS.borderStrong}`,
+                    backgroundColor: COLORS.surface,
+                    color: COLORS.blue,
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    textDecoration: "none",
+                    cursor: "pointer",
+                    fontFamily: FONT_STACK,
+                  }}
+                >
+                  <FileText size={15} strokeWidth={2.2} />
+                  Download manual
+                </a>
 
-              <div
-                style={{
-                  display: "grid",
-                  gap: "5px",
-                  justifyItems: "end",
-                }}
-              >
                 <button
                   type="button"
                   onClick={() => void toggleAviationNewsForWall()}
@@ -1973,8 +1944,9 @@ function DashboardPageContent() {
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
+                    justifyContent: "center",
                     gap: "8px",
-                    minHeight: "34px",
+                    minHeight: "38px",
                     padding: "7px 11px",
                     borderRadius: "8px",
                     border: `1px solid ${
@@ -2001,7 +1973,7 @@ function DashboardPageContent() {
                       display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      minWidth: "34px",
+                      minWidth: "30px",
                       padding: "2px 7px",
                       borderRadius: "999px",
                       backgroundColor: aviationNewsEnabled
@@ -2019,26 +1991,75 @@ function DashboardPageContent() {
                     {aviationNewsEnabled ? "ON" : "OFF"}
                   </span>
                 </button>
-
-                {shopWallSettingsStatus && (
-                  <div
-                    style={{
-                      maxWidth: "230px",
-                      color: shopWallSettingsStatus.startsWith(
-                        "Wall setting error",
-                      )
-                        ? COLORS.red
-                        : COLORS.textMuted,
-                      fontSize: "11px",
-                      fontWeight: 650,
-                      lineHeight: 1.25,
-                      textAlign: "right",
-                    }}
-                  >
-                    {shopWallSettingsStatus}
-                  </div>
-                )}
               </div>
+
+              {dropboxCandidates.length > 0 && (
+                <button
+                  type="button"
+                  disabled={dropboxBusy}
+                  onClick={() => void importDropboxNow()}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minHeight: "36px",
+                    padding: "8px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    backgroundColor: COLORS.blue,
+                    color: "white",
+                    fontWeight: 700,
+                    cursor: dropboxBusy ? "wait" : "pointer",
+                    fontSize: "12px",
+                    fontFamily: FONT_STACK,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Import now
+                </button>
+              )}
+
+              {dropboxStatus && (
+                <span
+                  role="status"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    minHeight: "34px",
+                    padding: "7px 10px",
+                    borderRadius: "8px",
+                    backgroundColor: dropboxStatusPalette.backgroundColor,
+                    color: dropboxStatusPalette.color,
+                    border: `1px solid ${dropboxStatusPalette.borderColor}`,
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    lineHeight: 1.25,
+                    whiteSpace: "normal",
+                    overflowWrap: "anywhere",
+                    fontFamily: FONT_STACK,
+                  }}
+                >
+                  {dropboxStatus}
+                </span>
+              )}
+
+              {shopWallSettingsStatus && (
+                <div
+                  style={{
+                    color: shopWallSettingsStatus.startsWith(
+                      "Wall setting error",
+                    )
+                      ? COLORS.red
+                      : COLORS.textMuted,
+                    fontSize: "11px",
+                    fontWeight: 650,
+                    lineHeight: 1.25,
+                    textAlign: "right",
+                  }}
+                >
+                  {shopWallSettingsStatus}
+                </div>
+              )}
             </div>
           }
         />
