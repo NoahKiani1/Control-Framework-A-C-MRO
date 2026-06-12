@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 
-export type AppRole = "office" | "shop" | "wall";
+export type AppRole = "office" | "shop" | "wall" | "developer";
 
 export type AppProfile = {
   id: string;
@@ -65,6 +65,7 @@ export async function getCurrentProfile(): Promise<{
 
 export function getRouteForRole(role: AppRole): string {
   if (role === "office") return "/dashboard";
+  if (role === "developer") return "/manuals";
   if (role === "shop") return "/shop-form";
   return "/shop";
 }

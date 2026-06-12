@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8" />
+<title>Troubleshooting Handleiding — Planning &amp; Monitoring Tool</title>
+<style>
+  @page {
+    size: A4;
+    margin: 14mm 14mm 16mm 14mm;
+  }
+  @page :first {
+    margin: 0;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    color: #20262f;
+    font-size: 10.5px;
+    line-height: 1.45;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ---------- COVER ---------- */
+  .cover {
+    height: 297mm;
+    width: 210mm;
+    background: #201c18;
+    color: #ece6da;
+    padding: 38mm 24mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    page-break-after: always;
+  }
+  .cover-top .kicker {
+    font-size: 11px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: #b9ad97;
+    font-weight: 700;
+  }
+  .cover h1 {
+    font-size: 44px;
+    line-height: 1.04;
+    margin: 14px 0 0;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+  }
+  .cover h1 .accent { color: #e0563f; }
+  .cover .sub {
+    margin-top: 18px;
+    font-size: 14px;
+    color: #c9bfae;
+    max-width: 128mm;
+    line-height: 1.55;
+  }
+  .cover-bottom {
+    border-top: 1px solid #3a342c;
+    padding-top: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font-size: 11px;
+    color: #9b917f;
+  }
+  .cover-bottom strong { color: #ece6da; }
+
+  /* ---------- GENERIC PAGE ---------- */
+  .page {
+    page-break-after: always;
+    position: relative;
+    padding-bottom: 10mm;
+    min-height: 250mm;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  .pagenum {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    font-size: 9px;
+    font-weight: 800;
+    color: #b6ad9c;
+    letter-spacing: 0.05em;
+  }
+  .page-foot {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    font-size: 8.5px;
+    color: #b6ad9c;
+  }
+
+  h2.section-title {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 2px;
+    color: #1b212a;
+  }
+  .kicker-eyebrow {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent, #97907f);
+    margin: 0 0 4px;
+  }
+  .section-intro {
+    color: #5f6b7c;
+    font-size: 11px;
+    margin: 0 0 12px;
+    max-width: 170mm;
+  }
+  .rule {
+    height: 3px;
+    width: 46px;
+    border-radius: 3px;
+    margin: 0 0 12px;
+    background: var(--accent, #e0563f);
+  }
+
+  /* ---------- TABLE OF CONTENTS ---------- */
+  .toc-group {
+    margin-bottom: 11px;
+    border: 1px solid #e4ded2;
+    border-radius: 11px;
+    overflow: hidden;
+    page-break-inside: avoid;
+  }
+  .toc-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 13px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #fff;
+    background: var(--accent, #334155);
+  }
+  .toc-head .toc-head-page { font-size: 9px; opacity: 0.85; letter-spacing: 0.04em; }
+  .toc-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 13px;
+    border-top: 1px solid #efeadf;
+    text-decoration: none;
+    color: inherit;
+  }
+  .toc-row:first-of-type { border-top: none; }
+  .toc-name {
+    font-weight: 700;
+    color: #1b212a;
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+  .toc-row .toc-name .desc {
+    font-weight: 500;
+    color: #8a8473;
+    font-size: 9.5px;
+  }
+  .toc-dots {
+    flex: 1 1 auto;
+    border-bottom: 1px dotted #cdc6b8;
+    transform: translateY(-3px);
+  }
+  .toc-page {
+    font-weight: 800;
+    color: var(--accent, #334155);
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- HOW TO USE ---------- */
+  .howto {
+    border: 1px solid #e2ddd1;
+    border-left: 4px solid var(--accent, #334155);
+    border-radius: 10px;
+    background: #faf8f3;
+    padding: 11px 14px;
+    margin-bottom: 14px;
+  }
+  .howto p { margin: 0 0 6px; color: #4d5563; }
+  .howto p:last-child { margin-bottom: 0; }
+
+  /* ---------- TROUBLE ENTRY ---------- */
+  .t {
+    --accent: #334155;
+    border: 1px solid #e2ddd1;
+    border-radius: 11px;
+    margin-bottom: 9px;
+    overflow: hidden;
+    page-break-inside: avoid;
+    background: #fff;
+  }
+  .t-q {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 8px 13px;
+    background: #faf8f3;
+    border-bottom: 1px solid #ece6da;
+    font-weight: 800;
+    color: #1b212a;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .t-mark {
+    flex: 0 0 auto;
+    width: 17px;
+    height: 17px;
+    border-radius: 5px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+  }
+  .t-a { padding: 8px 13px 9px; }
+  .t-line {
+    display: flex;
+    gap: 9px;
+    align-items: baseline;
+    margin-bottom: 5px;
+    color: #3a4250;
+    line-height: 1.5;
+  }
+  .t-line:last-child { margin-bottom: 0; }
+  .lbl {
+    flex: 0 0 auto;
+    width: 58px;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 0;
+    text-align: right;
+  }
+  .lbl.cause { color: #a1551f; }
+  .lbl.fix { color: #15803d; }
+  .lbl.note { color: #6b7480; }
+  .t-text { flex: 1 1 auto; }
+  .t-text b { color: #1b212a; font-weight: 700; }
+
+  .key {
+    display: inline-block;
+    font-size: 9.5px;
+    font-weight: 700;
+    background: #eef2fb;
+    border: 1px solid #cdd8ef;
+    color: #274a9b;
+    border-radius: 5px;
+    padding: 0 6px;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .msg {
+    display: inline;
+    font-family: "Consolas", monospace;
+    font-size: 9.5px;
+    background: #f3f0ea;
+    border: 1px solid #e0d9cb;
+    color: #6b5e44;
+    border-radius: 4px;
+    padding: 0 5px;
+  }
+  .where {
+    display: inline-block;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #97907f;
+    background: #f0ece2;
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 6px;
+  }
+
+  .callout {
+    border: 1px solid #e8d6a6;
+    background: #fff8e6;
+    border-radius: 10px;
+    padding: 9px 13px;
+    margin-bottom: 11px;
+    color: #6b5418;
+    font-size: 10.5px;
+    page-break-inside: avoid;
+  }
+  .callout b { color: #4a3a0e; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="cover-top">
+    <div class="kicker">Aircraft &amp; Component · Wheels &amp; Brake Shop</div>
+    <h1>Troubleshooting<br><span class="accent">Handleiding</span></h1>
+    <div class="sub">
+      Wat te doen als er iets misgaat. Per scherm — en per stuk werkorder-logica — staat hier
+      wat je kunt zien gebeuren, waarom het gebeurt, en hoe je het oplost. Geschreven voor
+      de office-gebruiker die alleen met de applicatie werkt.
+    </div>
+  </div>
+  <div class="cover-bottom">
+    <div>Control Board · <strong>Planning &amp; Monitoring Tool</strong></div>
+    <div>Versie juni 2026</div>
+  </div>
+</div>
+
+<!-- ============ INHOUDSOPGAVE ============ -->
+<div class="page" id="toc">
+  <div class="kicker-eyebrow">Inhoud</div>
+  <h2 class="section-title">Inhoudsopgave</h2>
+  <div class="rule"></div>
+  <p class="section-intro">
+    Klik op een regel om er direct naartoe te springen. De paginanummers rechts komen overeen
+    met het nummer rechtsonder op elke pagina.
+  </p>
+
+  <div class="toc-group" style="--accent:#334155;">
+    <div class="toc-head"><span>Voordat je begint</span><span class="toc-head-page">pag. 3</span></div>
+    <a class="toc-row" href="#algemeen"><span class="toc-name">Inloggen, toegang &amp; algemene problemen <span class="desc">— witte pagina, geen menu, niets verandert</span></span><span class="toc-dots"></span><span class="toc-page">3</span></a>
+  </div>
+
+  <div class="toc-group" style="--accent:#b42318;">
+    <div class="toc-head"><span>Werkorder-logica — de kern</span><span class="toc-head-page">pag. 4–8</span></div>
+    <a class="toc-row" href="#wo-verdwenen"><span class="toc-name">Een werkorder is verdwenen of staat er niet meer tussen</span><span class="toc-dots"></span><span class="toc-page">4</span></a>
+    <a class="toc-row" href="#wo-blokkades"><span class="toc-name">Geblokkeerde werkorders, hold reasons &amp; RFQ</span><span class="toc-dots"></span><span class="toc-page">5</span></a>
+    <a class="toc-row" href="#wo-stappen"><span class="toc-name">Processtappen, volgende stap, NDT &amp; Repair</span><span class="toc-dots"></span><span class="toc-page">6</span></a>
+    <a class="toc-row" href="#wo-toewijzing"><span class="toc-name">Toewijzing, restricties &amp; afwezigheid</span><span class="toc-dots"></span><span class="toc-page">7</span></a>
+    <a class="toc-row" href="#wo-capaciteit"><span class="toc-name">De capaciteitsberekening klopt niet</span><span class="toc-dots"></span><span class="toc-page">8</span></a>
+  </div>
+
+  <div class="toc-group" style="--accent:#2555c7;">
+    <div class="toc-head"><span>Planning</span><span class="toc-head-page">pag. 9–11</span></div>
+    <a class="toc-row" href="#dashboard"><span class="toc-name">Dashboard</span><span class="toc-dots"></span><span class="toc-page">9</span></a>
+    <a class="toc-row" href="#capacity"><span class="toc-name">Capacity Management</span><span class="toc-dots"></span><span class="toc-page">10</span></a>
+    <a class="toc-row" href="#planning"><span class="toc-name">Shared Planning</span><span class="toc-dots"></span><span class="toc-page">11</span></a>
+  </div>
+
+  <div class="toc-group" style="--accent:#b45309;">
+    <div class="toc-head"><span>Updates</span><span class="toc-head-page">pag. 12–13</span></div>
+    <a class="toc-row" href="#office-update"><span class="toc-name">Office Update</span><span class="toc-dots"></span><span class="toc-page">12</span></a>
+    <a class="toc-row" href="#shop-update"><span class="toc-name">Shop Update</span><span class="toc-dots"></span><span class="toc-page">13</span></a>
+  </div>
+
+  <div class="toc-group" style="--accent:#6d4aa7;">
+    <div class="toc-head"><span>Admin</span><span class="toc-head-page">pag. 14–16</span></div>
+    <a class="toc-row" href="#import"><span class="toc-name">AcMP Import</span><span class="toc-dots"></span><span class="toc-page">14</span></a>
+    <a class="toc-row" href="#staff"><span class="toc-name">Staff Management</span><span class="toc-dots"></span><span class="toc-page">15</span></a>
+    <a class="toc-row" href="#backlog"><span class="toc-name">Inactive Work Orders (backlog)</span><span class="toc-dots"></span><span class="toc-page">15</span></a>
+    <a class="toc-row" href="#work-order-data"><span class="toc-name">Work Order Data</span><span class="toc-dots"></span><span class="toc-page">16</span></a>
+    <a class="toc-row" href="#completed"><span class="toc-name">Completed Tasks</span><span class="toc-dots"></span><span class="toc-page">16</span></a>
+  </div>
+
+  <div class="toc-group" style="--accent:#0f766e;">
+    <div class="toc-head"><span>Pop-up</span><span class="toc-head-page">pag. 17</span></div>
+    <a class="toc-row" href="#acmp-review"><span class="toc-name">AcMP Review <span class="desc">— verschijnt vanzelf na een import</span></span><span class="toc-dots"></span><span class="toc-page">17</span></a>
+  </div>
+
+  <div class="pagenum">2</div>
+  <div class="page-foot">Troubleshooting Handleiding · Planning &amp; Monitoring Tool</div>
+</div>
+
+<!-- ============ VOORDAT JE BEGINT ============ -->
+<div class="page" id="algemeen" style="--accent:#334155;">
+  <div class="kicker-eyebrow">Voordat je begint</div>
+  <h2 class="section-title">Inloggen, toegang &amp; algemene problemen</h2>
+  <div class="rule"></div>
+
+  <div class="howto">
+    <p><b>Hoe je deze gids leest.</b> Elk probleem heeft een <b>symptoom</b> (wat je ziet),
+      een <b>oorzaak</b> (waarom het gebeurt) en een <b>oplossing</b> (wat je doet). Knoppen en
+      meldingen uit de app staan precies zoals ze in beeld verschijnen, bijvoorbeeld
+      <span class="key">Save Update</span> of <span class="msg">Saving...</span>.</p>
+    <p><b>Eerste hulp bij bijna alles:</b> ververs de pagina (F5). De app werkt niet live mee —
+      wat een collega op een ander scherm wijzigt, zie jij pas ná verversen.</p>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Inloggen lukt niet</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Verkeerd e-mailadres of wachtwoord, of er hoort nog geen profiel/rol bij je account (melding <span class="msg">No profile found for this user.</span>).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Controleer e-mail en wachtwoord. Blijft de melding over een ontbrekend profiel komen, dan moet de beheerder/developer eerst een rol (<b>office</b>) aan je account koppelen.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Ik zie geen menu aan de linkerkant</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Het menu is alleen zichtbaar voor de rollen <b>office</b> en <b>developer</b>. Op het wandscherm, het inlogscherm en het shop-formulier is het menu bewust verborgen.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Log opnieuw in met een office-account. Zie je nog steeds niets, dan staat je rol niet op office — vraag de beheerder dit te controleren.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Witte/lege pagina of het blijft op <span class="msg">Loading...</span> staan</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Tijdelijk geen verbinding met de database, of een trage internetverbinding.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Ververs de pagina. Helpt dat niet, controleer je internet en log opnieuw in. Blijft het hangen voor iedereen, dan ligt het aan de server — meld dit bij de developer.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een wijziging van een collega zie ik niet</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De schermen vernieuwen niet automatisch. Je kijkt naar de gegevens van het moment dat jíj de pagina opende.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Ververs de pagina. Werk bij voorkeur niet met z'n tweeën tegelijk in dezelfde werkorder.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een knop blijft op <span class="msg">Saving...</span> staan of er verschijnt <span class="msg">Error: …</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Het opslaan is onderweg misgegaan (meestal een verbindingsfout).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Ververs en controleer of de wijziging toch is doorgekomen. Zo niet, probeer opnieuw. Lukt het niet, noteer de exacte <span class="msg">Error</span>-tekst en meld die.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een handleiding-PDF opent niet in een nieuw tabblad</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De browser blokkeert het nieuwe tabblad (pop-upblokkering), of de sessie is verlopen.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Sta pop-ups voor deze site toe en probeer opnieuw. Helpt dat niet, log opnieuw in.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">3</div>
+  <div class="page-foot">Voordat je begint</div>
+</div>
+
+<!-- ============ LOGICA 1 — VERDWENEN ============ -->
+<div class="page" id="wo-verdwenen" style="--accent:#b42318;">
+  <div class="kicker-eyebrow">Werkorder-logica · 1 van 5</div>
+  <h2 class="section-title">Een werkorder is verdwenen of staat er niet meer tussen</h2>
+  <div class="rule"></div>
+  <p class="section-intro">Verreweg de meest gestelde vraag. Bijna altijd is de werkorder niet weg, maar verplaatst,
+    inactief of gesloten. Loop de oorzaken van boven naar beneden af.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">1</span> De werkorder is gesloten in AcMP <span class="where">meest voorkomend</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Bij elke import geldt: de nieuwste AcMP-export is de waarheid. Een werkorder die wél in de app stond maar <b>niet meer in de nieuwste export</b> voorkomt, wordt als gesloten beschouwd en uit de lijst verwijderd. Ook een rij met een ingevulde <b>Close Date</b> wordt als gesloten gezien.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Dit is normaal gedrag wanneer de order in AcMP is afgesloten. De doorlooptijd-gegevens blijven bewaard onder <span class="key">Work Order Data</span> (als tracking aanstond). Was het ten onrechte? Dan moet de order weer in een AcMP-export verschijnen; bij de volgende import komt hij terug.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">2</span> De werkorder is inactief gemaakt</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Inactieve orders verschijnen niet in de shop-lijsten, planning of capaciteit. Ze zijn niet weg.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Kijk bij <span class="key">Inactive Work Orders</span>, of in <span class="key">Office Update</span> via de knop <span class="key">Inactive</span>. Daar activeer je hem weer met <span class="key">Activate Work Order</span> / <span class="key">Make active</span>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">3</span> De toegewezen engineer is vandaag afwezig</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Als een order is toegewezen aan een engineer die vandaag afwezig is, wordt hij automatisch <b>tijdelijk inactief</b> gezet (notitie: &ldquo;… is absent today. Automatically reactivates when … is present again.&rdquo;).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Hij komt vanzelf terug zodra die engineer weer aanwezig is. Moet hij eerder terug? Wijs hem in <span class="key">Office Update</span> aan iemand anders (of aan <b>Shop</b>) toe en activeer.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">4</span> De werkorder is klaar (&ldquo;Ready to close&rdquo;)</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Na de laatste stap (EASA-Form 1) krijgt de order de status <b>Ready to close</b>. Hij verdwijnt dan uit Shop Update en telt niet meer mee in de capaciteit; hij wacht op sluiting in AcMP.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Geen actie nodig. Zodra AcMP de order sluit, verdwijnt hij bij de volgende import (zie punt 1).</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">5</span> De werkorder is geblokkeerd</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Geblokkeerde orders staan in Shop Update onder een aparte sectie &ldquo;Blocked work orders&rdquo;, niet in de gewone open lijst. In Shared Planning staan ze onder &ldquo;Blocked&rdquo;.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Zie de pagina <a href="#wo-blokkades">Geblokkeerde werkorders</a>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">6</span> Te oud, of je staat in de verkeerde modus</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Orders die in AcMP ouder dan 1 jaar zijn (CreatedOn) worden bij import overgeslagen en opgeruimd. Of: je hebt in Office Update <span class="key">Active</span> aanstaan terwijl de order inactief is (of andersom).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Wissel tussen <span class="key">Active</span> en <span class="key">Inactive</span>. Bij &ldquo;te oud&rdquo;: dit is bewust; de order hoort niet meer in de actieve planning.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">4</div>
+  <div class="page-foot">Werkorder-logica</div>
+</div>
+
+<!-- ============ LOGICA 2 — BLOKKADES ============ -->
+<div class="page" id="wo-blokkades" style="--accent:#b42318;">
+  <div class="kicker-eyebrow">Werkorder-logica · 2 van 5</div>
+  <h2 class="section-title">Geblokkeerde werkorders, hold reasons &amp; RFQ</h2>
+  <div class="rule"></div>
+  <p class="section-intro">Een order kan op twee manieren &ldquo;op slot&rdquo; staan: een handmatige <b>hold reason</b>,
+    of een <b>RFQ-status</b> uit AcMP. Ze los je niet op dezelfde plek op.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een order is geblokkeerd met een gewone hold reason</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Iemand heeft in Office Update of Shop Update op <span class="key">Yes</span> bij &ldquo;Blocked?&rdquo; geklikt en een reden ingevuld (bijv. &ldquo;wacht op klantgoedkeuring&rdquo;), eventueel met een corrective action en owner.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Mag het werk verder? Deblokkeer via <span class="key">Unblock</span> in Shared Planning, via Shop Update, of rond de corrective action af op het Dashboard met <span class="key">Confirm action</span>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="msg">RFQ blocks cannot be unblocked from Shop Update.</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De order is geblokkeerd door een RFQ-status (<b>RFQ Send</b> nog niet goedgekeurd, of <b>RFQ Rejected</b>). Zulke blokkades horen bij het RFQ-proces en kun je niet zomaar in Shop Update wegklikken.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Handel de RFQ af in AcMP. Zodra de RFQ in de volgende export op <b>approved/continue</b> staat, wordt de blokkade automatisch opgeheven. Een &ldquo;RFQ Send&rdquo; kun je daarnaast handmatig vrijgeven via Shared Planning / Dashboard wanneer dat mag.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Na het afmelden van een stap is de order opeens geblokkeerd: <span class="msg">RFQ must be sent</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Na de laatste inspectie-/NDT-stap opent de app automatisch een actie &ldquo;RFQ must be sent&rdquo; en blokkeert de order — er moet eerst een RFQ de deur uit.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Verstuur de RFQ. Verwerk daarna de uitkomst: bij goedkeuring gaat de order verder, anders blijft hij &ldquo;Awaiting RFQ approval&rdquo; tot AcMP de status bijwerkt.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Hold reason <span class="msg">No Qualified Engineer Present</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Dit is een <b>automatische, tijdelijke</b> blokkade voor vandaag: er is op dit moment geen aanwezige engineer die de huidige stap mág doen (door restricties of afwezigheid).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Niet handmatig weg te klikken. Hij verdwijnt vanzelf zodra een gekwalificeerde engineer aanwezig is. Los het op via aanwezigheid (Staff Management) of restricties — zie <a href="#wo-toewijzing">Toewijzing &amp; restricties</a>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Ik heb gedeblokkeerd, maar de order blijft geblokkeerd</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Er lag meer dan één blokkade op de order — bijvoorbeeld een hold reason én een openstaande RFQ-status. Het deblokkeren haalde er maar één weg.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">De melding vertelt welke blokkade nog over is (&ldquo;Still blocked: …&rdquo;). Handel ook die af. RFQ-blokkades los je af in AcMP / via Shared Planning.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een RFQ is goedgekeurd, maar de order werd niet vanzelf actief</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Was de order <b>inactief</b> toen de RFQ goedgekeurd werd, dan activeert de app hem niet zelf — hij gaat naar de <a href="#acmp-review">AcMP Review</a> pop-up zodat office de keuze maakt.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Open de AcMP Review pop-up (verschijnt na de import) en kies <span class="key">Activate</span> voor die order.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">5</div>
+  <div class="page-foot">Werkorder-logica</div>
+</div>
+
+<!-- ============ LOGICA 3 — STAPPEN ============ -->
+<div class="page" id="wo-stappen" style="--accent:#b42318;">
+  <div class="kicker-eyebrow">Werkorder-logica · 3 van 5</div>
+  <h2 class="section-title">Processtappen, volgende stap, NDT &amp; Repair</h2>
+  <div class="rule"></div>
+  <p class="section-intro">Welke stappen een order doorloopt en in welke volgorde staat per order vast in de
+    <b>included tasks</b>. Dat bepaalt ook wat de &ldquo;volgende stap&rdquo; wordt na het afmelden.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> In Shop Update: <span class="msg">No steps available - work order type is not set.</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De order heeft geen werkorder-type. Bij import wordt het type bepaald uit <b>Comp. Type</b> (wheel/brake/battery) en de omschrijving (overhaul vs repair). Past dat niet, dan blijft het type leeg en zijn er geen stappen.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Corrigeer Comp. Type/omschrijving in AcMP en importeer opnieuw. Tijdelijk kun je in Office Update via <span class="key">Update included tasks</span> de stappen instellen zodra een type bekend is.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De &ldquo;volgende stap&rdquo; klopt niet met wat ik verwacht</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De volgende stap volgt uit de <b>included tasks</b> van die order. Bij een <span class="key">Custom</span> opzet zijn stappen toegevoegd of weggelaten; optionele stappen zoals <b>Magnetic Test</b> tellen alleen mee als ze zijn aangevinkt.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Controleer in Office Update via <span class="key">Update included tasks</span> welke stappen meelopen. Pas je die op een actieve order aan, dan schuift de huidige stap naar de eerstvolgende geldige stap.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> NDT vraagt om een checklist; de order schuift niet door</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De NDT-inspecties (Eddy Current, Penetrant Testing, Magnetic Test) lopen samen onder één groep &ldquo;NDT&rdquo;. De order gaat pas naar de volgende stap als <b>alle</b> inbegrepen NDT-inspecties zijn afgevinkt.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Vink per keer minstens één <b>nieuwe</b> inspectie aan (melding <span class="msg">Please check at least one new NDT inspection.</span> als je niets nieuws aanvinkt). Zijn nog niet alle af, dan blijft de order op NDT staan tot ze compleet zijn.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De vraag &ldquo;Repair necessary?&rdquo; verschijnt (of juist niet)</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Na het afmelden van <b>Inspection</b> vraagt de app of repair nodig is — maar alleen als het type een Repair-stap kent én die nog niet in de order zit. Kies je <span class="key">Yes</span>, dan wordt Repair ná de NDT ingepland.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Maak de keuze (anders: <span class="msg">Please choose whether repair is necessary.</span>). Zit Repair al in de order, of kent het type geen Repair, dan komt de vraag terecht niet.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De &ldquo;Completed Step&rdquo; staat al voorgevuld</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Het formulier vult standaard de huidige stap in als &ldquo;net afgerond&rdquo;, omdat dat meestal klopt.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Klopt het niet, kies dan zelf de juiste afgeronde stap in het dropdownmenu vóór je opslaat.</span></div>
+    </div>
+  </div>
+
+  <div class="callout"><b>Let op de volgorde.</b> Meld stappen af in de juiste procesvolgorde. Worden stappen
+    door elkaar afgemeld, dan markeert Work Order Data de doorlooptijd als <b>Invalid</b> en zijn de
+    tijden per stap onbetrouwbaar (zie <a href="#work-order-data">Work Order Data</a>).</div>
+
+  <div class="pagenum">6</div>
+  <div class="page-foot">Werkorder-logica</div>
+</div>
+
+<!-- ============ LOGICA 4 — TOEWIJZING ============ -->
+<div class="page" id="wo-toewijzing" style="--accent:#b42318;">
+  <div class="kicker-eyebrow">Werkorder-logica · 4 van 5</div>
+  <h2 class="section-title">Toewijzing, restricties &amp; afwezigheid</h2>
+  <div class="rule"></div>
+  <p class="section-intro">De app wijst werk soms zelf toe op basis van wie de huidige stap mag doen en wie aanwezig is.
+    Dat verklaart de meeste &ldquo;waarom staat hij nu op iemand anders&rdquo;-vragen.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De toegewezen persoon verandert vanzelf</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Voor stappen met een restrictie kiest de app automatisch een <b>gekwalificeerde, aanwezige</b> engineer. Is de toegewezen engineer afwezig of niet gekwalificeerd voor de nieuwe stap, dan wijst de app opnieuw toe. Zonder reden tot toewijzing staat een order op <b>Shop</b> (het team).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Dit is bewust. Wil je een vaste persoon, kies die dan in Office Update — zolang die persoon de stap mag doen en aanwezig is, blijft hij staan.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een engineer wordt nooit toegewezen aan een bepaalde stap</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Die engineer heeft een <b>restrictie</b> (&ldquo;Cannot perform …&rdquo;) voor die stap, ingesteld in Staff Management.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Klopt de restrictie niet (meer), pas hem aan in <span class="key">Staff Management</span>. Mag niemand de stap doen, dan blokkeert de app de order tijdelijk met &ldquo;No Qualified Engineer Present&rdquo;.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="msg">Rens can only be assigned manually to Wheel Repair or Wheel Overhaul tasks, excluding MT, PT, and ET.</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text"><b>Rens</b> (office) mag alleen handmatig op Wheel Repair / Wheel Overhaul, en niet op de stappen Magnetic Test, Penetrant Testing of Eddy Current.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Kies een andere toewijzing (een shop-engineer of <b>Shop</b>), of wijs Rens pas toe als de order op een toegestane stap/type staat.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een order is &ldquo;inactive until … is present again&rdquo;</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Je wees de order toe aan een engineer die vandaag afwezig is. De app parkeert hem dan tijdelijk inactief.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Hij reactiveert automatisch zodra die engineer terug is. Eerder nodig? Wijs hem aan iemand anders toe en sla op.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een nieuwe engineer telt niet mee / krijgt geen werk</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Alleen engineers met rol <b>shop</b> tellen mee voor toewijzing en capaciteit. Bovendien telt een engineer pas mee vanaf zijn <b>indiensttredingsdatum</b>.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Controleer in Staff Management de rol en de startdatum. Office-medewerkers tellen niet mee in de capaciteit.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">7</div>
+  <div class="page-foot">Werkorder-logica</div>
+</div>
+
+<!-- ============ LOGICA 5 — CAPACITEIT ============ -->
+<div class="page" id="wo-capaciteit" style="--accent:#b42318;">
+  <div class="kicker-eyebrow">Werkorder-logica · 5 van 5</div>
+  <h2 class="section-title">De capaciteitsberekening klopt niet</h2>
+  <div class="rule"></div>
+  <p class="section-intro">De capaciteit kijkt 3 weken vooruit en deelt de resterende uren van elke order uit over de
+    werkdagen tot de due date. Veel &ldquo;rare&rdquo; getallen komen door een paar duidelijke regels.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een order telt niet mee in de berekening</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Orders zonder <b>due date</b>, <b>geblokkeerde</b> orders en orders op <b>Ready to close</b> worden uitgesloten. Ook orders zonder bekende uren (onbekend type of part number zonder uren) leveren 0 uur op.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Open in Capacity Management het blok <span class="key">Excluded orders</span> — daar staat per order de reden. Vul bijvoorbeeld een due date in om de order te laten meetellen.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Deze week staat plotseling op rood / boven 100%</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text"><b>Overdue</b> orders (due date in het verleden) worden volledig op de <b>huidige week</b> geboekt. Eén of twee achterstallige orders kunnen de week zo over 100% duwen.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Werk de due dates van overdue orders bij naar een realistische datum, of rond ze af. Daarna verdeelt de berekening de uren weer netjes.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Beschikbare uren staan op (bijna) 0</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Beschikbare uren = aanwezige shop-engineers × uren per dag (ma–do 8u, vr 6u, weekend 0u), minus afwezigheden. Veel afwezigheden of geen shop-engineers betekent weinig of geen uren.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Controleer afwezigheden en rollen in Staff Management. Een week met alleen weekend/feestdagen heeft logischerwijs 0 beschikbare uren.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Het percentage voelt te hoog of te laag</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Resterende uren hangen af van het type, het part number en hoe ver de order al is. Onbekende part numbers gebruiken een terugval-schatting; dat kan afwijken van de werkelijkheid.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Gebruik de capaciteit als richting, niet als exact getal. Klopt een part number-schatting structureel niet, meld dit bij de developer zodat de uren bijgesteld worden.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">8</div>
+  <div class="page-foot">Werkorder-logica</div>
+</div>
+
+<!-- ============ PLANNING — DASHBOARD ============ -->
+<div class="page" id="dashboard" style="--accent:#2555c7;">
+  <div class="kicker-eyebrow">Planning</div>
+  <h2 class="section-title">Dashboard</h2>
+  <div class="rule"></div>
+  <p class="section-intro">Het startscherm met capaciteit, KPI's, acties en afwezigheden.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De KPI-aantallen kloppen niet of zijn leeg</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De gegevens worden nog geladen, of er is sinds het openen iets gewijzigd. KPI's tellen alleen <b>actieve</b> orders.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Ververs. Een KPI op 0 is gewoon &ldquo;niets in deze categorie&rdquo; — klik de kaart aan om de onderliggende orders te zien, en sluit met <span class="key">Hide</span>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="key">Check AcMP export</span> meldt geen nieuwe export</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Er staat niets nieuws in de Dropbox-importmap, of het bestand is al eerder geïmporteerd (zelfde inhoud = duplicaat en wordt genegeerd).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Controleer of de AcMP-export echt in de juiste Dropbox-map staat. Een nieuwe export verschijnt vanzelf bij de automatische check (elke 15 min), of meteen via deze knop.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="key">Import now</span> staat er niet</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Die knop verschijnt alleen wanneer er daadwerkelijk een nieuwe export is gevonden.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Doe eerst <span class="key">Check AcMP export</span>. Wordt er iets gevonden, dan kun je importeren.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="key">Attention needed</span> doet niets</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De algemene status is groen — er is op dit moment niets dat directe aandacht vraagt.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Geen actie nodig. Bij oranje/rood springt de knop wél naar het probleem.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="key">Confirm action</span> lukt niet voor een RFQ-blokkade</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Melding <span class="msg">This work order is blocked by an AcMP RFQ status and cannot be manually unblocked.</span> — dit is een RFQ-blokkade, geen gewone corrective action.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Los de RFQ af in AcMP; de blokkade verdwijnt bij de volgende import. Zie <a href="#wo-blokkades">Blokkades &amp; RFQ</a>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De nieuws-schakelaar (<span class="key">Luchtvaartnieuws</span>) lijkt niets te doen</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Die schakelaar regelt alleen het <b>wandscherm</b> in de werkplaats, niet je eigen scherm.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Controleer het effect op het wandscherm zelf. De melding bevestigt of het aan- of uitgezet is.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">9</div>
+  <div class="page-foot">Planning</div>
+</div>
+
+<!-- ============ PLANNING — CAPACITY ============ -->
+<div class="page" id="capacity" style="--accent:#2555c7;">
+  <div class="kicker-eyebrow">Planning</div>
+  <h2 class="section-title">Capacity Management</h2>
+  <div class="rule"></div>
+  <p class="section-intro">De belasting per week en de waarschuwingen. De rekenregels staan op
+    <a href="#wo-capaciteit">De capaciteitsberekening</a>; hieronder de schermspecifieke vragen.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Ik mis een order in de berekening</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Hij is uitgesloten: geen due date, geblokkeerd of ready-to-close.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Klap <span class="key">Excluded orders</span> open; daar staat de reden per order. Klap <span class="key">Orders included in calculation</span> open om te zien wat wél meetelt.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Er staan waarschuwingen die ik niet verwacht</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Overdue orders verschijnen als <b>High</b>; restrictie-/beschikbaarheidsproblemen als <b>Medium</b>.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Open <span class="key">Warnings</span> en handel de overdue orders en onbeschikbare datums af.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Alle drie de weken staan op 0%</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Geen enkele order telt mee (geen due dates of geen bekende uren), of er zijn geen beschikbare uren.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Vul due dates in en controleer rollen/afwezigheden in Staff Management.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">10</div>
+  <div class="page-foot">Planning</div>
+</div>
+
+<!-- ============ PLANNING — SHARED PLANNING ============ -->
+<div class="page" id="planning" style="--accent:#2555c7;">
+  <div class="kicker-eyebrow">Planning</div>
+  <h2 class="section-title">Shared Planning</h2>
+  <div class="rule"></div>
+  <p class="section-intro">De volgorde op de shopvloer, de volgende stap, toewijzingen en losse taken.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De volgorde verspringt na verslepen of na een import</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Zolang je niet zelf versleept, sorteert de app automatisch: eerst <b>AOG</b>, dan <b>PRIO</b>, dan op <b>due date</b>, dan de rest. Versleep je een order, dan zet je een handmatige volgorde die voorrang krijgt.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Versleep aan het grip-icoon om de volgorde vast te zetten. Dit is gedeeld — ook het wandscherm volgt deze volgorde.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="key">Unblock</span> werkt niet voor een order</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De order zit op een RFQ-blokkade, of er ligt nog een andere blokkade onder.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Zie <a href="#wo-blokkades">Blokkades &amp; RFQ</a>. RFQ-statussen handel je af in AcMP.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een snelle wijziging (potlood) lijkt niet opgeslagen</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Verbindingsfout tijdens opslaan, of het scherm is niet ververst.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Ververs en controleer. Probeer de due date of toewijzing zo nodig opnieuw aan te passen.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De tijdlijn van een order is leeg</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De order heeft geen type of geen ingestelde stappen.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Stel het type/de included tasks in via Office Update (zie <a href="#wo-stappen">Processtappen</a>).</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">11</div>
+  <div class="page-foot">Planning</div>
+</div>
+
+<!-- ============ UPDATES — OFFICE UPDATE ============ -->
+<div class="page" id="office-update" style="--accent:#b45309;">
+  <div class="kicker-eyebrow">Updates</div>
+  <h2 class="section-title">Office Update</h2>
+  <div class="rule"></div>
+  <p class="section-intro">Werkorders plannen, blokkeren/deblokkeren, actief of inactief maken, en losse taken toevoegen.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Ik kan geen werkorder kiezen / de lijst is leeg</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Je staat in de verkeerde modus. <span class="key">Active</span> toont alleen actieve orders, <span class="key">Inactive</span> alleen inactieve.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Wissel van modus. De aantallen tussen haakjes (<span class="key">Active (12)</span> / <span class="key">Inactive (3)</span>) helpen je kiezen.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="msg">Due Date is required when Priority is Yes or AOG.</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Bij prioriteit <b>PRIO</b> of <b>AOG</b> is een due date verplicht.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Vul een due date in, of zet de prioriteit terug op <b>No</b>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="msg">Please enter a hold reason.</span> of <span class="msg">Select at least one task.</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Je zette &ldquo;Blocked?&rdquo; op <span class="key">Yes</span> zonder reden, of je probeert de included tasks op te slaan zonder enige stap aangevinkt.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Vul de hold reason in, of vink minstens één processtap aan.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Ik activeer een order, maar na opslaan staat hij toch op Inactive</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De gekozen toegewezen engineer is vandaag afwezig. De order wordt dan tijdelijk inactief (&ldquo;… is inactive until … is present again&rdquo;).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Wijs een aanwezige engineer of <b>Shop</b> toe als hij meteen actief moet zijn. Anders reactiveert hij vanzelf.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="msg">Rens can only be assigned manually to Wheel Repair or Wheel Overhaul …</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Rens-toewijzing is alleen toegestaan op bepaalde types/stappen (zie <a href="#wo-toewijzing">Toewijzing</a>).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Kies een andere toewijzing of doe het op een toegestane stap.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een order inactief maken — wat gebeurt er met de data?</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl note">Let op</span><span class="t-text">Bij <span class="key">Make this work order inactive</span> verschijnt een waarschuwing: hij verdwijnt na opslaan uit de actieve shop-lijst. Het <b>stopt ook de Work Order Data-tracking</b> van die order.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Zorg dat niemand er nog aan werkt voor je bevestigt. Per ongeluk gedaan? Activeer hem weer; let op dat de doorlooptijd-tracking opnieuw start.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een losse taak toevoegen lukt niet</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Geen omschrijving ingevuld (<span class="msg">Please enter a description.</span>).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Vul een omschrijving in bij <span class="key">Add action</span>; verantwoordelijke en due date zijn optioneel.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">12</div>
+  <div class="page-foot">Updates</div>
+</div>
+
+<!-- ============ UPDATES — SHOP UPDATE ============ -->
+<div class="page" id="shop-update" style="--accent:#b45309;">
+  <div class="kicker-eyebrow">Updates</div>
+  <h2 class="section-title">Shop Update</h2>
+  <div class="rule"></div>
+  <p class="section-intro">Een voltooide stap melden of een order deblokkeren. Office kan dit scherm ook gebruiken.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een order staat niet in de open lijst</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De open lijst toont alleen orders zonder blokkade en zonder openstaande corrective action. Geblokkeerde orders staan in de aparte sectie &ldquo;Blocked work orders&rdquo;; orders op Ready to close staan er niet meer in; inactieve orders evenmin.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Zoek hem bij &ldquo;Blocked work orders&rdquo;, of controleer of hij inactief of al klaar is.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="msg">This work order is blocked and cannot be updated by shop.</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De order raakte geblokkeerd (bijv. door een import of een andere gebruiker) terwijl je hem geopend had.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Handel eerst de blokkade af (zie <a href="#wo-blokkades">Blokkades &amp; RFQ</a>) en meld daarna de stap.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="msg">No steps available - work order type is not set.</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De order heeft geen type, dus er zijn geen afmeldbare stappen.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Zie <a href="#wo-stappen">Processtappen</a> — corrigeer het type en/of de included tasks.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Na opslaan verschijnt: deze order wordt geblokkeerd met <span class="msg">RFQ must be sent</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Je meldde de laatste inspectie-/NDT-stap af; daarna eist het proces eerst een RFQ.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Normaal — verstuur de RFQ en handel de uitkomst af. Zie <a href="#wo-blokkades">Blokkades &amp; RFQ</a>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een corrective action of losse taak staat hier niet tussen</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Corrective actions verschijnen in de takenlijst alleen als de <b>owner een shop-engineer</b> is (of het een RFQ-actie is). Acties met een office-owner zie je hier niet.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Acties met een office-owner handel je af via het Dashboard met <span class="key">Confirm action</span>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Na het afmelden staat de order op een andere persoon</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De app wijst de volgende stap automatisch toe aan een gekwalificeerde, aanwezige engineer. Was de vorige stap restrictiegevoelig en de volgende niet, dan kan hij terugvallen op <b>Shop</b>.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Dit is bewust; pas zo nodig handmatig aan in Office Update. Zie <a href="#wo-toewijzing">Toewijzing</a>.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">13</div>
+  <div class="page-foot">Updates</div>
+</div>
+
+<!-- ============ ADMIN — IMPORT ============ -->
+<div class="page" id="import" style="--accent:#6d4aa7;">
+  <div class="kicker-eyebrow">Admin</div>
+  <h2 class="section-title">AcMP Import</h2>
+  <div class="rule"></div>
+  <p class="section-intro">AcMP-export importeren uit Dropbox of handmatig. De import bepaalt veel van de werkorder-logica
+    elders in de app.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De import zegt dat er niets nieuws is</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Geen <b>.xlsx</b> in de importmap, of de inhoud is identiek aan een eerdere import (duplicaat — herkend aan de inhoud, niet aan de bestandsnaam). Tijdelijke Office-bestanden die met <span class="msg">~$</span> beginnen worden genegeerd.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Maak in AcMP een verse export en zet die in de juiste Dropbox-map. Een echt gewijzigde export wordt wél geïmporteerd.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Er staan meerdere exports; welke wordt gebruikt?</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Alleen de <b>nieuwste</b> export (op wijzigingsdatum) wordt geïmporteerd; oudere worden na een geslaagde import opgeruimd. De nieuwste export is de complete actuele stand.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Zorg dat de nieuwste export de juiste, volledige is. Oudere exports niet één voor één importeren.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Na import zijn er werkorders verdwenen</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Orders die in de app stonden maar niet in de nieuwste export voorkomen, worden als gesloten verwijderd (zie <a href="#wo-verdwenen">Een werkorder is verdwenen</a>).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Controleer of die orders in AcMP echt nog open zijn. Zo ja, zorg dat ze in de export staan en importeer opnieuw.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een werkorder kreeg na import het verkeerde type</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Het type komt uit <b>Comp. Type</b> + omschrijving: &ldquo;wheel&rdquo;/&ldquo;brake&rdquo; + omschrijving die met &ldquo;overhaul&rdquo; begint = Overhaul, anders Repair; &ldquo;battery&rdquo; = Battery. Past het niet, dan blijft het type leeg.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Corrigeer Comp. Type/omschrijving in AcMP en importeer opnieuw.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een bestand wordt niet geïmporteerd / belandt in een &ldquo;failed&rdquo;-map</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Het bestand is geen geldige .xlsx of is beschadigd. Alleen de nieuwste, mislukte export wordt naar de failed-map verplaatst; oudere blijven staan.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Exporteer opnieuw uit AcMP. Lukt het via Dropbox niet, gebruik dan de handmatige upload met <span class="key">Choose file</span> als noodoplossing.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Na de import verschijnt er een pop-up die ik niet weg krijg</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Nieuwe orders en zojuist RFQ-goedgekeurde inactieve orders gaan naar de <a href="#acmp-review">AcMP Review</a>. Die blokkeert de app tot je hem afhandelt.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Verwerk de review en klik <span class="key">Save and continue</span>. Zie de pagina AcMP Review.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">14</div>
+  <div class="page-foot">Admin</div>
+</div>
+
+<!-- ============ ADMIN — STAFF + BACKLOG ============ -->
+<div class="page" style="--accent:#6d4aa7;">
+  <div class="kicker-eyebrow">Admin</div>
+  <h2 class="section-title" id="staff">Staff Management</h2>
+  <div class="rule"></div>
+  <p class="section-intro">Teamleden, restricties en afwezigheden van shop-engineers.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een engineer telt niet mee in de capaciteit</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Alleen <b>shop</b>-engineers tellen mee, en pas vanaf hun indiensttredingsdatum. Office-medewerkers en personen zonder rol tellen niet.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Controleer rol en startdatum. Pas ze aan bij de persoon.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een engineer krijgt nooit bepaalde stappen toegewezen</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Hij heeft een restrictie (&ldquo;Cannot perform …&rdquo;) voor die stap.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Pas de restricties aan. Let op: te veel restricties kan orders blokkeren met &ldquo;No Qualified Engineer Present&rdquo;.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een afwezigheid heeft niet het verwachte effect</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Een afwezigheid verlaagt de beschikbare uren in de capaciteit, en kan orders die aan die engineer hangen tijdelijk inactief maken. Latere afwezigheden staan onder <span class="key">View later</span>.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Controleer de van/tot-datums met <span class="key">Add absence</span>. Ververs daarna de capaciteit/planning.</span></div>
+    </div>
+  </div>
+
+  <h2 class="section-title" id="backlog" style="margin-top:18px;">Inactive Work Orders (backlog)</h2>
+  <div class="rule"></div>
+  <p class="section-intro">De backlog van open maar niet-actieve werkorders, met een snelknop om te activeren.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De backlog is leeg of een order ontbreekt</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Hier staan alleen <b>open + inactieve</b> orders. Een actieve order staat er niet; een gesloten order is verdwenen.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Een actieve order beheer je in Office Update / Shared Planning. Voor verdwenen orders, zie <a href="#wo-verdwenen">Een werkorder is verdwenen</a>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="key">Make active</span> stuurt me naar een ander scherm</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Dat is de bedoeling: <span class="key">Make active</span> opent <b>Office Update</b> voor die werkorder, zodat je stappen en startstap kunt instellen.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Vul daar de activatie af met <span class="key">Activate Work Order</span> en <span class="key">Save Work Order</span>.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">15</div>
+  <div class="page-foot">Admin</div>
+</div>
+
+<!-- ============ ADMIN — WORK ORDER DATA + COMPLETED ============ -->
+<div class="page" style="--accent:#6d4aa7;">
+  <div class="kicker-eyebrow">Admin</div>
+  <h2 class="section-title" id="work-order-data">Work Order Data</h2>
+  <div class="rule"></div>
+  <p class="section-intro">Doorlooptijd-gegevens van gesloten orders bekijken, exporteren en opschonen.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een order staat op <b>Invalid</b> / stap-tijden tonen <span class="msg">NaN</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De stappen zijn niet in procesvolgorde afgemeld, een inbegrepen stap is overgeslagen, of EASA-Form 1 is niet afgemeld voordat de order in AcMP sloot. De stap-tijden zijn dan onbetrouwbaar.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Niet achteraf te repareren voor een gesloten order. Voorkom het door stappen netjes op volgorde af te melden en EASA-Form 1 af te melden vóór sluiting.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een gesloten order staat hier helemaal niet bij</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Alleen orders waarvan de tracking <b>aanstond</b> worden vastgelegd. Tracking start bij activatie van een nieuwe order; orders die inactief waren of via RFQ-review zijn geactiveerd, worden niet altijd gevolgd.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Dit is verwacht gedrag. Voor toekomstige orders: activeer ze als nieuwe order zodat tracking meteen begint.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De knop <span class="key">Clean this year after export</span> is er niet</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Opschonen kan alleen in <b>december</b>, en alleen als er nog niet-opgeschoonde jaargegevens zijn.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Buiten december is dit normaal. Gebruik <span class="key">Download this year's data</span> wanneer je de gegevens nodig hebt.</span></div>
+    </div>
+  </div>
+
+  <div class="callout"><b>Opschonen is definitief.</b> <span class="key">Clean this year after export</span> verwijdert de
+    gegevens van dit jaar onomkeerbaar. Download <b>altijd eerst</b> het Excel-bestand voordat je opschoont.</div>
+
+  <h2 class="section-title" id="completed" style="margin-top:18px;">Completed Tasks</h2>
+  <div class="rule"></div>
+  <p class="section-intro">Log van afgeronde corrective actions en losse taken van de laatste 30 dagen (alleen-lezen).</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Een afgeronde taak staat er niet (meer) bij</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Het overzicht toont alleen de laatste <b>30 dagen</b>. Oudere afgeronde taken vallen er vanzelf af.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Dit is verwacht. Gebruik dit scherm als recente naslag/controle.</span></div>
+    </div>
+  </div>
+
+  <div class="pagenum">16</div>
+  <div class="page-foot">Admin</div>
+</div>
+
+<!-- ============ POP-UP — ACMP REVIEW ============ -->
+<div class="page" id="acmp-review" style="--accent:#0f766e;">
+  <div class="kicker-eyebrow">Pop-up · verschijnt vanzelf</div>
+  <h2 class="section-title">AcMP Review</h2>
+  <div class="rule"></div>
+  <p class="section-intro">Verschijnt na een import met nieuwe orders en/of zojuist RFQ-goedgekeurde inactieve orders.
+    Er wordt niets in de werkorderlijst gezet tot je opslaat.</p>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> De pop-up blokkeert de rest van de app</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Dat is bewust: nieuwe/RFQ-goedgekeurde orders moeten eerst worden ingesteld voordat je verder kunt.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Loop de orders langs en klik <span class="key">Save and continue</span>. Snel werken kan met <span class="key">Mark all active</span> / <span class="key">Mark all inactive</span> en <span class="key">Activate all</span> / <span class="key">Keep all inactive</span>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="msg">Error: Due Date is required for priority work order …</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Een nieuwe order is actief gezet met prioriteit PRIO/AOG, maar zonder due date.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Vul de due date in bij die order (het veld kleurt rood), of zet de prioriteit op No.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="msg">Error: Rens can only be assigned manually …</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Een nieuwe order is aan Rens toegewezen terwijl het type/de startstap dat niet toestaat.</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Kies een andere toewijzing voor die order. Zie <a href="#wo-toewijzing">Toewijzing</a>.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> Er staat geen pop-up, terwijl ik nieuwe orders verwacht</div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">Er staat niets in de review-wachtrij: de orders waren al verwerkt, bestonden al, of vielen weg omdat ze niet meer bestaan (zulke verouderde review-rijen worden automatisch opgeschoond).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Controleer of de import echt nieuwe orders bevatte. Bestaande orders worden direct bijgewerkt zonder review.</span></div>
+    </div>
+  </div>
+
+  <div class="t">
+    <div class="t-q"><span class="t-mark">!</span> <span class="msg">Saved but failed to clear pending rows: …</span></div>
+    <div class="t-a">
+      <div class="t-line"><span class="lbl cause">Oorzaak</span><span class="t-text">De orders zijn wél opgeslagen, maar het leegmaken van de wachtrij ging mis (verbindingsfout).</span></div>
+      <div class="t-line"><span class="lbl fix">Oplossing</span><span class="t-text">Ververs en open de review opnieuw. De al verwerkte orders zijn klaar; rond eventuele resterende af.</span></div>
+    </div>
+  </div>
+
+  <p style="margin-top:14px;font-size:9px;color:#97907f;text-align:center;">
+    Troubleshooting Handleiding — Planning &amp; Monitoring Tool · Aircraft &amp; Component Wheels &amp; Brake Shop
+  </p>
+
+  <div class="pagenum">17</div>
+  <div class="page-foot">Pop-up</div>
+</div>
+
+</body>
+</html>

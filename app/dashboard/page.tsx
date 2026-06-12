@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Newspaper, RefreshCw } from "lucide-react";
+import { Newspaper, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dispatchAcmpPendingReviewRefresh } from "@/app/components/acmp-pending-events";
 import { RequireRole } from "@/app/components/require-role";
@@ -1925,14 +1925,14 @@ function DashboardPageContent() {
                 display: "grid",
                 gap: "6px",
                 width: "100%",
-                maxWidth: "420px",
+                maxWidth: "560px",
                 marginLeft: "auto",
               }}
             >
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: "1fr 1fr 1fr",
                   gap: "8px",
                 }}
               >
@@ -1963,76 +1963,6 @@ function DashboardPageContent() {
                   <RefreshCw size={15} strokeWidth={2.2} />
                   Check AcMP export
                 </button>
-
-                <button
-                  type="button"
-                  aria-label={`${health.label}: ${health.reason}`}
-                  onClick={() => {
-                    if (health.panel) {
-                      setActivePanel(health.panel);
-                    }
-                  }}
-                  style={{
-                    position: "relative",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                    minHeight: "38px",
-                    padding: "8px 14px",
-                    borderRadius: "8px",
-                    backgroundColor: health.bg,
-                    color: health.color,
-                    border: `1px solid ${health.color}33`,
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
-                    cursor: health.panel ? "pointer" : "help",
-                    fontFamily: FONT_STACK,
-                  }}
-                  className="health-status"
-                >
-                  <span
-                    style={{
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "50%",
-                      backgroundColor: health.color,
-                      display: "inline-block",
-                    }}
-                  />
-                  {health.label}
-                  <span className="health-status-tooltip">
-                    {health.reason}
-                  </span>
-                </button>
-                <a
-                  href="/Office-Handleiding.pdf"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open de Office handleiding (PDF)"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                    minHeight: "38px",
-                    padding: "8px 12px",
-                    borderRadius: "8px",
-                    border: `1px solid ${COLORS.borderStrong}`,
-                    backgroundColor: COLORS.surface,
-                    color: COLORS.blue,
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    whiteSpace: "nowrap",
-                    textDecoration: "none",
-                    cursor: "pointer",
-                    fontFamily: FONT_STACK,
-                  }}
-                >
-                  <FileText size={15} strokeWidth={2.2} />
-                  Download manual
-                </a>
 
                 <button
                   type="button"
@@ -2092,6 +2022,49 @@ function DashboardPageContent() {
                     }}
                   >
                     {aviationNewsEnabled ? "ON" : "OFF"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  aria-label={`${health.label}: ${health.reason}`}
+                  onClick={() => {
+                    if (health.panel) {
+                      setActivePanel(health.panel);
+                    }
+                  }}
+                  style={{
+                    position: "relative",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    minHeight: "38px",
+                    padding: "8px 14px",
+                    borderRadius: "8px",
+                    backgroundColor: health.bg,
+                    color: health.color,
+                    border: `1px solid ${health.color}33`,
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    cursor: health.panel ? "pointer" : "help",
+                    fontFamily: FONT_STACK,
+                  }}
+                  className="health-status"
+                >
+                  <span
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      backgroundColor: health.color,
+                      display: "inline-block",
+                    }}
+                  />
+                  {health.label}
+                  <span className="health-status-tooltip">
+                    {health.reason}
                   </span>
                 </button>
               </div>

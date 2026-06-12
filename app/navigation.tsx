@@ -12,6 +12,7 @@ import {
   Upload,
   Users,
   Archive,
+  BookOpenText,
   Database,
   ListChecks,
   Monitor,
@@ -49,6 +50,7 @@ const navGroups: NavGroup[] = [
       { href: "/backlog", label: "Inactive Work Orders", icon: Archive },
       { href: "/work-order-data", label: "Work Order Data", icon: Database },
       { href: "/completed-tasks", label: "Completed Tasks", icon: ListChecks },
+      { href: "/manuals", label: "Manuals", icon: BookOpenText },
     ],
   },
   {
@@ -89,9 +91,19 @@ export function Navigation() {
     };
   }, [hideSidebar]);
 
-  if (hideSidebar || role !== "office") return null;
+  if (hideSidebar || (role !== "office" && role !== "developer")) return null;
 
   const close = () => setOpen(false);
+  const homeHref = role === "developer" ? "/manuals" : "/dashboard";
+  const visibleNavGroups =
+    role === "developer"
+      ? navGroups
+          .map((group) => ({
+            ...group,
+            items: group.items.filter((item) => item.href === "/manuals"),
+          }))
+          .filter((group) => group.items.length > 0)
+      : navGroups;
 
   async function handleLogout() {
     await signOut();
@@ -140,9 +152,9 @@ export function Navigation() {
         </button>
 
         <Link
-          href="/dashboard"
+          href={homeHref}
           onClick={close}
-          aria-label="Dashboard home"
+          aria-label="Application home"
         className="flex flex-col items-center gap-2 px-4 pb-4 pt-4"
         >
           <div className="flex h-[76px] w-[76px] shrink-0 items-center justify-center">
@@ -164,7 +176,7 @@ export function Navigation() {
         <div className="mx-3 h-px bg-white/5" />
 
         <nav className="flex-1 overflow-y-auto px-2 py-3">
-          {navGroups.map((group, idx) => (
+          {visibleNavGroups.map((group, idx) => (
             <div key={group.label} className={idx > 0 ? "mt-4" : ""}>
               <div className="px-3 pb-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#6e6759]">
                 {group.label}
@@ -217,7 +229,7 @@ export function Navigation() {
             </div>
             <div className="flex min-w-0 flex-1 flex-col leading-tight">
               <span className="truncate text-[11px] font-medium text-white">
-                Office
+                {role === "developer" ? "Developer" : "Office"}
               </span>
             </div>
             <button

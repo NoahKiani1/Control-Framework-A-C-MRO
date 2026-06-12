@@ -17,6 +17,7 @@ Interne planning- en opvolgapp voor Aircraft & Component MRO. De app helpt offic
 De app gebruikt Supabase Auth met profielen in de database.
 
 - `office`: volledige planning, admin, import en dashboard.
+- `developer`: toegang tot de manuals-pagina voor beheer en documentatiecontrole.
 - `shop`: shop-form/update flow.
 - `wall`: shop-wall scherm zonder office-navigatie.
 
@@ -92,6 +93,10 @@ AcMP exports zijn Excel-bestanden (`.xlsx`). Office users kunnen ze handmatig up
 
 Meer details staan in `docs/acmp-dropbox-import.md`.
 
+## Office development
+
+Voor wijzigingen maken en pushen vanaf de office PC staat een aparte handleiding in `docs/instructions-for-code-changes.md`.
+
 ## Belangrijke routes
 
 - `/login`
@@ -108,3 +113,4 @@ Meer details staan in `docs/acmp-dropbox-import.md`.
 - `/work-order-data`
 - `/completed-tasks`
 - `/acmp-review`
+- `/manuals`
